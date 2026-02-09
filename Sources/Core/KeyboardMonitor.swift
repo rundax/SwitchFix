@@ -1,5 +1,172 @@
 import Foundation
+import CoreGraphics
+import AppKit
+import Utils
+
+public protocol KeyboardMonitorDelegate: AnyObject {
+    func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveCharacter character: String, keyCode: UInt16)
+    func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor)
+    func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor)
+}
 
 public class KeyboardMonitor {
+    public weak var delegate: KeyboardMonitorDelegate?
+
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+    private var isMonitoring = false
+
+    // Key codes for special keys
+    private static let spaceKeyCode: UInt16 = 49
+    private static let returnKeyCode: UInt16 = 36
+    private static let tabKeyCode: UInt16 = 48
+    private static let escapeKeyCode: UInt16 = 53
+    private static let deleteKeyCode: UInt16 = 51
+
+    // Function key range
+    private static let functionKeyCodes: Set<UInt16> = Set([
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, // F1-F12
+        105, 107, 113, 106, // F13-F16
+    ])
+
+    // Arrow keys
+    private static let arrowKeyCodes: Set<UInt16> = Set([123, 124, 125, 126])
+
+    // Keys that should flush the buffer (word boundary)
+    private static let bufferFlushKeyCodes: Set<UInt16> = Set([
+        spaceKeyCode, returnKeyCode, tabKeyCode, escapeKeyCode
+    ])
+
     public init() {}
+
+    public func start() {
+        guard !isMonitoring else { return }
+
+        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+
+        // Create the event tap — using a C-convention callback via a wrapper
+        let selfPtr = Unmanaged.passRetained(self).toOpaque()
+
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: eventMask,
+            callback: KeyboardMonitor.eventTapCallback,
+            userInfo: selfPtr
+        ) else {
+            Unmanaged<KeyboardMonitor>.fromOpaque(selfPtr).release()
+            return
+        }
+
+        eventTap = tap
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+
+        if let source = runLoopSource {
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+
+        CGEvent.tapEnable(tap: tap, enable: true)
+        isMonitoring = true
+    }
+
+    public func stop() {
+        guard isMonitoring else { return }
+
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        eventTap = nil
+        runLoopSource = nil
+        isMonitoring = false
+    }
+
+    /// Temporarily disable/enable monitoring (used during text correction to avoid feedback loops)
+    public var isPaused: Bool = false
+
+    // The C-convention callback for CGEventTap
+    private static let eventTapCallback: CGEventTapCallBack = { proxy, type, event, userInfo in
+        guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
+
+        // Handle tap being disabled by the system (e.g., due to timeout)
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            let monitor = Unmanaged<KeyboardMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+            if let tap = monitor.eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        guard type == .keyDown else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let monitor = Unmanaged<KeyboardMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+
+        if monitor.isPaused {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let flags = event.flags
+
+        // Ignore events with modifier keys (Cmd, Ctrl, Option) — but allow Shift
+        let modifiersToIgnore: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate]
+        if !flags.intersection(modifiersToIgnore).isEmpty {
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Ignore function keys
+        if functionKeyCodes.contains(keyCode) {
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Ignore arrow keys
+        if arrowKeyCodes.contains(keyCode) {
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Check for password fields
+        if Permissions.isFocusedElementSecure() {
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Handle buffer flush keys (space, return, tab, escape)
+        if bufferFlushKeyCodes.contains(keyCode) {
+            DispatchQueue.main.async {
+                monitor.delegate?.keyboardMonitorDidReceiveSpace(monitor)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Handle delete/backspace
+        if keyCode == deleteKeyCode {
+            DispatchQueue.main.async {
+                monitor.delegate?.keyboardMonitorDidReceiveDelete(monitor)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Get the character from the event
+        let maxLen = 4
+        var actualLen = 0
+        var chars = [UniChar](repeating: 0, count: maxLen)
+        event.keyboardGetUnicodeString(maxStringLength: maxLen, actualStringLength: &actualLen, unicodeString: &chars)
+
+        if actualLen > 0 {
+            let str = String(utf16CodeUnits: chars, count: actualLen)
+            DispatchQueue.main.async {
+                monitor.delegate?.keyboardMonitor(monitor, didReceiveCharacter: str, keyCode: keyCode)
+            }
+        }
+
+        return Unmanaged.passUnretained(event)
+    }
+
+    deinit {
+        stop()
+    }
 }

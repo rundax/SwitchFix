@@ -190,6 +190,89 @@ runSuite("WordValidator: Invalid cross-language") {
 }
 
 // =============================================================================
+// LayoutDetector Tests
+// =============================================================================
+
+// Helper: Mock delegate that captures detection results
+class MockDetectorDelegate: LayoutDetectorDelegate {
+    var results: [DetectionResult] = []
+    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult) {
+        results.append(result)
+    }
+}
+
+runSuite("LayoutDetector: Detect EN→RU wrong layout") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Type "ghbdtn" (which is "привет" in wrong layout)
+    for char in "ghbdtn" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer()
+
+    assert(mockDelegate.results.count == 1, "should detect one wrong layout")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .russian, "target should be Russian")
+        assertEqual(result.convertedWord, "привет", "converted should be 'привет'")
+    }
+}
+
+runSuite("LayoutDetector: Valid word does not trigger") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Type "hello" (valid English word)
+    for char in "hello" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer()
+
+    assertEqual(mockDelegate.results.count, 0, "valid word should not trigger detection")
+}
+
+runSuite("LayoutDetector: Mixed scripts ignored") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Mixed Latin+Cyrillic should be ignored
+    for char in "heллo" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer()
+
+    assertEqual(mockDelegate.results.count, 0, "mixed scripts should not trigger detection")
+}
+
+runSuite("LayoutDetector: Delete removes from buffer") {
+    let detector = LayoutDetector()
+
+    for char in "hello" {
+        detector.addCharacter(String(char))
+    }
+    assertEqual(detector.currentBuffer, "hello")
+    detector.deleteLastCharacter()
+    assertEqual(detector.currentBuffer, "hell")
+    detector.deleteLastCharacter()
+    assertEqual(detector.currentBuffer, "hel")
+}
+
+runSuite("LayoutDetector: Reset clears state") {
+    let detector = LayoutDetector()
+    for char in "hello" {
+        detector.addCharacter(String(char))
+    }
+    detector.reset()
+    assertEqual(detector.currentBuffer, "", "buffer should be empty after reset")
+}
+
+// =============================================================================
 // Summary
 // =============================================================================
 

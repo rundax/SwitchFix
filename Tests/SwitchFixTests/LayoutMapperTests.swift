@@ -1,8 +1,3 @@
-import XCTest
-@testable import Core
-
-final class LayoutMapperTests: XCTestCase {
-    func testPlaceholder() {
-        XCTAssertTrue(true)
-    }
-}
+// Tests are run via the standalone TestRunner executable since
+// XCTest/Testing frameworks require full Xcode installation.
+// See Sources/TestRunner/main.swift

@@ -35,10 +35,10 @@ let package = Package(
             dependencies: [],
             path: "Sources/Utils"
         ),
-        .testTarget(
-            name: "SwitchFixTests",
+        .executableTarget(
+            name: "TestRunner",
             dependencies: ["Core", "Dictionary", "Utils"],
-            path: "Tests/SwitchFixTests"
+            path: "Sources/TestRunner"
         ),
     ]
 )

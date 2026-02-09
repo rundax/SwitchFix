@@ -10,6 +10,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var textCorrector: TextCorrector?
     private let inputSourceManager = InputSourceManager.shared
 
+    /// Cached result for whether the current frontmost app is allowed (updated on app switch).
+    private var isCurrentAppAllowed: Bool = true
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusBarController = StatusBarController()
 
@@ -56,6 +59,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func activeAppChanged() {
         layoutDetector?.reset()
+        isCurrentAppAllowed = AppFilter.shared.isCurrentAppAllowed()
+        Permissions.invalidateSecureFieldCache()
     }
 }
 
@@ -64,7 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: KeyboardMonitorDelegate {
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveCharacter character: String, keyCode: UInt16) {
         guard PreferencesManager.shared.isEnabled else { return }
-        guard AppFilter.shared.isCurrentAppAllowed() else { return }
+        guard isCurrentAppAllowed else { return }
 
         // Buffer characters in both automatic and hotkey modes
         layoutDetector?.currentLayout = inputSourceManager.currentLayout()
@@ -73,7 +78,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
     func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor) {
         guard PreferencesManager.shared.isEnabled else { return }
-        guard AppFilter.shared.isCurrentAppAllowed() else { return }
+        guard isCurrentAppAllowed else { return }
 
         if PreferencesManager.shared.correctionMode == .automatic {
             // Automatic mode: flush triggers detection + correction
@@ -90,7 +95,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor) {
         guard PreferencesManager.shared.isEnabled else { return }
-        guard AppFilter.shared.isCurrentAppAllowed() else { return }
+        guard isCurrentAppAllowed else { return }
 
         // First, try selection-based correction (works in any mode)
         if let selectedText = Permissions.getSelectedText() {

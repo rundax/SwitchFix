@@ -4,10 +4,38 @@ import Carbon
 public class InputSourceManager {
     public static let shared = InputSourceManager()
 
-    private init() {}
+    private var cachedLayout: Layout?
 
-    /// Get the current active keyboard layout.
+    private init() {
+        // Listen for input source changes to invalidate cache
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(inputSourceChanged),
+            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
+    }
+
+    @objc private func inputSourceChanged() {
+        cachedLayout = nil
+    }
+
+    /// Get the current active keyboard layout (cached until input source changes).
     public func currentLayout() -> Layout {
+        if let cached = cachedLayout {
+            return cached
+        }
+        let layout = fetchCurrentLayout()
+        cachedLayout = layout
+        return layout
+    }
+
+    /// Force-refresh the cached layout after a programmatic switch.
+    public func invalidateCache() {
+        cachedLayout = nil
+    }
+
+    private func fetchCurrentLayout() -> Layout {
         guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
             return .english
         }
@@ -49,6 +77,7 @@ public class InputSourceManager {
 
             if sourceID == targetID {
                 TISSelectInputSource(source)
+                cachedLayout = layout
                 return
             }
         }

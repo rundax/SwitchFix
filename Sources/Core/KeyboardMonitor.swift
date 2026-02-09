@@ -8,6 +8,7 @@ public protocol KeyboardMonitorDelegate: AnyObject {
     func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor)
+    func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor)
 }
 
 public class KeyboardMonitor {
@@ -23,6 +24,7 @@ public class KeyboardMonitor {
     private static let tabKeyCode: UInt16 = 48
     private static let escapeKeyCode: UInt16 = 53
     private static let deleteKeyCode: UInt16 = 51
+    private static let zKeyCode: UInt16 = 6
 
     // Function key range
     private static let functionKeyCodes: Set<UInt16> = Set([
@@ -133,6 +135,17 @@ public class KeyboardMonitor {
         if monitor.isHotkey(keyCode: keyCode, flags: flags) {
             DispatchQueue.main.async {
                 monitor.delegate?.keyboardMonitorDidReceiveHotkey(monitor)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Check for Cmd+Z (undo) — only Cmd, no other modifiers
+        if keyCode == zKeyCode && flags.contains(.maskCommand) {
+            let extraModifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskShift]
+            if flags.intersection(extraModifiers).isEmpty {
+                DispatchQueue.main.async {
+                    monitor.delegate?.keyboardMonitorDidReceiveUndo(monitor)
+                }
             }
             return Unmanaged.passUnretained(event)
         }

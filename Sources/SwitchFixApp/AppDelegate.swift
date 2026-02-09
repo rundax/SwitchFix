@@ -64,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: KeyboardMonitorDelegate {
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveCharacter character: String, keyCode: UInt16) {
         guard PreferencesManager.shared.isEnabled else { return }
+        guard AppFilter.shared.isCurrentAppAllowed() else { return }
 
         // Buffer characters in both automatic and hotkey modes
         layoutDetector?.currentLayout = inputSourceManager.currentLayout()
@@ -72,6 +73,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
     func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor) {
         guard PreferencesManager.shared.isEnabled else { return }
+        guard AppFilter.shared.isCurrentAppAllowed() else { return }
 
         if PreferencesManager.shared.correctionMode == .automatic {
             // Automatic mode: flush triggers detection + correction
@@ -88,6 +90,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor) {
         guard PreferencesManager.shared.isEnabled else { return }
+        guard AppFilter.shared.isCurrentAppAllowed() else { return }
 
         // First, try selection-based correction (works in any mode)
         if let selectedText = Permissions.getSelectedText() {
@@ -108,6 +111,16 @@ extension AppDelegate: KeyboardMonitorDelegate {
         // Fallback: buffer-based correction — flush triggers detection
         layoutDetector?.currentLayout = inputSourceManager.currentLayout()
         layoutDetector?.flushBuffer()
+    }
+
+    func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor) {
+        guard PreferencesManager.shared.isEnabled else { return }
+
+        // Only undo if there's a recent correction within the time window
+        guard let corrector = textCorrector, corrector.canUndo else { return }
+
+        let currentLayout = inputSourceManager.currentLayout()
+        corrector.undoLastCorrection(currentLayout: currentLayout)
     }
 }
 

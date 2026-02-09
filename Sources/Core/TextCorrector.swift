@@ -13,6 +13,17 @@ public class TextCorrector {
     public private(set) var lastOriginalText: String?
     public private(set) var lastCorrectedText: String?
 
+    /// Timestamp of last correction (for time-limited undo — 5 second window).
+    private var lastCorrectionTime: Date?
+    private static let undoTimeWindow: TimeInterval = 5.0
+
+    /// Whether an undo is available (correction happened within the time window).
+    public var canUndo: Bool {
+        guard lastOriginalText != nil, lastCorrectedText != nil,
+              let time = lastCorrectionTime else { return false }
+        return Date().timeIntervalSince(time) < TextCorrector.undoTimeWindow
+    }
+
     public init() {}
 
     /// Perform text correction: delete the wrong text, switch layout, type the correct text.
@@ -24,6 +35,7 @@ public class TextCorrector {
         // Save for undo
         lastOriginalText = nil // We don't have the original text as a string here
         lastCorrectedText = correctedText
+        lastCorrectionTime = Date()
 
         // Notify monitor to pause (avoid feedback loop)
         onCorrectionStarted?()
@@ -50,6 +62,7 @@ public class TextCorrector {
     public func performCorrection(result: DetectionResult) {
         lastOriginalText = result.originalWord
         lastCorrectedText = result.convertedWord
+        lastCorrectionTime = Date()
 
         onCorrectionStarted?()
 
@@ -87,6 +100,7 @@ public class TextCorrector {
 
         lastOriginalText = nil
         lastCorrectedText = nil
+        lastCorrectionTime = nil
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             self?.onCorrectionFinished?()
@@ -97,6 +111,7 @@ public class TextCorrector {
     public func performSelectionCorrection(selectedText: String, convertedText: String, targetLayout: Layout) {
         lastOriginalText = selectedText
         lastCorrectedText = convertedText
+        lastCorrectionTime = Date()
 
         onCorrectionStarted?()
 

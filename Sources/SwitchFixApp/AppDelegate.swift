@@ -38,6 +38,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startMonitoring() {
         keyboardMonitor = KeyboardMonitor()
         keyboardMonitor?.delegate = self
+
+        // Apply hotkey settings from preferences
+        keyboardMonitor?.hotkeyKeyCode = PreferencesManager.shared.hotkeyKeyCode
+        keyboardMonitor?.hotkeyModifiers = PreferencesManager.shared.hotkeyModifiers
+
         keyboardMonitor?.start()
 
         // Observe frontmost app changes to reset detector on app switch
@@ -59,22 +64,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: KeyboardMonitorDelegate {
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveCharacter character: String, keyCode: UInt16) {
         guard PreferencesManager.shared.isEnabled else { return }
-        guard PreferencesManager.shared.correctionMode == .automatic else { return }
 
-        // Update the detector's current layout
+        // Buffer characters in both automatic and hotkey modes
         layoutDetector?.currentLayout = inputSourceManager.currentLayout()
         layoutDetector?.addCharacter(character)
     }
 
     func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor) {
         guard PreferencesManager.shared.isEnabled else { return }
-        guard PreferencesManager.shared.correctionMode == .automatic else { return }
 
-        layoutDetector?.flushBuffer()
+        if PreferencesManager.shared.correctionMode == .automatic {
+            // Automatic mode: flush triggers detection + correction
+            layoutDetector?.flushBuffer()
+        } else {
+            // Hotkey mode: just discard the buffer (word boundary passed)
+            layoutDetector?.discardBuffer()
+        }
     }
 
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor) {
         layoutDetector?.deleteLastCharacter()
+    }
+
+    func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor) {
+        guard PreferencesManager.shared.isEnabled else { return }
+
+        // First, try selection-based correction (works in any mode)
+        if let selectedText = Permissions.getSelectedText() {
+            let currentLayout = inputSourceManager.currentLayout()
+            let alternatives = LayoutMapper.convertToAlternatives(selectedText, from: currentLayout)
+
+            // Use the first conversion (user explicitly requested conversion)
+            if let (targetLayout, converted) = alternatives.first {
+                textCorrector?.performSelectionCorrection(
+                    selectedText: selectedText,
+                    convertedText: converted,
+                    targetLayout: targetLayout
+                )
+            }
+            return
+        }
+
+        // Fallback: buffer-based correction — flush triggers detection
+        layoutDetector?.currentLayout = inputSourceManager.currentLayout()
+        layoutDetector?.flushBuffer()
     }
 }
 

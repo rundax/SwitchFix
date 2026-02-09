@@ -79,6 +79,12 @@ public class LayoutDetector {
         }
     }
 
+    /// Discard the current buffer without running detection (used in hotkey mode on word boundary).
+    public func discardBuffer() {
+        wordBuffer = ""
+        state = .idle
+    }
+
     /// Reset all state (e.g., when app loses focus).
     public func reset() {
         wordBuffer = ""

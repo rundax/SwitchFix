@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import AppKit
 
 public class TextCorrector {
     private let inputSourceManager = InputSourceManager.shared
@@ -92,7 +93,51 @@ public class TextCorrector {
         }
     }
 
+    /// Perform correction on selected text by replacing it via clipboard paste.
+    public func performSelectionCorrection(selectedText: String, convertedText: String, targetLayout: Layout) {
+        lastOriginalText = selectedText
+        lastCorrectedText = convertedText
+
+        onCorrectionStarted?()
+
+        let pasteboard = NSPasteboard.general
+        let oldContents = pasteboard.string(forType: .string)
+
+        // Put converted text on clipboard
+        pasteboard.clearContents()
+        pasteboard.setString(convertedText, forType: .string)
+
+        // Simulate Cmd+V to replace selection
+        simulatePaste()
+
+        // Switch layout to target
+        inputSourceManager.switchTo(targetLayout)
+
+        // Restore clipboard and resume monitoring after paste completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            if let old = oldContents {
+                pasteboard.clearContents()
+                pasteboard.setString(old, forType: .string)
+            }
+            self?.onCorrectionFinished?()
+        }
+    }
+
     // MARK: - CGEvent helpers
+
+    /// Simulate Cmd+V paste keystroke.
+    private func simulatePaste() {
+        let vKeyCode: UInt16 = 9
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: vKeyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: vKeyCode, keyDown: false) else { return }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        keyDown.post(tap: .cgAnnotatedSessionEventTap)
+        keyUp.post(tap: .cgAnnotatedSessionEventTap)
+        usleep(50_000) // 50ms for paste to complete
+    }
 
     /// Delete N characters by posting backspace key events.
     private func deleteCharacters(count: Int) {

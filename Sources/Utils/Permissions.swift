@@ -52,6 +52,22 @@ public class Permissions {
         }
     }
 
+    /// Get the currently selected text from the focused UI element via Accessibility API.
+    public static func getSelectedText() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+
+        var focusedElement: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        guard result == .success, let element = focusedElement else { return nil }
+
+        var selectedText: CFTypeRef?
+        let textResult = AXUIElementCopyAttributeValue(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &selectedText)
+        guard textResult == .success, let text = selectedText as? String, !text.isEmpty else { return nil }
+
+        return text
+    }
+
     /// Check if the currently focused UI element is a secure text field (password).
     public static func isFocusedElementSecure() -> Bool {
         guard let app = NSWorkspace.shared.frontmostApplication else { return false }

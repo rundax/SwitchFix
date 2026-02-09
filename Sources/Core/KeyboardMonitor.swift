@@ -7,6 +7,7 @@ public protocol KeyboardMonitorDelegate: AnyObject {
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveCharacter character: String, keyCode: UInt16)
     func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor)
+    func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor)
 }
 
 public class KeyboardMonitor {
@@ -87,6 +88,21 @@ public class KeyboardMonitor {
     /// Temporarily disable/enable monitoring (used during text correction to avoid feedback loops)
     public var isPaused: Bool = false
 
+    /// Hotkey configuration
+    public var hotkeyKeyCode: UInt16 = 49  // Space
+    public var hotkeyModifiers: UInt64 = CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue
+
+    /// Check if a key event matches the configured hotkey.
+    func isHotkey(keyCode: UInt16, flags: CGEventFlags) -> Bool {
+        guard keyCode == hotkeyKeyCode else { return false }
+
+        let requiredFlags = CGEventFlags(rawValue: hotkeyModifiers)
+        let relevantMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
+        let pressedRelevant = flags.intersection(relevantMask)
+
+        return pressedRelevant == requiredFlags.intersection(relevantMask)
+    }
+
     // The C-convention callback for CGEventTap
     private static let eventTapCallback: CGEventTapCallBack = { proxy, type, event, userInfo in
         guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
@@ -112,6 +128,14 @@ public class KeyboardMonitor {
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
+
+        // Check for hotkey (Ctrl+Shift+Space by default) — must check before filtering modifiers
+        if monitor.isHotkey(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async {
+                monitor.delegate?.keyboardMonitorDidReceiveHotkey(monitor)
+            }
+            return Unmanaged.passUnretained(event)
+        }
 
         // Ignore events with modifier keys (Cmd, Ctrl, Option) — but allow Shift
         let modifiersToIgnore: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate]

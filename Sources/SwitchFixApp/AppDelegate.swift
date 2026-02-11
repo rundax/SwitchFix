@@ -65,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         keyboardMonitor?.onKeyDownWhilePaused = { [weak self] in
             self?.textCorrector?.noteUserInputDuringCorrection()
+            self?.textCorrector?.noteUserEdit()
             self?.textCorrector?.recordUserInput(kind: .character)
         }
 
@@ -129,6 +130,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             layoutDetector?.ukrainianFromVariant = targetVariant
         }
     }
+
+    @discardableResult
+    private func triggerManualCorrectionFromCurrentContext() -> Bool {
+        // First, try selection-based correction (works in any mode)
+        if let selectedText = Permissions.getSelectedText() {
+            let currentLayout = inputSourceManager.currentLayout()
+            let fromVariant = inputSourceManager.currentUkrainianVariant() ?? inputSourceManager.preferredUkrainianVariant()
+            let toVariant = inputSourceManager.preferredUkrainianVariant()
+            let alternatives = LayoutMapper.convertToAlternatives(
+                selectedText,
+                from: currentLayout,
+                ukrainianFromVariant: fromVariant,
+                ukrainianToVariant: toVariant
+            )
+
+            if let (targetLayout, converted) = alternatives.first {
+                textCorrector?.performSelectionCorrection(
+                    selectedText: selectedText,
+                    convertedText: converted,
+                    targetLayout: targetLayout
+                )
+                return true
+            }
+        }
+
+        // Fallback: buffer-based correction — flush triggers detection
+        guard let detector = layoutDetector, !detector.currentBuffer.isEmpty else {
+            return false
+        }
+
+        let layout = inputSourceManager.currentLayout()
+        detector.currentLayout = layout
+        refreshLayoutVariants(for: layout)
+        detector.flushBuffer()
+        textCorrector?.recordUserInput(kind: .other)
+        return true
+    }
 }
 
 // MARK: - KeyboardMonitorDelegate
@@ -142,12 +180,14 @@ extension AppDelegate: KeyboardMonitorDelegate {
         layoutDetector?.currentLayout = layout
         refreshLayoutVariants(for: layout)
         layoutDetector?.addCharacter(character)
+        textCorrector?.noteUserEdit()
         textCorrector?.recordUserInput(kind: .character)
     }
 
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveBoundary character: String) {
         guard PreferencesManager.shared.isEnabled else { return }
         guard isCurrentAppAllowed else { return }
+        textCorrector?.noteUserEdit()
 
         if PreferencesManager.shared.correctionMode == .automatic {
             // Automatic mode: flush triggers detection + correction
@@ -166,42 +206,14 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor) {
         layoutDetector?.deleteLastCharacter()
+        textCorrector?.noteUserEdit()
         textCorrector?.recordUserInput(kind: .other)
     }
 
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor) {
         guard PreferencesManager.shared.isEnabled else { return }
         guard isCurrentAppAllowed else { return }
-
-        // First, try selection-based correction (works in any mode)
-        if let selectedText = Permissions.getSelectedText() {
-            let currentLayout = inputSourceManager.currentLayout()
-            let fromVariant = inputSourceManager.currentUkrainianVariant() ?? inputSourceManager.preferredUkrainianVariant()
-            let toVariant = inputSourceManager.preferredUkrainianVariant()
-            let alternatives = LayoutMapper.convertToAlternatives(
-                selectedText,
-                from: currentLayout,
-                ukrainianFromVariant: fromVariant,
-                ukrainianToVariant: toVariant
-            )
-
-            // Use the first conversion (user explicitly requested conversion)
-            if let (targetLayout, converted) = alternatives.first {
-                textCorrector?.performSelectionCorrection(
-                    selectedText: selectedText,
-                    convertedText: converted,
-                    targetLayout: targetLayout
-                )
-            }
-            return
-        }
-
-        // Fallback: buffer-based correction — flush triggers detection
-        let layout = inputSourceManager.currentLayout()
-        layoutDetector?.currentLayout = layout
-        refreshLayoutVariants(for: layout)
-        layoutDetector?.flushBuffer()
-        textCorrector?.recordUserInput(kind: .other)
+        _ = triggerManualCorrectionFromCurrentContext()
     }
 
     func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor) {
@@ -221,6 +233,8 @@ extension AppDelegate: KeyboardMonitorDelegate {
         guard let corrector = textCorrector else { return }
         guard corrector.canUndo else {
             startCapsLockConflictProbe()
+            guard isCurrentAppAllowed else { return }
+            _ = triggerManualCorrectionFromCurrentContext()
             return
         }
 

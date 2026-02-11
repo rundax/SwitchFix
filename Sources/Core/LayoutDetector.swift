@@ -54,6 +54,8 @@ public class LayoutDetector {
     private static let boundaryCharacterSet: CharacterSet = {
         var set = CharacterSet.punctuationCharacters.union(.symbols)
         set.subtract(CharacterSet(charactersIn: "'’`-"))
+        // Keep punctuation keys that may correspond to letters in other layouts.
+        set.subtract(CharacterSet(charactersIn: ",.;'[]`<>:\"{}~"))
         return set
     }()
 
@@ -183,10 +185,11 @@ public class LayoutDetector {
             ukrainianToVariant: ukrainianToVariant
         )
             .filter { allowedLayouts.contains($0.0) }
-        let isAcronymCandidate = isAllUppercase(word) && word.count <= 3
         for (targetLayout, converted) in alternatives {
             let targetLanguage = languageForLayout(targetLayout)
-            let allowSuggestion = !isAcronymCandidate && converted.count <= suggestionMaxLength
+            // Avoid substituting into a different valid word (e.g. "pe" -> "за").
+            // Auto-detection should accept only exact layout mapping here.
+            let allowSuggestion = false
             let validation = validator.validate(
                 converted,
                 language: targetLanguage,
@@ -311,6 +314,7 @@ public class LayoutDetector {
     }
 
     private func shouldAllowAcronymFallback(original: String, converted: String, currentLanguage: Language) -> Bool {
+        guard original.count >= 2 else { return false }
         guard original.count <= 3 else { return false }
         guard isAllUppercase(original) else { return false }
         if containsVowel(original, language: currentLanguage) { return false }

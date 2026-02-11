@@ -13,6 +13,7 @@ public class TextCorrector {
     public private(set) var lastOriginalText: String?
     public private(set) var lastCorrectedText: String?
     public private(set) var lastOriginalLayout: Layout?
+    public private(set) var lastBoundaryText: String?
 
     /// Timestamp of last correction (for time-limited undo — 5 second window).
     private var lastCorrectionTime: Date?
@@ -31,11 +32,14 @@ public class TextCorrector {
     private var pendingSwitchLayout: Layout?
     private var switchTimer: Timer?
     private let switchDelay: TimeInterval = 0.15
+    private var userEditGeneration: UInt64 = 0
+    private var lastCorrectionEditGeneration: UInt64 = 0
 
     /// Whether an undo is available (correction happened within the time window).
     public var canUndo: Bool {
         guard lastOriginalText != nil, lastCorrectedText != nil,
               let time = lastCorrectionTime else { return false }
+        guard userEditGeneration == lastCorrectionEditGeneration else { return false }
         return Date().timeIntervalSince(time) < TextCorrector.undoTimeWindow
     }
 
@@ -51,6 +55,12 @@ public class TextCorrector {
         lastUserInputKind = kind
         lastUserInputTime = Date()
         rescheduleSwitchIfNeeded()
+    }
+
+    /// Mark that user edited text in the focused field after a correction.
+    /// Used to disable stale undo/revert operations that would target old text.
+    public func noteUserEdit() {
+        userEditGeneration &+= 1
     }
 
     private func scheduleLayoutSwitch(_ layout: Layout) {
@@ -94,6 +104,8 @@ public class TextCorrector {
         lastCorrectedText = correctedText
         lastCorrectionTime = Date()
         lastOriginalLayout = nil
+        lastBoundaryText = nil
+        lastCorrectionEditGeneration = userEditGeneration
 
         // Notify monitor to pause (avoid feedback loop)
         onCorrectionStarted?()
@@ -129,6 +141,8 @@ public class TextCorrector {
         lastCorrectedText = result.convertedWord
         lastCorrectionTime = Date()
         lastOriginalLayout = result.sourceLayout
+        lastBoundaryText = boundaryCharacter
+        lastCorrectionEditGeneration = userEditGeneration
 
         onCorrectionStarted?()
 
@@ -163,18 +177,21 @@ public class TextCorrector {
 
         onCorrectionStarted?()
 
-        deleteCharacters(count: corrected.count)
-
+        let boundary = lastBoundaryText ?? ""
         let originalLayout = lastOriginalLayout ?? inferredOriginalLayout(from: currentLayout)
+
+        deleteCharacters(count: corrected.count + boundary.count)
 
         inputSourceManager.switchTo(originalLayout)
         usleep(10_000)
-        typeText(original)
+        typeText(original + boundary)
 
         lastOriginalText = nil
         lastCorrectedText = nil
         lastCorrectionTime = nil
         lastOriginalLayout = nil
+        lastBoundaryText = nil
+        lastCorrectionEditGeneration = userEditGeneration
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             self?.onCorrectionFinished?()
@@ -187,6 +204,8 @@ public class TextCorrector {
         lastCorrectedText = convertedText
         lastCorrectionTime = Date()
         lastOriginalLayout = inputSourceManager.currentLayout()
+        lastBoundaryText = nil
+        lastCorrectionEditGeneration = userEditGeneration
 
         onCorrectionStarted?()
 

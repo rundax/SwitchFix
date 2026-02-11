@@ -49,6 +49,10 @@ public class KeyboardMonitor {
         return set
     }()
 
+    // Punctuation keys that can represent letters in alternative layouts (e.g. "," -> "б", "." -> "ю").
+    // These should stay in the buffer and be resolved by layout conversion logic.
+    private static let softBoundaryCharacterSet = CharacterSet(charactersIn: ",.;'[]`<>:\"{}~")
+
     public init() {}
 
     public func start() {
@@ -161,6 +165,9 @@ public class KeyboardMonitor {
         let flags = event.flags
 
         if type == .flagsChanged {
+            if monitor.isPaused {
+                return Unmanaged.passUnretained(event)
+            }
             // CapsLock emits flagsChanged (not keyDown), so handle revert hotkey here.
             if keyCode == KeyboardMonitor.capsLockKeyCode, monitor.isRevertHotkey(keyCode: keyCode, flags: flags) {
                 DispatchQueue.main.async {
@@ -258,7 +265,8 @@ public class KeyboardMonitor {
         if actualLen > 0 {
             let str = String(utf16CodeUnits: chars, count: actualLen)
             if str.count == 1, let scalar = str.unicodeScalars.first,
-               boundaryCharacterSet.contains(scalar) {
+               boundaryCharacterSet.contains(scalar),
+               !softBoundaryCharacterSet.contains(scalar) {
                 DispatchQueue.main.async {
                     monitor.delegate?.keyboardMonitor(monitor, didReceiveBoundary: str)
                 }

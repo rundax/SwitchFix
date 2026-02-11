@@ -6,6 +6,10 @@ public class InputSourceManager {
 
     private var cachedLayout: Layout?
 
+    /// Maps each Layout to the user's actual installed input source ID.
+    /// Populated at startup by `discoverInstalledSources()`.
+    private var installedSourceIDs: [Layout: String] = [:]
+
     private init() {
         // Listen for input source changes to invalidate cache
         DistributedNotificationCenter.default().addObserver(
@@ -14,10 +18,34 @@ public class InputSourceManager {
             name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
             object: nil
         )
+        discoverInstalledSources()
     }
 
     @objc private func inputSourceChanged() {
         cachedLayout = nil
+    }
+
+    public struct InputSourceDescriptor: Equatable {
+        public let id: String
+        public let name: String
+    }
+
+    /// Scan all installed input sources and record the actual ID for each Layout.
+    private func discoverInstalledSources() {
+        guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
+            return
+        }
+
+        for source in sources {
+            guard let sourceID = stringProperty(source, kTISPropertyInputSourceID) else { continue }
+
+            for layout in Layout.allCases {
+                if layout.matches(sourceID: sourceID) && installedSourceIDs[layout] == nil {
+                    installedSourceIDs[layout] = sourceID
+                    NSLog("[SwitchFix] Discovered layout: %@ → %@", layout.rawValue, sourceID)
+                }
+            }
+        }
     }
 
     /// Get the current active keyboard layout (cached until input source changes).
@@ -35,20 +63,23 @@ public class InputSourceManager {
         cachedLayout = nil
     }
 
-    private func fetchCurrentLayout() -> Layout {
+    /// The raw input source ID of the current keyboard layout.
+    public func currentInputSourceID() -> String {
         guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
-            return .english
+            return "unknown"
         }
-
         guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
-            return .english
+            return "unknown"
         }
+        return Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+    }
 
-        let sourceID = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+    private func fetchCurrentLayout() -> Layout {
+        let sourceID = currentInputSourceID()
 
-        // Match known layout identifiers
+        // Match against all known IDs for each layout
         for layout in Layout.allCases {
-            if sourceID == layout.inputSourceID || sourceID.contains(layout.inputSourceID) {
+            if layout.matches(sourceID: sourceID) {
                 return layout
             }
         }
@@ -62,48 +93,86 @@ public class InputSourceManager {
     }
 
     /// Switch to the specified keyboard layout.
+    /// Tries the user's actual installed source ID first, then falls back to all known IDs.
     public func switchTo(_ layout: Layout) {
-        let targetID = layout.inputSourceID
-
         guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
+            NSLog("[SwitchFix] switchTo(%@): failed to list input sources", layout.rawValue)
             return
         }
 
-        for source in sources {
-            guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
-                continue
-            }
-            let sourceID = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-
-            if sourceID == targetID {
-                TISSelectInputSource(source)
-                cachedLayout = layout
-                return
-            }
-        }
-    }
-
-    /// Get all available keyboard layouts installed on the system.
-    public func availableLayouts() -> [Layout] {
-        var result = [Layout]()
-
-        guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
-            return result
+        // Build a priority-ordered list of IDs to try
+        var targetIDs = layout.inputSourceIDs
+        if let installed = installedSourceIDs[layout] {
+            // Put the discovered installed ID first
+            targetIDs.removeAll { $0 == installed }
+            targetIDs.insert(installed, at: 0)
         }
 
-        for source in sources {
-            guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
-                continue
-            }
-            let sourceID = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+        for targetID in targetIDs {
+            for source in sources {
+                guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+                    continue
+                }
+                let sourceID = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
 
-            for layout in Layout.allCases {
-                if sourceID == layout.inputSourceID && !result.contains(layout) {
-                    result.append(layout)
+                if sourceID == targetID {
+                    let status = TISSelectInputSource(source)
+                    NSLog("[SwitchFix] switchTo(%@): selected %@ (status: %d)", layout.rawValue, sourceID, status)
+                    cachedLayout = layout
+                    return
                 }
             }
         }
 
+        NSLog("[SwitchFix] switchTo(%@): no matching source found among %d sources", layout.rawValue, sources.count)
+    }
+
+    /// Get all available keyboard layouts installed on the system.
+    public func availableLayouts() -> [Layout] {
+        let byLayout = availableInputSourcesByLayout()
+        return Layout.allCases.filter { !(byLayout[$0]?.isEmpty ?? true) }
+    }
+
+    /// Get installed input sources grouped by supported layout.
+    public func availableInputSourcesByLayout() -> [Layout: [InputSourceDescriptor]] {
+        guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
+            return [:]
+        }
+
+        var result: [Layout: [InputSourceDescriptor]] = [:]
+
+        for source in sources {
+            guard let sourceID = stringProperty(source, kTISPropertyInputSourceID),
+                  let name = stringProperty(source, kTISPropertyLocalizedName) else {
+                continue
+            }
+
+            if let type = stringProperty(source, kTISPropertyInputSourceType),
+               type != (kTISTypeKeyboardLayout as String) {
+                continue
+            }
+
+            for layout in Layout.allCases where layout.matches(sourceID: sourceID) {
+                var list = result[layout] ?? []
+                if !list.contains(where: { $0.id == sourceID }) {
+                    list.append(InputSourceDescriptor(id: sourceID, name: name))
+                }
+                result[layout] = list
+            }
+        }
+
+        // Sort each layout's sources by localized name
+        for (layout, list) in result {
+            result[layout] = list.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        }
+
         return result
+    }
+
+    private func stringProperty(_ source: TISInputSource, _ key: CFString) -> String? {
+        guard let ptr = TISGetInputSourceProperty(source, key) else { return nil }
+        return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
     }
 }

@@ -4,7 +4,25 @@
       "Bash(git init:*)",
       "Bash(swift build:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(swift test:*)",
+      "Bash(xcode-select:*)",
+      "Bash(xcrun swift test:*)",
+      "Bash(swift:*)",
+      "Bash(ls:*)",
+      "Bash(chmod:*)",
+      "Bash(/Users/roman/dev/bots/switchfix/scripts/build-app.sh:*)",
+      "Bash(wc:*)",
+      "Bash(python3:*)",
+      "Bash(for word in привіт дякую так ні добре світ україна комп''ютер програма)",
+      "Bash(do)",
+      "Bash(if grep -q \"^$word$\" /Users/roman/dev/bots/switchfix/Sources/Dictionary/Resources/uk_UA.txt)",
+      "Bash(then)",
+      "Bash(echo:*)",
+      "Bash(else)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(bash:*)"
     ]
   }
 }

@@ -1,14 +1,20 @@
 import AppKit
 import ServiceManagement
+import Core
+import Utils
 
-public class StatusBarController {
+public class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu: NSMenu
     private var enableMenuItem: NSMenuItem!
+    private var appFilterMenuItem: NSMenuItem!
+    private var installedLayoutsMenuItem: NSMenuItem!
 
-    public init() {
+    public override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         menu = NSMenu()
+
+        super.init()
 
         setupIcon()
         setupMenu()
@@ -42,6 +48,8 @@ public class StatusBarController {
     private func setupMenu() {
         let prefs = PreferencesManager.shared
 
+        menu.delegate = self
+
         // Enable/Disable toggle
         enableMenuItem = NSMenuItem(
             title: prefs.isEnabled ? "Disable" : "Enable",
@@ -68,6 +76,20 @@ public class StatusBarController {
         let modeMenuItem = NSMenuItem(title: "Correction Mode", action: nil, keyEquivalent: "")
         modeMenuItem.submenu = modeMenu
         menu.addItem(modeMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // App filter toggle for current app
+        appFilterMenuItem = NSMenuItem(title: "Enable in Current App", action: #selector(toggleCurrentAppFilter), keyEquivalent: "")
+        appFilterMenuItem.target = self
+        menu.addItem(appFilterMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Installed layouts submenu
+        installedLayoutsMenuItem = NSMenuItem(title: "Installed Layouts", action: nil, keyEquivalent: "")
+        installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
+        menu.addItem(installedLayoutsMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -145,5 +167,78 @@ public class StatusBarController {
         guard let button = statusItem.button else { return }
         let isEnabled = PreferencesManager.shared.isEnabled
         button.appearsDisabled = !isEnabled
+    }
+
+    @objc private func toggleCurrentAppFilter(_ sender: NSMenuItem) {
+        guard let bundleID = sender.representedObject as? String else { return }
+        if AppFilter.shared.isBlacklisted(bundleID) {
+            AppFilter.shared.removeFromBlacklist(bundleID)
+        } else {
+            AppFilter.shared.addToBlacklist(bundleID)
+        }
+        refreshAppFilterMenuItem()
+    }
+
+    private func refreshAppFilterMenuItem() {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              let bundleID = app.bundleIdentifier else {
+            appFilterMenuItem.title = "App Filtering Unavailable"
+            appFilterMenuItem.isEnabled = false
+            appFilterMenuItem.representedObject = nil
+            return
+        }
+
+        let name = app.localizedName ?? "Current App"
+        appFilterMenuItem.isEnabled = true
+        appFilterMenuItem.representedObject = bundleID
+
+        if AppFilter.shared.isBlacklisted(bundleID) {
+            appFilterMenuItem.title = "Enable in \(name)"
+        } else {
+            appFilterMenuItem.title = "Disable in \(name)"
+        }
+    }
+
+    private func buildInstalledLayoutsMenu() -> NSMenu {
+        let sub = NSMenu()
+        let sourcesByLayout = InputSourceManager.shared.availableInputSourcesByLayout()
+        let currentID = InputSourceManager.shared.currentInputSourceID()
+
+        var added = false
+        for layout in Layout.allCases {
+            guard let sources = sourcesByLayout[layout], !sources.isEmpty else { continue }
+            let layoutItem = NSMenuItem(title: layout.displayName, action: nil, keyEquivalent: "")
+            let layoutMenu = NSMenu()
+            for source in sources {
+                let item = NSMenuItem(title: source.name, action: nil, keyEquivalent: "")
+                item.toolTip = source.id
+                if source.id == currentID {
+                    item.state = .on
+                }
+                layoutMenu.addItem(item)
+            }
+            layoutItem.submenu = layoutMenu
+            sub.addItem(layoutItem)
+            added = true
+        }
+
+        if !added {
+            let item = NSMenuItem(title: "No supported layouts found", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            sub.addItem(item)
+        }
+
+        return sub
+    }
+
+    private func refreshInstalledLayoutsMenu() {
+        installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
+    }
+
+    public func menuWillOpen(_ menu: NSMenu) {
+        if menu === self.menu {
+            refreshAppFilterMenuItem()
+            refreshInstalledLayoutsMenu()
+        }
     }
 }

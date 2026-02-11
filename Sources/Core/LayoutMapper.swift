@@ -5,13 +5,45 @@ public enum Layout: String, CaseIterable, Equatable {
     case ukrainian
     case russian
 
-    /// The macOS input source identifier for this layout.
-    public var inputSourceID: String {
+    public var displayName: String {
         switch self {
-        case .english: return "com.apple.keylayout.US"
-        case .ukrainian: return "com.apple.keylayout.Ukrainian"
-        case .russian: return "com.apple.keylayout.Russian"
+        case .english: return "English"
+        case .ukrainian: return "Ukrainian"
+        case .russian: return "Russian"
         }
+    }
+
+    /// The primary macOS input source identifier for this layout.
+    public var inputSourceID: String {
+        return inputSourceIDs[0]
+    }
+
+    /// All known macOS input source identifiers that map to this layout.
+    public var inputSourceIDs: [String] {
+        switch self {
+        case .english: return [
+            "com.apple.keylayout.US",
+            "com.apple.keylayout.ABC",
+            "com.apple.keylayout.British",
+            "com.apple.keylayout.USInternational-PC",
+            "com.apple.keylayout.Colemak",
+            "com.apple.keylayout.Dvorak",
+        ]
+        case .ukrainian: return [
+            "com.apple.keylayout.Ukrainian",
+            "com.apple.keylayout.Ukrainian-PC",
+        ]
+        case .russian: return [
+            "com.apple.keylayout.Russian",
+            "com.apple.keylayout.RussianWin",
+            "com.apple.keylayout.Russian-Phonetic",
+        ]
+        }
+    }
+
+    /// Check if a given input source ID matches this layout.
+    public func matches(sourceID: String) -> Bool {
+        return inputSourceIDs.contains(sourceID)
     }
 }
 

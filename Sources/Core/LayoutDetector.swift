@@ -49,6 +49,7 @@ public class LayoutDetector {
     private var pendingSwitchLayout: Layout?
     private var pendingSwitchCount: Int = 0
     private var recentOutcomes: [RecentOutcome] = []
+    private var pendingSuppressedShort: SuppressedShort?
 
     private let validator = WordValidator.shared
 
@@ -59,6 +60,13 @@ public class LayoutDetector {
         case validCurrent
         case corrected
         case unknown
+    }
+
+    private struct SuppressedShort {
+        let originalWord: String
+        let convertedWord: String
+        let targetLayout: Layout
+        let boundaryAfterWord: String
     }
 
     private static let boundaryCharacterSet: CharacterSet = {
@@ -142,6 +150,7 @@ public class LayoutDetector {
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
         recentOutcomes = []
+        pendingSuppressedShort = nil
     }
 
     /// Enter correction state (prevents buffering during correction).
@@ -164,6 +173,7 @@ public class LayoutDetector {
 
     private func checkBuffer() {
         state = .detecting
+        let suppressedShort = consumePendingSuppressedShort()
 
         let word = wordBuffer
         NSLog("[SwitchFix] Detection: checking buffer '%@' (layout: %@)", word, currentLayout.rawValue)
@@ -208,7 +218,8 @@ public class LayoutDetector {
                 allowSuggestion: allowSuggestion
             )
             if validation.isValid {
-                let finalWord = applyCase(from: word, to: validation.correctedWord ?? converted)
+                var finalWord = applyCase(from: word, to: validation.correctedWord ?? converted)
+                var originalForCorrection = word
                 let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
 
@@ -223,9 +234,30 @@ public class LayoutDetector {
                           word, finalWord, targetLayout.rawValue, currentLayout.rawValue)
                     consecutiveWrongCount = 0
                     lastDetectionResult = nil
+                    if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
+                        pendingSuppressedShort = SuppressedShort(
+                            originalWord: word,
+                            convertedWord: finalWord,
+                            targetLayout: targetLayout,
+                            boundaryAfterWord: boundary
+                        )
+                    }
                     recordOutcome(.unknown)
                     state = .buffering
                     return
+                }
+
+                if let merged = mergeSuppressedShort(
+                    suppressedShort,
+                    currentOriginal: word,
+                    currentConverted: finalWord,
+                    targetLayout: targetLayout,
+                    isLowConfidence: isLowConfidence,
+                    shouldSwitch: shouldSwitch
+                ) {
+                    originalForCorrection = merged.original
+                    finalWord = merged.converted
+                    NSLog("[SwitchFix] Detection: replayed suppressed short word for contextual correction")
                 }
 
                 consecutiveWrongCount += 1
@@ -233,7 +265,7 @@ public class LayoutDetector {
                     sourceLayout: currentLayout,
                     targetLayout: targetLayout,
                     convertedWord: finalWord,
-                    originalWord: word,
+                    originalWord: originalForCorrection,
                     shouldSwitchLayout: shouldSwitch
                 )
 
@@ -322,6 +354,36 @@ public class LayoutDetector {
         guard targetLayout != currentLayout else { return false }
         guard !converted.isEmpty else { return false }
         return hasStrongCurrentContext()
+    }
+
+    private func consumePendingSuppressedShort() -> SuppressedShort? {
+        let value = pendingSuppressedShort
+        pendingSuppressedShort = nil
+        return value
+    }
+
+    private func mergeSuppressedShort(
+        _ suppressed: SuppressedShort?,
+        currentOriginal: String,
+        currentConverted: String,
+        targetLayout: Layout,
+        isLowConfidence: Bool,
+        shouldSwitch: Bool
+    ) -> (original: String, converted: String)? {
+        guard let suppressed else { return nil }
+        guard suppressed.targetLayout == targetLayout else { return nil }
+
+        // Merge only when the current word provides stronger evidence than the suppressed short word.
+        let hasStrongCurrentSignal = currentOriginal.count > shortWordSuppressionLength || shouldSwitch || !isLowConfidence
+        guard hasStrongCurrentSignal else { return nil }
+
+        let bridge = suppressed.boundaryAfterWord
+        guard !bridge.isEmpty else { return nil }
+
+        return (
+            original: suppressed.originalWord + bridge + currentOriginal,
+            converted: suppressed.convertedWord + bridge + currentConverted
+        )
     }
 
     private func hasStrongCurrentContext() -> Bool {

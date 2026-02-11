@@ -405,6 +405,42 @@ runSuite("LayoutDetector: Isolated ambiguous short word can still correct") {
     }
 }
 
+runSuite("LayoutDetector: Merge suppressed short word when next word confirms layout") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    // Build a strong Ukrainian context first, so "ше" is suppressed as ambiguous.
+    typeWord("зараз")
+    typeWord("на")
+
+    for char in "ше" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+    assertEqual(mockDelegate.results.count, 0, "first ambiguous short word should stay pending")
+
+    for char in "цщкли" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "detector should emit a single merged correction")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "ше цщкли", "should delete both words in one correction")
+        assertEqual(result.convertedWord, "it works", "should restore intended English phrase")
+    }
+}
+
 // =============================================================================
 // Synthetic Coverage Tests (EN ↔︎ UK)
 // =============================================================================

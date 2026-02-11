@@ -366,6 +366,45 @@ runSuite("LayoutDetector: Reset clears state") {
     assertEqual(detector.currentBuffer, "", "buffer should be empty after reset")
 }
 
+runSuite("LayoutDetector: Suppress ambiguous short correction in Ukrainian context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("зараз")
+    typeWord("ссилка")
+    typeWord("на")
+    typeWord("мейл")
+    typeWord("ше")
+
+    assertEqual(mockDelegate.results.count, 0, "short ambiguous word should not be auto-corrected inside a strong Ukrainian context")
+}
+
+runSuite("LayoutDetector: Isolated ambiguous short word can still correct") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "ше" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "isolated short wrong-layout word should still be corrected")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.convertedWord, "it", "expected keyboard-layout conversion to English")
+    }
+}
+
 // =============================================================================
 // Synthetic Coverage Tests (EN ↔︎ UK)
 // =============================================================================

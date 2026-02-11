@@ -37,6 +37,9 @@ public class LayoutDetector {
     public var suggestionMaxLength: Int = 2
     public var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
     public var ukrainianToVariant: UkrainianKeyboardVariant = .standard
+    public var shortWordSuppressionLength: Int = 2
+    public var shortWordSuppressionMinValidContext: Int = 2
+    public var shortWordSuppressionContextWindow: Int = 6
 
     private var wordBuffer: String = ""
     private var state: DetectorState = .idle
@@ -45,11 +48,18 @@ public class LayoutDetector {
     private var pendingBoundaryCharacter: String?
     private var pendingSwitchLayout: Layout?
     private var pendingSwitchCount: Int = 0
+    private var recentOutcomes: [RecentOutcome] = []
 
     private let validator = WordValidator.shared
 
     /// Layouts that are allowed as correction targets (defaults to all).
     public var allowedLayouts: Set<Layout> = Set(Layout.allCases)
+
+    private enum RecentOutcome {
+        case validCurrent
+        case corrected
+        case unknown
+    }
 
     private static let boundaryCharacterSet: CharacterSet = {
         var set = CharacterSet.punctuationCharacters.union(.symbols)
@@ -131,6 +141,7 @@ public class LayoutDetector {
         lastDetectionResult = nil
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
+        recentOutcomes = []
     }
 
     /// Enter correction state (prevents buffering during correction).
@@ -173,6 +184,7 @@ public class LayoutDetector {
             lastDetectionResult = nil
             pendingSwitchLayout = nil
             pendingSwitchCount = 0
+            recordOutcome(.validCurrent)
             state = .buffering
             return
         }
@@ -199,6 +211,23 @@ public class LayoutDetector {
                 let finalWord = applyCase(from: word, to: validation.correctedWord ?? converted)
                 let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
+
+                if shouldSuppressLowConfidenceCorrection(
+                    original: word,
+                    converted: finalWord,
+                    targetLayout: targetLayout,
+                    isLowConfidence: isLowConfidence,
+                    shouldSwitch: shouldSwitch
+                ) {
+                    NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context",
+                          word, finalWord, targetLayout.rawValue, currentLayout.rawValue)
+                    consecutiveWrongCount = 0
+                    lastDetectionResult = nil
+                    recordOutcome(.unknown)
+                    state = .buffering
+                    return
+                }
+
                 consecutiveWrongCount += 1
                 lastDetectionResult = DetectionResult(
                     sourceLayout: currentLayout,
@@ -217,6 +246,7 @@ public class LayoutDetector {
                     consecutiveWrongCount = 0
                 }
 
+                recordOutcome(.corrected)
                 state = .buffering
                 return
             }
@@ -242,6 +272,7 @@ public class LayoutDetector {
                     consecutiveWrongCount = 0
                 }
 
+                recordOutcome(.corrected)
                 state = .buffering
                 return
             }
@@ -251,6 +282,7 @@ public class LayoutDetector {
         NSLog("[SwitchFix] Detection: '%@' — no valid alternative found", word)
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
+        recordOutcome(.unknown)
         state = .buffering
     }
 
@@ -275,6 +307,45 @@ public class LayoutDetector {
         }
 
         return false
+    }
+
+    private func shouldSuppressLowConfidenceCorrection(
+        original: String,
+        converted: String,
+        targetLayout: Layout,
+        isLowConfidence: Bool,
+        shouldSwitch: Bool
+    ) -> Bool {
+        guard isLowConfidence else { return false }
+        guard original.count <= shortWordSuppressionLength else { return false }
+        guard !shouldSwitch else { return false }
+        guard targetLayout != currentLayout else { return false }
+        guard !converted.isEmpty else { return false }
+        return hasStrongCurrentContext()
+    }
+
+    private func hasStrongCurrentContext() -> Bool {
+        let window = max(1, shortWordSuppressionContextWindow)
+        let recent = recentOutcomes.suffix(window)
+        let validCount = recent.reduce(0) { partial, outcome in
+            if case .validCurrent = outcome {
+                return partial + 1
+            }
+            return partial
+        }
+        let hasRecentCorrection = recent.contains { outcome in
+            if case .corrected = outcome { return true }
+            return false
+        }
+        return validCount >= shortWordSuppressionMinValidContext && !hasRecentCorrection
+    }
+
+    private func recordOutcome(_ outcome: RecentOutcome) {
+        recentOutcomes.append(outcome)
+        let window = max(1, shortWordSuppressionContextWindow)
+        if recentOutcomes.count > window {
+            recentOutcomes.removeFirst(recentOutcomes.count - window)
+        }
     }
 
     private func applyCase(from original: String, to word: String) -> String {

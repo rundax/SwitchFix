@@ -1,5 +1,10 @@
 import Foundation
 
+public enum UkrainianKeyboardVariant: String {
+    case standard
+    case legacy
+}
+
 public enum Layout: String, CaseIterable, Equatable {
     case english
     case ukrainian
@@ -65,8 +70,8 @@ public class LayoutMapper {
         "`": "ё", "~": "Ё",
     ]
 
-    // EN (QWERTY) → UK (Ukrainian) — standard macOS Ukrainian layout
-    private static let enToUk: [Character: Character] = [
+    // EN (QWERTY) → UK (Ukrainian) — modern macOS Ukrainian layout
+    private static let enToUkStandard: [Character: Character] = [
         "q": "й", "w": "ц", "e": "у", "r": "к", "t": "е", "y": "н", "u": "г", "i": "ш", "o": "щ", "p": "з",
         "[": "х", "]": "ї", "a": "ф", "s": "і", "d": "в", "f": "а", "g": "п", "h": "р", "j": "о", "k": "л",
         "l": "д", ";": "ж", "'": "є", "z": "я", "x": "ч", "c": "с", "v": "м", "b": "и", "n": "т", "m": "ь",
@@ -79,16 +84,33 @@ public class LayoutMapper {
         "`": "ґ", "~": "Ґ",
     ]
 
-    // RU → UK mapping for characters that differ between Russian and Ukrainian layouts
-    private static let ruToUk: [Character: Character] = [
+    // EN (QWERTY) → UK (Ukrainian Legacy) — swaps positions of и/і.
+    private static let enToUkLegacy: [Character: Character] = {
+        var map = enToUkStandard
+        map["s"] = "и"
+        map["b"] = "і"
+        map["S"] = "И"
+        map["B"] = "І"
+        return map
+    }()
+
+    // RU → UK mapping for characters that differ between Russian and Ukrainian layouts.
+    private static let ruToUkStandard: [Character: Character] = [
         "ы": "і", "э": "є", "ъ": "ї", "ё": "ґ",
         "Ы": "І", "Э": "Є", "Ъ": "Ї", "Ё": "Ґ",
     ]
 
+    private static let ruToUkLegacy: [Character: Character] = [
+        "ы": "и", "и": "і", "э": "є", "ъ": "ї", "ё": "ґ",
+        "Ы": "И", "И": "І", "Э": "Є", "Ъ": "Ї", "Ё": "Ґ",
+    ]
+
     // Pre-built reverse mappings
     private static let ruToEn: [Character: Character] = buildReverse(enToRu)
-    private static let ukToEn: [Character: Character] = buildReverse(enToUk)
-    private static let ukToRu: [Character: Character] = buildReverse(ruToUk)
+    private static let ukStandardToEn: [Character: Character] = buildReverse(enToUkStandard)
+    private static let ukLegacyToEn: [Character: Character] = buildReverse(enToUkLegacy)
+    private static let ukStandardToRu: [Character: Character] = buildReverse(ruToUkStandard)
+    private static let ukLegacyToRu: [Character: Character] = buildReverse(ruToUkLegacy)
 
     private static func buildReverse(_ map: [Character: Character]) -> [Character: Character] {
         var result = [Character: Character]()
@@ -99,14 +121,23 @@ public class LayoutMapper {
     }
 
     /// Get the mapping table for converting from one layout to another.
-    private static func mappingTable(from: Layout, to: Layout) -> [Character: Character]? {
+    private static func mappingTable(
+        from: Layout,
+        to: Layout,
+        ukrainianFromVariant: UkrainianKeyboardVariant,
+        ukrainianToVariant: UkrainianKeyboardVariant
+    ) -> [Character: Character]? {
         switch (from, to) {
         case (.english, .russian):   return enToRu
-        case (.english, .ukrainian): return enToUk
+        case (.english, .ukrainian):
+            return ukrainianToVariant == .legacy ? enToUkLegacy : enToUkStandard
         case (.russian, .english):   return ruToEn
-        case (.ukrainian, .english): return ukToEn
-        case (.russian, .ukrainian): return ruToUk
-        case (.ukrainian, .russian): return ukToRu
+        case (.ukrainian, .english):
+            return ukrainianFromVariant == .legacy ? ukLegacyToEn : ukStandardToEn
+        case (.russian, .ukrainian):
+            return ukrainianToVariant == .legacy ? ruToUkLegacy : ruToUkStandard
+        case (.ukrainian, .russian):
+            return ukrainianFromVariant == .legacy ? ukLegacyToRu : ukStandardToRu
         default: return nil
         }
     }
@@ -114,7 +145,30 @@ public class LayoutMapper {
     /// Convert text from one layout to another.
     /// Characters without a mapping are left as-is.
     public static func convert(_ text: String, from: Layout, to: Layout) -> String {
-        guard from != to, let table = mappingTable(from: from, to: to) else {
+        return convert(
+            text,
+            from: from,
+            to: to,
+            ukrainianFromVariant: .standard,
+            ukrainianToVariant: .standard
+        )
+    }
+
+    /// Convert text from one layout to another with explicit Ukrainian variant selection.
+    public static func convert(
+        _ text: String,
+        from: Layout,
+        to: Layout,
+        ukrainianFromVariant: UkrainianKeyboardVariant,
+        ukrainianToVariant: UkrainianKeyboardVariant
+    ) -> String {
+        guard from != to,
+              let table = mappingTable(
+                from: from,
+                to: to,
+                ukrainianFromVariant: ukrainianFromVariant,
+                ukrainianToVariant: ukrainianToVariant
+              ) else {
             return text
         }
         return String(text.map { table[$0] ?? $0 })
@@ -123,9 +177,30 @@ public class LayoutMapper {
     /// Try converting text from the given layout to all other layouts,
     /// returning each (Layout, convertedText) pair.
     public static func convertToAlternatives(_ text: String, from: Layout) -> [(Layout, String)] {
+        return convertToAlternatives(
+            text,
+            from: from,
+            ukrainianFromVariant: .standard,
+            ukrainianToVariant: .standard
+        )
+    }
+
+    /// Try converting text to all alternative layouts with explicit Ukrainian variant selection.
+    public static func convertToAlternatives(
+        _ text: String,
+        from: Layout,
+        ukrainianFromVariant: UkrainianKeyboardVariant,
+        ukrainianToVariant: UkrainianKeyboardVariant
+    ) -> [(Layout, String)] {
         var results = [(Layout, String)]()
         for target in Layout.allCases where target != from {
-            let converted = convert(text, from: from, to: target)
+            let converted = convert(
+                text,
+                from: from,
+                to: target,
+                ukrainianFromVariant: ukrainianFromVariant,
+                ukrainianToVariant: ukrainianToVariant
+            )
             if converted != text {
                 results.append((target, converted))
             }

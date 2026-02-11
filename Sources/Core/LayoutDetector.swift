@@ -3,6 +3,7 @@ import Dictionary
 
 /// Represents a detection result — the target layout and converted word.
 public struct DetectionResult {
+    public let sourceLayout: Layout
     public let targetLayout: Layout
     public let convertedWord: String
     public let originalWord: String
@@ -33,6 +34,9 @@ public class LayoutDetector {
     public var consecutiveThreshold: Int = 1
     public var lowConfidenceMaxLength: Int = 3
     public var lowConfidenceConfirmations: Int = 2
+    public var suggestionMaxLength: Int = 2
+    public var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
+    public var ukrainianToVariant: UkrainianKeyboardVariant = .standard
 
     private var wordBuffer: String = ""
     private var state: DetectorState = .idle
@@ -172,15 +176,21 @@ public class LayoutDetector {
         }
 
         // Try converting to alternative layouts
-        let alternatives = LayoutMapper.convertToAlternatives(word, from: currentLayout)
+        let alternatives = LayoutMapper.convertToAlternatives(
+            word,
+            from: currentLayout,
+            ukrainianFromVariant: ukrainianFromVariant,
+            ukrainianToVariant: ukrainianToVariant
+        )
             .filter { allowedLayouts.contains($0.0) }
         let isAcronymCandidate = isAllUppercase(word) && word.count <= 3
         for (targetLayout, converted) in alternatives {
             let targetLanguage = languageForLayout(targetLayout)
+            let allowSuggestion = !isAcronymCandidate && converted.count <= suggestionMaxLength
             let validation = validator.validate(
                 converted,
                 language: targetLanguage,
-                allowSuggestion: !isAcronymCandidate
+                allowSuggestion: allowSuggestion
             )
             if validation.isValid {
                 let finalWord = applyCase(from: word, to: validation.correctedWord ?? converted)
@@ -188,6 +198,7 @@ public class LayoutDetector {
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
                 consecutiveWrongCount += 1
                 lastDetectionResult = DetectionResult(
+                    sourceLayout: currentLayout,
                     targetLayout: targetLayout,
                     convertedWord: finalWord,
                     originalWord: word,
@@ -212,6 +223,7 @@ public class LayoutDetector {
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: true, targetLayout: targetLayout)
                 consecutiveWrongCount += 1
                 lastDetectionResult = DetectionResult(
+                    sourceLayout: currentLayout,
                     targetLayout: targetLayout,
                     convertedWord: finalWord,
                     originalWord: word,

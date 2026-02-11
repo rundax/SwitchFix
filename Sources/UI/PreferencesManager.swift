@@ -17,6 +17,8 @@ public class PreferencesManager {
         static let correctionMode = "SwitchFix_correctionMode"
         static let hotkeyKeyCode = "SwitchFix_hotkeyKeyCode"
         static let hotkeyModifiers = "SwitchFix_hotkeyModifiers"
+        static let revertHotkeyKeyCode = "SwitchFix_revertHotkeyKeyCode"
+        static let revertHotkeyModifiers = "SwitchFix_revertHotkeyModifiers"
     }
 
     public var isEnabled: Bool {
@@ -57,6 +59,24 @@ public class PreferencesManager {
             return val ?? (CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue)
         }
         set { defaults.set(newValue, forKey: Keys.hotkeyModifiers) }
+    }
+
+    /// Revert-hotkey virtual key code (default: CapsLock = 57)
+    public var revertHotkeyKeyCode: UInt16 {
+        get {
+            let val = defaults.integer(forKey: Keys.revertHotkeyKeyCode)
+            return val == 0 ? 57 : UInt16(val)
+        }
+        set { defaults.set(Int(newValue), forKey: Keys.revertHotkeyKeyCode) }
+    }
+
+    /// Revert-hotkey modifier flags as raw UInt64 (default: none)
+    public var revertHotkeyModifiers: UInt64 {
+        get {
+            let val = defaults.object(forKey: Keys.revertHotkeyModifiers) as? UInt64
+            return val ?? 0
+        }
+        set { defaults.set(newValue, forKey: Keys.revertHotkeyModifiers) }
     }
 
     private init() {}

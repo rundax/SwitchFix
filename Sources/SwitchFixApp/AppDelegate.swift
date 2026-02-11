@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Core
 import UI
 import Utils
@@ -12,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Cached result for whether the current frontmost app is allowed (updated on app switch).
     private var isCurrentAppAllowed: Bool = true
+    private var capsLockConflictProbeToken: UUID?
+    private static let capsLockKeyCode: UInt16 = 57
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("[SwitchFix] App launching, mode: %@", PreferencesManager.shared.correctionMode == .automatic ? "automatic" : "hotkey")
@@ -53,6 +56,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Apply hotkey settings from preferences
         keyboardMonitor?.hotkeyKeyCode = PreferencesManager.shared.hotkeyKeyCode
         keyboardMonitor?.hotkeyModifiers = PreferencesManager.shared.hotkeyModifiers
+        keyboardMonitor?.revertHotkeyKeyCode = PreferencesManager.shared.revertHotkeyKeyCode
+        keyboardMonitor?.revertHotkeyModifiers = PreferencesManager.shared.revertHotkeyModifiers
+
+        if PreferencesManager.shared.revertHotkeyKeyCode != AppDelegate.capsLockKeyCode {
+            SystemHotkeyConflicts.clearObservedCapsLockConflict()
+        }
+
         keyboardMonitor?.onKeyDownWhilePaused = { [weak self] in
             self?.textCorrector?.noteUserInputDuringCorrection()
             self?.textCorrector?.recordUserInput(kind: .character)
@@ -67,6 +77,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(selectedInputSourceChanged),
+            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
     }
 
     @objc private func activeAppChanged() {
@@ -75,6 +92,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Permissions.invalidateSecureFieldCache()
         if let app = NSWorkspace.shared.frontmostApplication {
             NSLog("[SwitchFix] App switched to: %@ (allowed: %@)", app.localizedName ?? "unknown", isCurrentAppAllowed ? "yes" : "no")
+        }
+    }
+
+    @objc private func selectedInputSourceChanged() {
+        guard capsLockConflictProbeToken != nil else { return }
+        capsLockConflictProbeToken = nil
+        SystemHotkeyConflicts.markObservedCapsLockConflict()
+        NSLog("[SwitchFix] Warning: observed CapsLock conflict (input source changed immediately after revert hotkey)")
+    }
+
+    private func startCapsLockConflictProbe() {
+        guard PreferencesManager.shared.revertHotkeyKeyCode == AppDelegate.capsLockKeyCode else {
+            capsLockConflictProbeToken = nil
+            SystemHotkeyConflicts.clearObservedCapsLockConflict()
+            return
+        }
+
+        let token = UUID()
+        capsLockConflictProbeToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            guard self.capsLockConflictProbeToken == token else { return }
+            self.capsLockConflictProbeToken = nil
+            SystemHotkeyConflicts.clearObservedCapsLockConflict()
+        }
+    }
+
+    private func refreshLayoutVariants(for currentLayout: Layout) {
+        let targetVariant = inputSourceManager.preferredUkrainianVariant()
+        layoutDetector?.ukrainianToVariant = targetVariant
+
+        if currentLayout == .ukrainian {
+            layoutDetector?.ukrainianFromVariant = inputSourceManager.currentUkrainianVariant() ?? targetVariant
+        } else {
+            layoutDetector?.ukrainianFromVariant = targetVariant
         }
     }
 }
@@ -88,6 +140,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
         let layout = inputSourceManager.currentLayout()
         layoutDetector?.currentLayout = layout
+        refreshLayoutVariants(for: layout)
         layoutDetector?.addCharacter(character)
         textCorrector?.recordUserInput(kind: .character)
     }
@@ -99,6 +152,9 @@ extension AppDelegate: KeyboardMonitorDelegate {
         if PreferencesManager.shared.correctionMode == .automatic {
             // Automatic mode: flush triggers detection + correction
             // Pass boundary character (space, punctuation, newline, etc.) so correction can retype it
+            let layout = inputSourceManager.currentLayout()
+            layoutDetector?.currentLayout = layout
+            refreshLayoutVariants(for: layout)
             let boundary = character.isEmpty ? nil : character
             layoutDetector?.flushBuffer(boundaryCharacter: boundary)
         } else {
@@ -120,7 +176,14 @@ extension AppDelegate: KeyboardMonitorDelegate {
         // First, try selection-based correction (works in any mode)
         if let selectedText = Permissions.getSelectedText() {
             let currentLayout = inputSourceManager.currentLayout()
-            let alternatives = LayoutMapper.convertToAlternatives(selectedText, from: currentLayout)
+            let fromVariant = inputSourceManager.currentUkrainianVariant() ?? inputSourceManager.preferredUkrainianVariant()
+            let toVariant = inputSourceManager.preferredUkrainianVariant()
+            let alternatives = LayoutMapper.convertToAlternatives(
+                selectedText,
+                from: currentLayout,
+                ukrainianFromVariant: fromVariant,
+                ukrainianToVariant: toVariant
+            )
 
             // Use the first conversion (user explicitly requested conversion)
             if let (targetLayout, converted) = alternatives.first {
@@ -134,7 +197,9 @@ extension AppDelegate: KeyboardMonitorDelegate {
         }
 
         // Fallback: buffer-based correction — flush triggers detection
-        layoutDetector?.currentLayout = inputSourceManager.currentLayout()
+        let layout = inputSourceManager.currentLayout()
+        layoutDetector?.currentLayout = layout
+        refreshLayoutVariants(for: layout)
         layoutDetector?.flushBuffer()
         textCorrector?.recordUserInput(kind: .other)
     }
@@ -144,6 +209,20 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
         // Only undo if there's a recent correction within the time window
         guard let corrector = textCorrector, corrector.canUndo else { return }
+
+        let currentLayout = inputSourceManager.currentLayout()
+        corrector.undoLastCorrection(currentLayout: currentLayout)
+        textCorrector?.recordUserInput(kind: .other)
+    }
+
+    func keyboardMonitorDidReceiveRevertHotkey(_ monitor: KeyboardMonitor) {
+        guard PreferencesManager.shared.isEnabled else { return }
+
+        guard let corrector = textCorrector else { return }
+        guard corrector.canUndo else {
+            startCapsLockConflictProbe()
+            return
+        }
 
         let currentLayout = inputSourceManager.currentLayout()
         corrector.undoLastCorrection(currentLayout: currentLayout)

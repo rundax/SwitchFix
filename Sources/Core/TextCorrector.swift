@@ -12,6 +12,7 @@ public class TextCorrector {
     /// The last original text before correction (for undo support).
     public private(set) var lastOriginalText: String?
     public private(set) var lastCorrectedText: String?
+    public private(set) var lastOriginalLayout: Layout?
 
     /// Timestamp of last correction (for time-limited undo — 5 second window).
     private var lastCorrectionTime: Date?
@@ -92,6 +93,7 @@ public class TextCorrector {
         lastOriginalText = nil // We don't have the original text as a string here
         lastCorrectedText = correctedText
         lastCorrectionTime = Date()
+        lastOriginalLayout = nil
 
         // Notify monitor to pause (avoid feedback loop)
         onCorrectionStarted?()
@@ -126,6 +128,7 @@ public class TextCorrector {
         lastOriginalText = result.originalWord
         lastCorrectedText = result.convertedWord
         lastCorrectionTime = Date()
+        lastOriginalLayout = result.sourceLayout
 
         onCorrectionStarted?()
 
@@ -162,13 +165,7 @@ public class TextCorrector {
 
         deleteCharacters(count: corrected.count)
 
-        // Determine the original layout (opposite of current since we switched)
-        let originalLayout: Layout
-        switch currentLayout {
-        case .english: originalLayout = .russian // best guess
-        case .russian: originalLayout = .english
-        case .ukrainian: originalLayout = .english
-        }
+        let originalLayout = lastOriginalLayout ?? inferredOriginalLayout(from: currentLayout)
 
         inputSourceManager.switchTo(originalLayout)
         usleep(10_000)
@@ -177,6 +174,7 @@ public class TextCorrector {
         lastOriginalText = nil
         lastCorrectedText = nil
         lastCorrectionTime = nil
+        lastOriginalLayout = nil
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             self?.onCorrectionFinished?()
@@ -188,6 +186,7 @@ public class TextCorrector {
         lastOriginalText = selectedText
         lastCorrectedText = convertedText
         lastCorrectionTime = Date()
+        lastOriginalLayout = inputSourceManager.currentLayout()
 
         onCorrectionStarted?()
 
@@ -211,6 +210,18 @@ public class TextCorrector {
                 pasteboard.setString(old, forType: .string)
             }
             self?.onCorrectionFinished?()
+        }
+    }
+
+    private func inferredOriginalLayout(from currentLayout: Layout) -> Layout {
+        switch currentLayout {
+        case .english:
+            let available = Set(inputSourceManager.availableLayouts())
+            if available.contains(.ukrainian) { return .ukrainian }
+            if available.contains(.russian) { return .russian }
+            return .english
+        case .ukrainian, .russian:
+            return .english
         }
     }
 

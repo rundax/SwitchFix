@@ -8,6 +8,7 @@ public protocol KeyboardMonitorDelegate: AnyObject {
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveBoundary character: String)
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor)
+    func keyboardMonitorDidReceiveRevertHotkey(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor)
 }
 
@@ -24,6 +25,7 @@ public class KeyboardMonitor {
     private static let tabKeyCode: UInt16 = 48
     private static let escapeKeyCode: UInt16 = 53
     private static let deleteKeyCode: UInt16 = 51
+    private static let capsLockKeyCode: UInt16 = 57
     private static let zKeyCode: UInt16 = 6
 
     // Function key range
@@ -52,7 +54,9 @@ public class KeyboardMonitor {
     public func start() {
         guard !isMonitoring else { return }
 
-        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+        let eventMask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue)
 
         // Create the event tap — using a C-convention callback via a wrapper
         let selfPtr = Unmanaged.passRetained(self).toOpaque()
@@ -101,12 +105,38 @@ public class KeyboardMonitor {
     /// Hotkey configuration
     public var hotkeyKeyCode: UInt16 = 49  // Space
     public var hotkeyModifiers: UInt64 = CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue
+    public var revertHotkeyKeyCode: UInt16 = KeyboardMonitor.capsLockKeyCode // CapsLock
+    public var revertHotkeyModifiers: UInt64 = 0
 
     /// Check if a key event matches the configured hotkey.
     func isHotkey(keyCode: UInt16, flags: CGEventFlags) -> Bool {
-        guard keyCode == hotkeyKeyCode else { return false }
+        isMatchingHotkey(
+            keyCode: keyCode,
+            flags: flags,
+            configuredKeyCode: hotkeyKeyCode,
+            configuredModifiers: hotkeyModifiers
+        )
+    }
 
-        let requiredFlags = CGEventFlags(rawValue: hotkeyModifiers)
+    /// Check if a key event matches the configured revert hotkey.
+    func isRevertHotkey(keyCode: UInt16, flags: CGEventFlags) -> Bool {
+        isMatchingHotkey(
+            keyCode: keyCode,
+            flags: flags,
+            configuredKeyCode: revertHotkeyKeyCode,
+            configuredModifiers: revertHotkeyModifiers
+        )
+    }
+
+    private func isMatchingHotkey(
+        keyCode: UInt16,
+        flags: CGEventFlags,
+        configuredKeyCode: UInt16,
+        configuredModifiers: UInt64
+    ) -> Bool {
+        guard keyCode == configuredKeyCode else { return false }
+
+        let requiredFlags = CGEventFlags(rawValue: configuredModifiers)
         let relevantMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
         let pressedRelevant = flags.intersection(relevantMask)
 
@@ -126,24 +156,40 @@ public class KeyboardMonitor {
             return Unmanaged.passUnretained(event)
         }
 
-        guard type == .keyDown else {
+        let monitor = Unmanaged<KeyboardMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let flags = event.flags
+
+        if type == .flagsChanged {
+            // CapsLock emits flagsChanged (not keyDown), so handle revert hotkey here.
+            if keyCode == KeyboardMonitor.capsLockKeyCode, monitor.isRevertHotkey(keyCode: keyCode, flags: flags) {
+                DispatchQueue.main.async {
+                    monitor.delegate?.keyboardMonitorDidReceiveRevertHotkey(monitor)
+                }
+            }
             return Unmanaged.passUnretained(event)
         }
 
-        let monitor = Unmanaged<KeyboardMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+        guard type == .keyDown else {
+            return Unmanaged.passUnretained(event)
+        }
 
         if monitor.isPaused {
             monitor.onKeyDownWhilePaused?()
             return Unmanaged.passUnretained(event)
         }
 
-        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-        let flags = event.flags
-
         // Check for hotkey (Ctrl+Shift+Space by default) — must check before filtering modifiers
         if monitor.isHotkey(keyCode: keyCode, flags: flags) {
             DispatchQueue.main.async {
                 monitor.delegate?.keyboardMonitorDidReceiveHotkey(monitor)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        if monitor.isRevertHotkey(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async {
+                monitor.delegate?.keyboardMonitorDidReceiveRevertHotkey(monitor)
             }
             return Unmanaged.passUnretained(event)
         }

@@ -73,6 +73,42 @@ runSuite("LayoutMapper: UK → EN") {
     assertEqual(LayoutMapper.convert("пшерги", from: .ukrainian, to: .english), "github")
 }
 
+runSuite("LayoutMapper: Ukrainian variants") {
+    assertEqual(
+        LayoutMapper.convert(
+            "seems",
+            from: .english,
+            to: .ukrainian,
+            ukrainianFromVariant: .standard,
+            ukrainianToVariant: .standard
+        ),
+        "іууьі",
+        "standard Ukrainian should map 'seems' to 'іууьі'"
+    )
+    assertEqual(
+        LayoutMapper.convert(
+            "seems",
+            from: .english,
+            to: .ukrainian,
+            ukrainianFromVariant: .standard,
+            ukrainianToVariant: .legacy
+        ),
+        "иууьи",
+        "legacy Ukrainian should map 'seems' to 'иууьи'"
+    )
+    assertEqual(
+        LayoutMapper.convert(
+            "иууьи",
+            from: .ukrainian,
+            to: .english,
+            ukrainianFromVariant: .legacy,
+            ukrainianToVariant: .standard
+        ),
+        "seems",
+        "legacy Ukrainian text should map back to English correctly"
+    )
+}
+
 runSuite("LayoutMapper: Same layout") {
     assertEqual(LayoutMapper.convert("hello", from: .english, to: .english), "hello")
 }

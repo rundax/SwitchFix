@@ -9,6 +9,8 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     private var enableMenuItem: NSMenuItem!
     private var appFilterMenuItem: NSMenuItem!
     private var installedLayoutsMenuItem: NSMenuItem!
+    private var conflictMenuItem: NSMenuItem?
+    private var conflictSeparatorItem: NSMenuItem?
 
     public override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -109,6 +111,8 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         let quitItem = NSMenuItem(title: "Quit SwitchFix", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+
+        refreshSystemHotkeyConflictIndicator()
     }
 
     @objc private func toggleEnabled() {
@@ -235,8 +239,44 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
     }
 
+    private func refreshSystemHotkeyConflictIndicator() {
+        let hasConflict = SystemHotkeyConflicts.hasCapsLockConflict(
+            revertHotkeyKeyCode: PreferencesManager.shared.revertHotkeyKeyCode
+        )
+
+        if hasConflict {
+            if conflictMenuItem == nil {
+                let item = NSMenuItem(
+                    title: "Warning: CapsLock conflicts with macOS input switching",
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                item.isEnabled = false
+                item.toolTip = "CapsLock is configured both in SwitchFix (revert) and in macOS (input source switch)."
+
+                let separator = NSMenuItem.separator()
+                menu.insertItem(item, at: 0)
+                menu.insertItem(separator, at: 1)
+                conflictMenuItem = item
+                conflictSeparatorItem = separator
+            }
+            statusItem.button?.toolTip = "SwitchFix (CapsLock conflict detected)"
+        } else {
+            if let item = conflictMenuItem {
+                menu.removeItem(item)
+                conflictMenuItem = nil
+            }
+            if let separator = conflictSeparatorItem {
+                menu.removeItem(separator)
+                conflictSeparatorItem = nil
+            }
+            statusItem.button?.toolTip = "SwitchFix"
+        }
+    }
+
     public func menuWillOpen(_ menu: NSMenu) {
         if menu === self.menu {
+            refreshSystemHotkeyConflictIndicator()
             refreshAppFilterMenuItem()
             refreshInstalledLayoutsMenu()
         }

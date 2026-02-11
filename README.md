@@ -8,7 +8,9 @@ macOS menu bar utility that auto-corrects keyboard layout mistakes. Type in the 
 - **Hotkey mode** — correct only when you press Ctrl+Shift+Space (configurable)
 - **Selection correction** — select text and press the hotkey to convert it
 - **Undo** — Cmd+Z within 5 seconds reverts the last correction
+- **Revert hotkey** — CapsLock reverts the last correction (configurable)
 - **Three layouts** — English (US/ABC/British/Dvorak/Colemak), Ukrainian, Russian
+- **Ukrainian variants** — auto-detects and supports both Ukrainian and Ukrainian Legacy keymaps
 - **Smart filtering** — skips password fields, URLs, emails, camelCase, mixed scripts
 - **App blacklist** — disabled in terminals, IDEs, and code editors by default (toggle per app)
 - **Launch at Login** — optional auto-start via SMAppService
@@ -62,7 +64,8 @@ Sources/
 ├── Dictionary/       # BloomFilter, DictionaryLoader, WordValidator
 │   └── Resources/    #   en_US.txt, uk_UA.txt, ru_RU.txt
 ├── UI/               # StatusBarController, PreferencesManager
-└── Utils/            # Permissions (AXUIElement), AppFilter, KeyCodeMapping
+└── Utils/            # Permissions (AXUIElement), AppFilter, KeyCodeMapping,
+                      #   SystemHotkeyConflicts
 ```
 
 ## Menu Bar
@@ -71,9 +74,31 @@ SwitchFix lives in the menu bar with an **Ab** icon. The menu provides:
 
 - **Enable/Disable** toggle
 - **Correction Mode** — Automatic or Hotkey Only
+- **Conflict warning** — shows when CapsLock is also used by macOS for input source switching
 - **Installed Layouts** — shows all detected system layouts
 - **Launch at Login**
 - **Quit**
+
+## Hotkey Configuration
+
+SwitchFix stores hotkeys in `UserDefaults`:
+
+- `SwitchFix_hotkeyKeyCode` + `SwitchFix_hotkeyModifiers` for correction hotkey (default: Ctrl+Shift+Space)
+- `SwitchFix_revertHotkeyKeyCode` + `SwitchFix_revertHotkeyModifiers` for revert hotkey (default: CapsLock)
+
+Examples:
+
+```bash
+# Set revert hotkey to CapsLock (no modifiers)
+defaults write com.switchfix.app SwitchFix_revertHotkeyKeyCode -int 57
+defaults write com.switchfix.app SwitchFix_revertHotkeyModifiers -int 0
+
+# Set correction hotkey to Ctrl+Shift+Space
+defaults write com.switchfix.app SwitchFix_hotkeyKeyCode -int 49
+defaults write com.switchfix.app SwitchFix_hotkeyModifiers -int $((262144+131072))
+```
+
+If SwitchFix observes that pressing CapsLock also triggers a macOS input-source switch, it shows a conflict warning in the menu.
 
 ## Diagnostics
 

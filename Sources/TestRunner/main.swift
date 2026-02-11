@@ -29,6 +29,26 @@ func runSuite(_ name: String, _ block: () -> Void) {
     block()
 }
 
+func dictionaryPath(for language: Language) -> String {
+    let root = FileManager.default.currentDirectoryPath
+    return "\(root)/Sources/Dictionary/Resources/\(language.rawValue).txt"
+}
+
+func forEachDictionaryWord(language: Language, _ block: (String) -> Void) {
+    let path = dictionaryPath(for: language)
+    guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+        print("  WARN: could not read dictionary at \(path)")
+        return
+    }
+
+    for line in content.split(whereSeparator: \.isNewline) {
+        let word = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !word.isEmpty {
+            block(word)
+        }
+    }
+}
+
 // =============================================================================
 // LayoutMapper Tests
 // =============================================================================
@@ -137,10 +157,11 @@ runSuite("BloomFilter: Memory usage") {
 // WordValidator Tests
 // =============================================================================
 
-runSuite("WordValidator: Short words rejected") {
+runSuite("WordValidator: Short words whitelist") {
     let wv = WordValidator.shared
-    assert(!wv.isValidWord("ab", language: .english), "2-char words should be rejected")
-    assert(!wv.isValidWord("я", language: .russian), "1-char words should be rejected")
+    assert(!wv.isValidWord("ab", language: .english), "unknown 2-char words should be rejected")
+    assert(wv.isValidWord("я", language: .russian), "common 1-char words should be allowed")
+    assert(wv.isValidWord("як", language: .ukrainian), "common 2-char words should be allowed")
 }
 
 runSuite("WordValidator: URL patterns skipped") {
@@ -171,6 +192,12 @@ runSuite("WordValidator: Valid English words") {
     assert(wv.isValidWord("the", language: .english), "'the' should be valid in English")
 }
 
+runSuite("WordValidator: English contractions") {
+    let wv = WordValidator.shared
+    assert(wv.isValidWord("doesn't", language: .english), "'doesn't' should be valid in English")
+    assert(wv.isValidWord("we're", language: .english), "'we're' should be valid in English")
+}
+
 runSuite("WordValidator: Valid Russian words") {
     let wv = WordValidator.shared
     assert(wv.isValidWord("привет", language: .russian), "'привет' should be valid in Russian")
@@ -189,6 +216,12 @@ runSuite("WordValidator: Invalid cross-language") {
     assert(!wv.isValidWord("руддщ", language: .russian), "'руддщ' should NOT be valid in Russian")
 }
 
+runSuite("WordValidator: Short word suggestions") {
+    let wv = WordValidator.shared
+    let result = wv.validate("чі", language: .ukrainian, allowSuggestion: true)
+    assert(result.isValid && result.correctedWord == "чи", "should suggest 'чи' for 'чі'")
+}
+
 // =============================================================================
 // LayoutDetector Tests
 // =============================================================================
@@ -196,8 +229,10 @@ runSuite("WordValidator: Invalid cross-language") {
 // Helper: Mock delegate that captures detection results
 class MockDetectorDelegate: LayoutDetectorDelegate {
     var results: [DetectionResult] = []
-    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult) {
+    var boundaryCharacters: [String?] = []
+    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult, boundaryCharacter: String?) {
         results.append(result)
+        boundaryCharacters.append(boundaryCharacter)
     }
 }
 
@@ -215,7 +250,7 @@ runSuite("LayoutDetector: Detect EN→RU wrong layout") {
 
     assert(mockDelegate.results.count == 1, "should detect one wrong layout")
     if let result = mockDelegate.results.first {
-        assertEqual(result.targetLayout, .russian, "target should be Russian")
+        assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
         assertEqual(result.convertedWord, "привет", "converted should be 'привет'")
     }
 }
@@ -270,6 +305,72 @@ runSuite("LayoutDetector: Reset clears state") {
     }
     detector.reset()
     assertEqual(detector.currentBuffer, "", "buffer should be empty after reset")
+}
+
+// =============================================================================
+// Synthetic Coverage Tests (EN ↔︎ UK)
+// =============================================================================
+
+runSuite("Synthetic: UK → EN coverage") {
+    let filterCurrent = DictionaryLoader.shared.bloomFilter(for: .english)
+    let filterTarget = DictionaryLoader.shared.bloomFilter(for: .ukrainian)
+    var total = 0
+    var convertible = 0
+    var ambiguous = 0
+    var invalidTarget = 0
+
+    forEachDictionaryWord(language: .ukrainian) { word in
+        total += 1
+        let gibberish = LayoutMapper.convert(word, from: .ukrainian, to: .english)
+        let currentValid = filterCurrent.mightContain(gibberish)
+        let targetValid = filterTarget.mightContain(word)
+        if !targetValid {
+            invalidTarget += 1
+            return
+        }
+        if currentValid {
+            ambiguous += 1
+        } else {
+            convertible += 1
+        }
+    }
+
+    let convertibleRate = total > 0 ? Double(convertible) / Double(total) : 0
+    let ambiguousRate = total > 0 ? Double(ambiguous) / Double(total) : 0
+    print("  total: \(total), convertible: \(convertible) (\(String(format: "%.2f", convertibleRate * 100))%)")
+    print("  ambiguous: \(ambiguous) (\(String(format: "%.2f", ambiguousRate * 100))%), invalid target: \(invalidTarget)")
+    assert(total > 0, "ukrainian dictionary should not be empty")
+}
+
+runSuite("Synthetic: EN → UK coverage") {
+    let filterCurrent = DictionaryLoader.shared.bloomFilter(for: .ukrainian)
+    let filterTarget = DictionaryLoader.shared.bloomFilter(for: .english)
+    var total = 0
+    var convertible = 0
+    var ambiguous = 0
+    var invalidTarget = 0
+
+    forEachDictionaryWord(language: .english) { word in
+        total += 1
+        let gibberish = LayoutMapper.convert(word, from: .english, to: .ukrainian)
+        let currentValid = filterCurrent.mightContain(gibberish)
+        let targetValid = filterTarget.mightContain(word)
+        if !targetValid {
+            invalidTarget += 1
+            return
+        }
+        if currentValid {
+            ambiguous += 1
+        } else {
+            convertible += 1
+        }
+    }
+
+    let convertibleRate = total > 0 ? Double(convertible) / Double(total) : 0
+    let ambiguousRate = total > 0 ? Double(ambiguous) / Double(total) : 0
+    print("  total: \(total), convertible: \(convertible) (\(String(format: "%.2f", convertibleRate * 100))%)")
+    print("  ambiguous: \(ambiguous) (\(String(format: "%.2f", ambiguousRate * 100))%), invalid target: \(invalidTarget)")
+    assert(total > 0, "english dictionary should not be empty")
 }
 
 // =============================================================================

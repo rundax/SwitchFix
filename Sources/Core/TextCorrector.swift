@@ -16,6 +16,7 @@ public class TextCorrector {
     /// Timestamp of last correction (for time-limited undo — 5 second window).
     private var lastCorrectionTime: Date?
     private static let undoTimeWindow: TimeInterval = 5.0
+    private var sawUserInputDuringCorrection: Bool = false
 
     /// Whether an undo is available (correction happened within the time window).
     public var canUndo: Bool {
@@ -26,12 +27,18 @@ public class TextCorrector {
 
     public init() {}
 
+    /// Mark that the user typed during a correction window.
+    public func noteUserInputDuringCorrection() {
+        sawUserInputDuringCorrection = true
+    }
+
     /// Perform text correction: delete the wrong text, switch layout, type the correct text.
     /// - Parameters:
     ///   - originalLength: Number of characters to delete (length of the mistyped word)
     ///   - correctedText: The correct text to type
     ///   - targetLayout: The layout to switch to
     public func performCorrection(originalLength: Int, correctedText: String, targetLayout: Layout) {
+        sawUserInputDuringCorrection = false
         // Save for undo
         lastOriginalText = nil // We don't have the original text as a string here
         lastCorrectedText = correctedText
@@ -43,14 +50,14 @@ public class TextCorrector {
         // Step 1: Delete the incorrect characters by emitting backspace events
         deleteCharacters(count: originalLength)
 
-        // Step 2: Switch keyboard layout
-        inputSourceManager.switchTo(targetLayout)
-
-        // Small delay to let the layout switch take effect
-        usleep(10_000) // 10ms
-
-        // Step 3: Type the correct text
+        // Step 2: Type the correct text (Unicode typing is layout-independent)
         typeText(correctedText)
+
+        // Step 3: Switch keyboard layout for subsequent typing
+        if !sawUserInputDuringCorrection {
+            inputSourceManager.switchTo(targetLayout)
+            usleep(10_000) // 10ms
+        }
 
         // Step 4: Resume monitoring
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
@@ -60,16 +67,38 @@ public class TextCorrector {
 
     /// Perform correction with the full detection result.
     public func performCorrection(result: DetectionResult) {
+        performCorrection(result: result, boundaryCharacter: nil)
+    }
+
+    /// Perform correction with boundary character handling.
+    /// When a boundary character (space, enter) triggered the correction, it's already
+    /// in the text field — so we need to delete it too and re-type it after the corrected word.
+    public func performCorrection(result: DetectionResult, boundaryCharacter: String?) {
+        sawUserInputDuringCorrection = false
         lastOriginalText = result.originalWord
         lastCorrectedText = result.convertedWord
         lastCorrectionTime = Date()
 
         onCorrectionStarted?()
 
-        deleteCharacters(count: result.originalWord.count)
-        inputSourceManager.switchTo(result.targetLayout)
-        usleep(10_000)
+        // Delete the wrong word + any boundary characters (space/punctuation) if present
+        let boundary = boundaryCharacter ?? ""
+        let deleteCount = result.originalWord.count + boundary.count
+        NSLog("[SwitchFix] Correction: deleting %d chars ('%@' + boundary '%@'), typing '%@'",
+              deleteCount, result.originalWord, boundary.isEmpty ? "none" : boundary, result.convertedWord)
+
+        deleteCharacters(count: deleteCount)
         typeText(result.convertedWord)
+
+        // Re-type the boundary characters after the corrected word
+        if !boundary.isEmpty {
+            typeText(boundary)
+        }
+
+        if result.shouldSwitchLayout && !sawUserInputDuringCorrection {
+            inputSourceManager.switchTo(result.targetLayout)
+            usleep(10_000)
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             self?.onCorrectionFinished?()

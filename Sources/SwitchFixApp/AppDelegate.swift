@@ -14,18 +14,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isCurrentAppAllowed: Bool = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSLog("[SwitchFix] App launching, mode: %@", PreferencesManager.shared.correctionMode == .automatic ? "automatic" : "hotkey")
+
         statusBarController = StatusBarController()
 
         setupCorrectionEngine()
 
         Permissions.ensureAccessibility { [weak self] in
             self?.startMonitoring()
+            NSLog("[SwitchFix] Monitoring started, available layouts: %@",
+                  InputSourceManager.shared.availableLayouts().map { $0.rawValue }.joined(separator: ", "))
         }
     }
 
     private func setupCorrectionEngine() {
         layoutDetector = LayoutDetector()
         layoutDetector?.delegate = self
+        let available = inputSourceManager.availableLayouts()
+        if !available.isEmpty {
+            layoutDetector?.allowedLayouts = Set(available)
+        }
 
         textCorrector = TextCorrector()
         textCorrector?.onCorrectionStarted = { [weak self] in
@@ -45,6 +53,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Apply hotkey settings from preferences
         keyboardMonitor?.hotkeyKeyCode = PreferencesManager.shared.hotkeyKeyCode
         keyboardMonitor?.hotkeyModifiers = PreferencesManager.shared.hotkeyModifiers
+        keyboardMonitor?.onKeyDownWhilePaused = { [weak self] in
+            self?.textCorrector?.noteUserInputDuringCorrection()
+        }
 
         keyboardMonitor?.start()
 
@@ -61,6 +72,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         layoutDetector?.reset()
         isCurrentAppAllowed = AppFilter.shared.isCurrentAppAllowed()
         Permissions.invalidateSecureFieldCache()
+        if let app = NSWorkspace.shared.frontmostApplication {
+            NSLog("[SwitchFix] App switched to: %@ (allowed: %@)", app.localizedName ?? "unknown", isCurrentAppAllowed ? "yes" : "no")
+        }
     }
 }
 
@@ -71,18 +85,20 @@ extension AppDelegate: KeyboardMonitorDelegate {
         guard PreferencesManager.shared.isEnabled else { return }
         guard isCurrentAppAllowed else { return }
 
-        // Buffer characters in both automatic and hotkey modes
-        layoutDetector?.currentLayout = inputSourceManager.currentLayout()
+        let layout = inputSourceManager.currentLayout()
+        layoutDetector?.currentLayout = layout
         layoutDetector?.addCharacter(character)
     }
 
-    func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor) {
+    func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveBoundary character: String) {
         guard PreferencesManager.shared.isEnabled else { return }
         guard isCurrentAppAllowed else { return }
 
         if PreferencesManager.shared.correctionMode == .automatic {
             // Automatic mode: flush triggers detection + correction
-            layoutDetector?.flushBuffer()
+            // Pass boundary character (space, punctuation, newline, etc.) so correction can retype it
+            let boundary = character.isEmpty ? nil : character
+            layoutDetector?.flushBuffer(boundaryCharacter: boundary)
         } else {
             // Hotkey mode: just discard the buffer (word boundary passed)
             layoutDetector?.discardBuffer()
@@ -132,7 +148,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 // MARK: - LayoutDetectorDelegate
 
 extension AppDelegate: LayoutDetectorDelegate {
-    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult) {
-        textCorrector?.performCorrection(result: result)
+    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult, boundaryCharacter: String?) {
+        textCorrector?.performCorrection(result: result, boundaryCharacter: boundaryCharacter)
     }
 }

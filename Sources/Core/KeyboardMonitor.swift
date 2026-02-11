@@ -5,7 +5,7 @@ import Utils
 
 public protocol KeyboardMonitorDelegate: AnyObject {
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveCharacter character: String, keyCode: UInt16)
-    func keyboardMonitorDidReceiveSpace(_ monitor: KeyboardMonitor)
+    func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveBoundary character: String)
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor)
@@ -39,6 +39,13 @@ public class KeyboardMonitor {
     private static let bufferFlushKeyCodes: Set<UInt16> = Set([
         spaceKeyCode, returnKeyCode, tabKeyCode, escapeKeyCode
     ])
+
+    // Boundary punctuation (excluding apostrophes and hyphen which can be part of words)
+    private static let boundaryCharacterSet: CharacterSet = {
+        var set = CharacterSet.punctuationCharacters.union(.symbols)
+        set.subtract(CharacterSet(charactersIn: "'’`-"))
+        return set
+    }()
 
     public init() {}
 
@@ -89,6 +96,7 @@ public class KeyboardMonitor {
 
     /// Temporarily disable/enable monitoring (used during text correction to avoid feedback loops)
     public var isPaused: Bool = false
+    public var onKeyDownWhilePaused: (() -> Void)?
 
     /// Hotkey configuration
     public var hotkeyKeyCode: UInt16 = 49  // Space
@@ -125,6 +133,7 @@ public class KeyboardMonitor {
         let monitor = Unmanaged<KeyboardMonitor>.fromOpaque(userInfo).takeUnretainedValue()
 
         if monitor.isPaused {
+            monitor.onKeyDownWhilePaused?()
             return Unmanaged.passUnretained(event)
         }
 
@@ -173,8 +182,15 @@ public class KeyboardMonitor {
 
         // Handle buffer flush keys (space, return, tab, escape)
         if bufferFlushKeyCodes.contains(keyCode) {
+            let boundary: String
+            switch keyCode {
+            case spaceKeyCode: boundary = " "
+            case returnKeyCode: boundary = "\n"
+            case tabKeyCode: boundary = "\t"
+            default: boundary = "" // Escape or unknown; don't retype
+            }
             DispatchQueue.main.async {
-                monitor.delegate?.keyboardMonitorDidReceiveSpace(monitor)
+                monitor.delegate?.keyboardMonitor(monitor, didReceiveBoundary: boundary)
             }
             return Unmanaged.passUnretained(event)
         }
@@ -195,8 +211,15 @@ public class KeyboardMonitor {
 
         if actualLen > 0 {
             let str = String(utf16CodeUnits: chars, count: actualLen)
-            DispatchQueue.main.async {
-                monitor.delegate?.keyboardMonitor(monitor, didReceiveCharacter: str, keyCode: keyCode)
+            if str.count == 1, let scalar = str.unicodeScalars.first,
+               boundaryCharacterSet.contains(scalar) {
+                DispatchQueue.main.async {
+                    monitor.delegate?.keyboardMonitor(monitor, didReceiveBoundary: str)
+                }
+            } else {
+                DispatchQueue.main.async {
+                    monitor.delegate?.keyboardMonitor(monitor, didReceiveCharacter: str, keyCode: keyCode)
+                }
             }
         }
 

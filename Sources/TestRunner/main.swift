@@ -210,6 +210,12 @@ runSuite("WordValidator: Valid Ukrainian words") {
     assert(wv.isValidWord("світ", language: .ukrainian), "'світ' should be valid in Ukrainian")
 }
 
+runSuite("WordValidator: Ukrainian vs Russian names") {
+    let wv = WordValidator.shared
+    assert(wv.isValidWord("андрій", language: .ukrainian), "'андрій' should be valid in Ukrainian")
+    assert(!wv.isValidWord("андрей", language: .ukrainian), "'андрей' should NOT be valid in Ukrainian")
+}
+
 runSuite("WordValidator: Invalid cross-language") {
     let wv = WordValidator.shared
     assert(!wv.isValidWord("ghbdtn", language: .english), "'ghbdtn' should NOT be valid in English")
@@ -252,6 +258,23 @@ runSuite("LayoutDetector: Detect EN→RU wrong layout") {
     if let result = mockDelegate.results.first {
         assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
         assertEqual(result.convertedWord, "привет", "converted should be 'привет'")
+    }
+}
+
+runSuite("LayoutDetector: Acronym fallback preserves case") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "CR" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer()
+
+    assert(mockDelegate.results.count == 1, "should detect acronym fallback")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.convertedWord, "СК", "should preserve uppercase mapping")
     }
 }
 

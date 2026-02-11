@@ -6014,6 +6014,7 @@ butting
 buttock
 button
 button's
+buttons
 buttonhole
 buttonwood
 buttress
@@ -36021,6 +36022,7 @@ resplendent
 respond
 respondent
 response
+responses
 responsibility
 responsible
 responsibly

@@ -18,6 +18,19 @@ public class TextCorrector {
     private static let undoTimeWindow: TimeInterval = 5.0
     private var sawUserInputDuringCorrection: Bool = false
 
+    public enum UserInputKind {
+        case none
+        case character
+        case boundary
+        case other
+    }
+
+    private var lastUserInputKind: UserInputKind = .none
+    private var lastUserInputTime: Date = .distantPast
+    private var pendingSwitchLayout: Layout?
+    private var switchTimer: Timer?
+    private let switchDelay: TimeInterval = 0.15
+
     /// Whether an undo is available (correction happened within the time window).
     public var canUndo: Bool {
         guard lastOriginalText != nil, lastCorrectedText != nil,
@@ -30,6 +43,42 @@ public class TextCorrector {
     /// Mark that the user typed during a correction window.
     public func noteUserInputDuringCorrection() {
         sawUserInputDuringCorrection = true
+    }
+
+    /// Record user input activity to delay any pending layout switch.
+    public func recordUserInput(kind: UserInputKind) {
+        lastUserInputKind = kind
+        lastUserInputTime = Date()
+        rescheduleSwitchIfNeeded()
+    }
+
+    private func scheduleLayoutSwitch(_ layout: Layout) {
+        pendingSwitchLayout = layout
+        rescheduleSwitchIfNeeded()
+    }
+
+    private func rescheduleSwitchIfNeeded() {
+        guard pendingSwitchLayout != nil else { return }
+        switchTimer?.invalidate()
+        switchTimer = Timer.scheduledTimer(withTimeInterval: switchDelay, repeats: false) { [weak self] _ in
+            self?.handleSwitchTimer()
+        }
+    }
+
+    private func handleSwitchTimer() {
+        guard let layout = pendingSwitchLayout else { return }
+        if lastUserInputKind == .boundary || lastUserInputKind == .none {
+            inputSourceManager.switchTo(layout)
+            usleep(10_000)
+            pendingSwitchLayout = nil
+            switchTimer?.invalidate()
+            switchTimer = nil
+            return
+        }
+
+        // User is actively typing characters; wait for the next boundary input to reschedule.
+        switchTimer?.invalidate()
+        switchTimer = nil
     }
 
     /// Perform text correction: delete the wrong text, switch layout, type the correct text.
@@ -53,10 +102,9 @@ public class TextCorrector {
         // Step 2: Type the correct text (Unicode typing is layout-independent)
         typeText(correctedText)
 
-        // Step 3: Switch keyboard layout for subsequent typing
+        // Step 3: Schedule keyboard layout switch for subsequent typing
         if !sawUserInputDuringCorrection {
-            inputSourceManager.switchTo(targetLayout)
-            usleep(10_000) // 10ms
+            scheduleLayoutSwitch(targetLayout)
         }
 
         // Step 4: Resume monitoring
@@ -96,8 +144,7 @@ public class TextCorrector {
         }
 
         if result.shouldSwitchLayout && !sawUserInputDuringCorrection {
-            inputSourceManager.switchTo(result.targetLayout)
-            usleep(10_000)
+            scheduleLayoutSwitch(result.targetLayout)
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in

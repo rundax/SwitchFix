@@ -62,21 +62,6 @@ public class WordValidator {
                 if let best = closestShortWord(to: normalized, language: language) {
                     return ValidationResult(isValid: true, correctedWord: best)
                 }
-
-                if let lang = spellCheckerLanguage(for: language) {
-                    let range = NSRange(location: 0, length: (normalized as NSString).length)
-                    let guesses = spellChecker.guesses(
-                        forWordRange: range,
-                        in: normalized,
-                        language: lang,
-                        inSpellDocumentWithTag: spellTag
-                    )
-                    if let best = guesses?.first(where: { suggestion in
-                        WordValidator.shortWords[language]?.contains(suggestion.lowercased()) ?? false
-                    }) {
-                        return ValidationResult(isValid: true, correctedWord: best)
-                    }
-                }
             }
 
             return ValidationResult(isValid: false, correctedWord: nil)

@@ -53,6 +53,10 @@ public class LayoutDetector {
         return set
     }()
 
+    private static let englishVowels = CharacterSet(charactersIn: "aeiouyAEIOUY")
+    private static let ukrainianVowels = CharacterSet(charactersIn: "аеєиіїоуюяАЕЄИІЇОУЮЯ")
+    private static let russianVowels = CharacterSet(charactersIn: "аеёиоуыэюяАЕЁИОУЫЭЮЯ")
+
     /// The currently active keyboard layout (set externally by InputSourceManager).
     public var currentLayout: Layout = .english
 
@@ -170,11 +174,16 @@ public class LayoutDetector {
         // Try converting to alternative layouts
         let alternatives = LayoutMapper.convertToAlternatives(word, from: currentLayout)
             .filter { allowedLayouts.contains($0.0) }
+        let isAcronymCandidate = isAllUppercase(word) && word.count <= 3
         for (targetLayout, converted) in alternatives {
             let targetLanguage = languageForLayout(targetLayout)
-            let validation = validator.validate(converted, language: targetLanguage, allowSuggestion: true)
+            let validation = validator.validate(
+                converted,
+                language: targetLanguage,
+                allowSuggestion: !isAcronymCandidate
+            )
             if validation.isValid {
-                let finalWord = validation.correctedWord ?? converted
+                let finalWord = applyCase(from: word, to: validation.correctedWord ?? converted)
                 let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
                 consecutiveWrongCount += 1
@@ -186,6 +195,30 @@ public class LayoutDetector {
                 )
 
                 NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), consecutive: %d/%d, switch: %@",
+                      word, finalWord, targetLayout.rawValue, consecutiveWrongCount, consecutiveThreshold,
+                      shouldSwitch ? "yes" : "no")
+
+                if consecutiveWrongCount >= consecutiveThreshold {
+                    delegate?.layoutDetector(self, didDetectWrongLayout: lastDetectionResult!, boundaryCharacter: pendingBoundaryCharacter)
+                    consecutiveWrongCount = 0
+                }
+
+                state = .buffering
+                return
+            }
+
+            if shouldAllowAcronymFallback(original: word, converted: converted, currentLanguage: currentLanguage) {
+                let finalWord = applyCase(from: word, to: converted)
+                let shouldSwitch = shouldSwitchLayout(isLowConfidence: true, targetLayout: targetLayout)
+                consecutiveWrongCount += 1
+                lastDetectionResult = DetectionResult(
+                    targetLayout: targetLayout,
+                    convertedWord: finalWord,
+                    originalWord: word,
+                    shouldSwitchLayout: shouldSwitch
+                )
+
+                NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), consecutive: %d/%d, switch: %@ (acronym)",
                       word, finalWord, targetLayout.rawValue, consecutiveWrongCount, consecutiveThreshold,
                       shouldSwitch ? "yes" : "no")
 
@@ -226,6 +259,63 @@ public class LayoutDetector {
             return true
         }
 
+        return false
+    }
+
+    private func applyCase(from original: String, to word: String) -> String {
+        guard !word.isEmpty else { return word }
+        if isAllUppercase(original) {
+            return word.uppercased()
+        }
+        if isCapitalized(original) {
+            return word.prefix(1).uppercased() + word.dropFirst().lowercased()
+        }
+        return word
+    }
+
+    private func isAllUppercase(_ word: String) -> Bool {
+        var hasLetters = false
+        for char in word {
+            if char.isLetter {
+                hasLetters = true
+                if !char.isUppercase {
+                    return false
+                }
+            }
+        }
+        return hasLetters
+    }
+
+    private func isCapitalized(_ word: String) -> Bool {
+        var chars = Array(word)
+        while let first = chars.first, !first.isLetter {
+            chars.removeFirst()
+        }
+        guard let first = chars.first, first.isUppercase else { return false }
+        for c in chars.dropFirst() where c.isLetter {
+            if !c.isLowercase { return false }
+        }
+        return true
+    }
+
+    private func shouldAllowAcronymFallback(original: String, converted: String, currentLanguage: Language) -> Bool {
+        guard original.count <= 3 else { return false }
+        guard isAllUppercase(original) else { return false }
+        if containsVowel(original, language: currentLanguage) { return false }
+        if containsMixedScripts(converted) { return false }
+        return true
+    }
+
+    private func containsVowel(_ text: String, language: Language) -> Bool {
+        let vowels: CharacterSet
+        switch language {
+        case .english: vowels = LayoutDetector.englishVowels
+        case .ukrainian: vowels = LayoutDetector.ukrainianVowels
+        case .russian: vowels = LayoutDetector.russianVowels
+        }
+        for scalar in text.unicodeScalars where vowels.contains(scalar) {
+            return true
+        }
         return false
     }
 

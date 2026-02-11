@@ -55,6 +55,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardMonitor?.hotkeyModifiers = PreferencesManager.shared.hotkeyModifiers
         keyboardMonitor?.onKeyDownWhilePaused = { [weak self] in
             self?.textCorrector?.noteUserInputDuringCorrection()
+            self?.textCorrector?.recordUserInput(kind: .character)
         }
 
         keyboardMonitor?.start()
@@ -88,6 +89,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
         let layout = inputSourceManager.currentLayout()
         layoutDetector?.currentLayout = layout
         layoutDetector?.addCharacter(character)
+        textCorrector?.recordUserInput(kind: .character)
     }
 
     func keyboardMonitor(_ monitor: KeyboardMonitor, didReceiveBoundary character: String) {
@@ -103,10 +105,12 @@ extension AppDelegate: KeyboardMonitorDelegate {
             // Hotkey mode: just discard the buffer (word boundary passed)
             layoutDetector?.discardBuffer()
         }
+        textCorrector?.recordUserInput(kind: .boundary)
     }
 
     func keyboardMonitorDidReceiveDelete(_ monitor: KeyboardMonitor) {
         layoutDetector?.deleteLastCharacter()
+        textCorrector?.recordUserInput(kind: .other)
     }
 
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor) {
@@ -132,6 +136,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
         // Fallback: buffer-based correction — flush triggers detection
         layoutDetector?.currentLayout = inputSourceManager.currentLayout()
         layoutDetector?.flushBuffer()
+        textCorrector?.recordUserInput(kind: .other)
     }
 
     func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor) {
@@ -142,6 +147,7 @@ extension AppDelegate: KeyboardMonitorDelegate {
 
         let currentLayout = inputSourceManager.currentLayout()
         corrector.undoLastCorrection(currentLayout: currentLayout)
+        textCorrector?.recordUserInput(kind: .other)
     }
 }
 

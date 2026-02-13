@@ -314,6 +314,27 @@ runSuite("LayoutDetector: Acronym fallback preserves case") {
     }
 }
 
+runSuite("LayoutDetector: Acronym fallback suppressed in strong current context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("another")
+    typeWord("issue")
+    typeWord("with")
+    typeWord("DB")
+
+    assertEqual(mockDelegate.results.count, 0, "acronym should not auto-correct inside strong English context")
+}
+
 runSuite("LayoutDetector: Valid word does not trigger") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()

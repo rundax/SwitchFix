@@ -286,6 +286,20 @@ public class LayoutDetector {
             if shouldAllowAcronymFallback(original: word, converted: converted, currentLanguage: currentLanguage) {
                 let finalWord = applyCase(from: word, to: converted)
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: true, targetLayout: targetLayout)
+
+                if shouldSuppressAcronymFallback(
+                    targetLayout: targetLayout,
+                    shouldSwitch: shouldSwitch
+                ) {
+                    NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context (acronym)",
+                          word, finalWord, targetLayout.rawValue, currentLayout.rawValue)
+                    consecutiveWrongCount = 0
+                    lastDetectionResult = nil
+                    recordOutcome(.unknown)
+                    state = .buffering
+                    return
+                }
+
                 consecutiveWrongCount += 1
                 lastDetectionResult = DetectionResult(
                     sourceLayout: currentLayout,
@@ -353,6 +367,15 @@ public class LayoutDetector {
         guard !shouldSwitch else { return false }
         guard targetLayout != currentLayout else { return false }
         guard !converted.isEmpty else { return false }
+        return hasStrongCurrentContext()
+    }
+
+    private func shouldSuppressAcronymFallback(
+        targetLayout: Layout,
+        shouldSwitch: Bool
+    ) -> Bool {
+        guard targetLayout != currentLayout else { return false }
+        guard !shouldSwitch else { return false }
         return hasStrongCurrentContext()
     }
 

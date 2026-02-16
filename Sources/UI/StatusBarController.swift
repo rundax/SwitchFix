@@ -95,6 +95,15 @@ public class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        menu.addItem(NSMenuItem.separator())
+
+        // Settings
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        menu.addItem(NSMenuItem.separator())
+        
         // Launch at Login
         let loginItem = NSMenuItem(
             title: "Launch at Login",
@@ -115,6 +124,10 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         refreshSystemHotkeyConflictIndicator()
     }
 
+    @objc private func openSettings() {
+        SettingsWindowController.shared.showSettings()
+    }
+    
     @objc private func toggleEnabled() {
         let prefs = PreferencesManager.shared
         prefs.isEnabled = !prefs.isEnabled
@@ -135,19 +148,8 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
         let prefs = PreferencesManager.shared
         prefs.launchAtLogin = !prefs.launchAtLogin
+        // The sender state will update in menuWillOpen, but we can update it immediately too for feedback
         sender.state = prefs.launchAtLogin ? .on : .off
-
-        if #available(macOS 13.0, *) {
-            do {
-                if prefs.launchAtLogin {
-                    try SMAppService.mainApp.register()
-                } else {
-                    try SMAppService.mainApp.unregister()
-                }
-            } catch {
-                // SMAppService may fail without a proper bundle identifier
-            }
-        }
     }
 
     @objc private func quit() {
@@ -279,6 +281,16 @@ public class StatusBarController: NSObject, NSMenuDelegate {
             refreshSystemHotkeyConflictIndicator()
             refreshAppFilterMenuItem()
             refreshInstalledLayoutsMenu()
+            refreshModeMenu()
+            
+            // Refresh Launch at Login state
+            if let item = menu.items.first(where: { $0.title == "Launch at Login" }) {
+                item.state = PreferencesManager.shared.launchAtLogin ? .on : .off
+            }
+            
+            // Refresh Enable state (title)
+            enableMenuItem.title = PreferencesManager.shared.isEnabled ? "Disable" : "Enable"
+            updateIcon()
         }
     }
 }

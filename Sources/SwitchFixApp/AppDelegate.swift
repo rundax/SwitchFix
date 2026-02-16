@@ -28,6 +28,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[SwitchFix] Monitoring started, available layouts: %@",
                   InputSourceManager.shared.availableLayouts().map { $0.rawValue }.joined(separator: ", "))
         }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(preferencesDidUpdate),
+            name: .preferencesDidChange,
+            object: nil
+        )
     }
 
     private func setupCorrectionEngine() {
@@ -166,6 +173,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         detector.flushBuffer()
         textCorrector?.recordUserInput(kind: .other)
         return true
+    }
+    @objc private func preferencesDidUpdate() {
+        guard let monitor = keyboardMonitor else { return }
+        monitor.hotkeyKeyCode = PreferencesManager.shared.hotkeyKeyCode
+        monitor.hotkeyModifiers = PreferencesManager.shared.hotkeyModifiers
+        monitor.revertHotkeyKeyCode = PreferencesManager.shared.revertHotkeyKeyCode
+        monitor.revertHotkeyModifiers = PreferencesManager.shared.revertHotkeyModifiers
+
+        // Re-check conflict whenever settings change
+        if PreferencesManager.shared.revertHotkeyKeyCode != AppDelegate.capsLockKeyCode {
+            SystemHotkeyConflicts.clearObservedCapsLockConflict()
+        }
     }
 }
 

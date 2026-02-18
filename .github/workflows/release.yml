@@ -1,0 +1,46 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-13
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Swift
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: "5.9"
+
+    - name: Build App
+      run: |
+        chmod +x scripts/build-app.sh
+        scripts/build-app.sh
+      
+    - name: Create DMG
+      run: |
+        chmod +x scripts/create-dmg.sh
+        scripts/create-dmg.sh
+        
+    - name: Zip App Bundle
+      run: |
+        cd dist
+        zip -r SwitchFix.app.zip SwitchFix.app
+        cd ..
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          dist/SwitchFix.dmg
+          dist/SwitchFix.app.zip

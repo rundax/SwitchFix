@@ -112,4 +112,4 @@ SwitchFix logs key decisions via `NSLog`. Open Console.app and filter for `[Swit
 
 ## License
 
-Copyright 2024-2026. All rights reserved.
+MIT

@@ -2,7 +2,7 @@
 
 macOS menu bar utility that auto-corrects keyboard layout mistakes. Type in the wrong layout (English instead of Ukrainian/Russian) and SwitchFix detects it, deletes the mistyped word, switches the layout, and retypes the correct text — like PuntoSwitcher, but native and lightweight.
 
-<video src="https://github.com/rundax/SwitchFix/raw/master/SwitchFix.mp4" autoplay loop muted playsinline style="max-width:100%;"></video>
+![SwitchFix Demo](SwitchFix.gif)
 
 ## Features
 

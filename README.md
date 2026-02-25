@@ -25,7 +25,7 @@ macOS menu bar utility that auto-corrects keyboard layout mistakes. Type in the 
 - macOS 13.0+
 - Accessibility permission (prompted on first launch)
 - Input Monitoring permission (prompted on first launch)
-- Swift 5.9+ and Command Line Tools (for building)
+- Swift 5.9+ and Command Line Tools (for building from source)
 
 ## Installation
 
@@ -40,6 +40,21 @@ Download the latest release from the [Releases page](https://github.com/rundax/S
 > * If you see **"App cannot be opened because the developer cannot be verified"**: Right-click (or Control-click) the app and choose **Open**.
 > * If you see **"SwitchFix is damaged and can't be opened"**: Open your Terminal and run this command:
 >   `xattr -cr /Applications/SwitchFix.app`
+
+### macOS 13/14 and older versions
+
+- Yes, users on macOS 13 can build and run the current app from source.
+- Release artifacts are built on GitHub macOS 15 runners, but the app target is still macOS 13+.
+- If a downloaded release does not launch on your Mac, build locally:
+
+```bash
+xcode-select --install
+swift --version
+scripts/build-app.sh
+scripts/create-dmg.sh
+```
+
+- macOS 12 and older are currently unsupported by this repository (minimum target is macOS 13 in `Package.swift`).
 
 ## Build
 

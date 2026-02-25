@@ -42,7 +42,7 @@ Download the latest release from the [Releases page](https://github.com/rundax/S
 # Debug build
 swift build
 
-# Run tests (54 tests, standalone runner — no Xcode required)
+# Run tests (standalone runner — no Xcode required)
 swift run TestRunner
 
 # Build .app bundle (ad-hoc signed)
@@ -68,6 +68,29 @@ scripts/regrant-permissions.sh
 ```
 
 Or set `SWITCHFIX_CODESIGN_IDENTITY` when building so permissions remain stable across rebuilds.
+
+## GitHub Releases (arm64 + Intel)
+
+The release workflow builds and uploads separate assets for Apple Silicon and Intel:
+
+- `SwitchFix-arm64.dmg`
+- `SwitchFix-intel.dmg`
+- `SwitchFix-arm64.app.zip`
+- `SwitchFix-intel.app.zip`
+
+The workflow runs on tag push (`v*`).
+
+### Signing used by current release workflow
+
+By default, CI builds are **ad-hoc signed**.
+
+You can set signing identity in CI by configuring secrets:
+
+- `SWITCHFIX_CODESIGN_IDENTITY` (for example `Developer ID Application: ...`)
+- `APPLE_CERTIFICATE_P12_BASE64`
+- `APPLE_CERTIFICATE_PASSWORD`
+
+When these secrets are present, the workflow imports the certificate and signs using `SWITCHFIX_CODESIGN_IDENTITY`.
 
 ## How It Works
 

@@ -264,6 +264,9 @@ public class LayoutDetector {
             }
 
             for candidate in candidateConversions {
+                let tokenParts = splitTokenForValidation(candidate)
+                let validationInput = tokenParts.core.isEmpty ? candidate : tokenParts.core
+
                 // Avoid substituting into a different valid word (e.g. "pe" -> "за").
                 // Allow typo-tolerant suggestions only for EN -> Cyrillic conversion.
                 // This keeps automatic mode conservative and avoids aggressive rewrites in other directions.
@@ -272,21 +275,24 @@ public class LayoutDetector {
                     targetLayout != .english &&
                     word.count >= 4 &&
                     word.count <= suggestionMaxLength &&
-                    !containsVowel(candidate, language: targetLanguage)
+                    !containsVowel(validationInput, language: targetLanguage) &&
+                    !containsVowel(word, language: currentLanguage)
                 let validation = validator.validate(
-                    candidate,
+                    validationInput,
                     language: targetLanguage,
                     allowSuggestion: allowSuggestion
                 )
                 if validation.isValid {
                     if validation.correctedWord == nil &&
-                        !validator.isExactWord(candidate, language: targetLanguage) {
+                        !validator.isExactWord(validationInput, language: targetLanguage) {
                         NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) rejected — non-exact dictionary hit",
                               word, candidate, targetLayout.rawValue)
                         continue
                     }
 
-                    var finalWord = applyCase(from: word, to: validation.correctedWord ?? candidate)
+                    let correctedCore = validation.correctedWord ?? validationInput
+                    let recomposedWord = tokenParts.prefix + correctedCore + tokenParts.suffix
+                    var finalWord = applyCase(from: word, to: recomposedWord)
                     var originalForCorrection = word
                     let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
                     let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
@@ -658,6 +664,36 @@ public class LayoutDetector {
     private func containsAnyCharacter(from candidates: String, in text: String) -> Bool {
         let set = Set(candidates)
         return text.contains { set.contains($0) }
+    }
+
+    private func splitTokenForValidation(_ token: String) -> (prefix: String, core: String, suffix: String) {
+        let chars = Array(token)
+        if chars.isEmpty {
+            return ("", "", "")
+        }
+
+        var start = 0
+        while start < chars.count {
+            let ch = chars[start]
+            if ch.isLetter || ch.isNumber {
+                break
+            }
+            start += 1
+        }
+
+        var end = chars.count
+        while end > start {
+            let ch = chars[end - 1]
+            if ch.isLetter || ch.isNumber {
+                break
+            }
+            end -= 1
+        }
+
+        let prefix = start > 0 ? String(chars[0..<start]) : ""
+        let core = start < end ? String(chars[start..<end]) : ""
+        let suffix = end < chars.count ? String(chars[end..<chars.count]) : ""
+        return (prefix, core, suffix)
     }
 
     private func ukrainianTypoOverride(for word: String) -> String? {

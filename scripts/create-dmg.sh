@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DIST_DIR="$PROJECT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/SwitchFix.app"
-DMG_NAME="SwitchFix"
+DMG_NAME="${SWITCHFIX_DMG_NAME:-SwitchFix}"
 DMG_PATH="$DIST_DIR/$DMG_NAME.dmg"
 
 # Ensure the app bundle exists

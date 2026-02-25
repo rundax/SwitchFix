@@ -228,6 +228,7 @@ runSuite("WordValidator: Valid English words") {
     assert(wv.isValidWord("the", language: .english), "'the' should be valid in English")
     assert(wv.isValidWord("seems", language: .english), "'seems' should be valid in English")
     assert(wv.isValidWord("after", language: .english), "'after' should be valid in English")
+    assert(wv.isValidWord("expected", language: .english), "'expected' should be valid in English")
 }
 
 runSuite("WordValidator: English contractions") {
@@ -345,6 +346,20 @@ runSuite("LayoutDetector: Avoid aggressive EN→UK typo suggestion") {
     assertEqual(mockDelegate.results.count, 0, "should not auto-correct 'fethc' to unrelated Ukrainian word")
 }
 
+runSuite("LayoutDetector: Do not suggest for vowel-rich English words") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "only" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "should not auto-correct 'only' to Ukrainian suggestions")
+}
+
 runSuite("LayoutDetector: Reject EN→UK bloom false positives") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
@@ -374,6 +389,42 @@ runSuite("LayoutDetector: Convert Ukrainian 'фаеук' to English 'after'") {
     if let result = mockDelegate.results.first {
         assertEqual(result.targetLayout, .english, "target should be English")
         assertEqual(result.convertedWord, "after", "should convert to 'after'")
+    }
+}
+
+runSuite("LayoutDetector: Convert Ukrainian 'учзусеув' to English 'expected'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "учзусеув" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should convert to 'expected'")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .english, "target should be English")
+        assertEqual(result.convertedWord, "expected", "should convert to 'expected'")
+    }
+}
+
+runSuite("LayoutDetector: Convert Ukrainian 'ершиЖ' to English 'this:'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "ершиЖ" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should convert legacy Ukrainian typed 'this:'")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .english, "target should be English")
+        assertEqual(result.convertedWord, "this:", "should preserve trailing colon")
     }
 }
 

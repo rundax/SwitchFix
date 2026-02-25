@@ -8,3 +8,4 @@ DerivedData/
 .vscode/
 .claude/settings.local.json
 .grepai/
+plan/

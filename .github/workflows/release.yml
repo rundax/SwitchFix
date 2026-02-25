@@ -41,8 +41,21 @@ jobs:
           fi
           echo "Runner architecture: $ARCH"
 
+      - name: Check for Apple certificates
+        id: cert_check
+        env:
+          P12: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          PWD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APP_ID: ${{ secrets.SWITCHFIX_CODESIGN_IDENTITY }}
+        run: |
+          if [ -n "$P12" ] && [ -n "$PWD" ] && [ -n "$APP_ID" ]; then
+             echo "has_certs=true" >> "$GITHUB_OUTPUT"
+          else
+             echo "has_certs=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Import signing certificate (optional)
-        if: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.SWITCHFIX_CODESIGN_IDENTITY != '' }}
+        if: steps.cert_check.outputs.has_certs == 'true'
         env:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

@@ -35,7 +35,11 @@ Download the latest release from the [Releases page](https://github.com/rundax/S
 2. Drag `SwitchFix.app` to your Applications folder.
 3. Launch the app. You will need to grant both Accessibility and Input Monitoring permissions for it to work.
 
-> **Note**: Since the app is not notarized by Apple, you might see a warning. Right-click the app and choose "Open" to bypass it, or go to System Settings > Privacy & Security to allow it.
+> **Note:** Because this is a free, open-source app and is not signed with a paid Apple Developer certificate ($99/yr), macOS Gatekeeper will try to block it. 
+> 
+> * If you see **"App cannot be opened because the developer cannot be verified"**: Right-click (or Control-click) the app and choose **Open**.
+> * If you see **"SwitchFix is damaged and can't be opened"**: Open your Terminal and run this command:
+>   `xattr -cr /Applications/SwitchFix.app`
 
 ## Build
 

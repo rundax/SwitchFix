@@ -247,6 +247,7 @@ runSuite("WordValidator: Valid Ukrainian words") {
     let wv = WordValidator.shared
     assert(wv.isValidWord("привіт", language: .ukrainian), "'привіт' should be valid in Ukrainian")
     assert(wv.isValidWord("світ", language: .ukrainian), "'світ' should be valid in Ukrainian")
+    assert(wv.isValidWord("подивимось", language: .ukrainian), "'подивимось' should be valid in Ukrainian")
 }
 
 runSuite("WordValidator: Ukrainian vs Russian names") {
@@ -389,6 +390,25 @@ runSuite("LayoutDetector: Convert Ukrainian 'фаеук' to English 'after'") {
     if let result = mockDelegate.results.first {
         assertEqual(result.targetLayout, .english, "target should be English")
         assertEqual(result.convertedWord, "after", "should convert to 'after'")
+    }
+}
+
+runSuite("LayoutDetector: Convert English 'gjlsdsvjcm' to Ukrainian 'подивимось'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .legacy
+
+    for char in "gjlsdsvjcm" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should convert to 'подивимось'")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+        assertEqual(result.convertedWord, "подивимось", "should convert to 'подивимось'")
     }
 }
 

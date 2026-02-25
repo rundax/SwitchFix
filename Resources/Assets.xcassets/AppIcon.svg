@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Embed Google Fonts with Cyrillic support -->
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;subset=cyrillic,latin');
+    </style>
+    <!-- macOS icon rounded rect clip -->
+    <clipPath id="icon-clip">
+      <rect width="1024" height="1024" rx="230" ry="230"/>
+    </clipPath>
+
+    <!-- Background gradient: deep navy → midnight blue -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#0d1b3e"/>
+      <stop offset="50%"  stop-color="#0a1628"/>
+      <stop offset="100%" stop-color="#060d1a"/>
+    </linearGradient>
+
+    <!-- Subtle radial glow behind centre -->
+    <radialGradient id="centre-glow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"   stop-color="#2a4dff" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#2a4dff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Key card glass gradient (left – latin) -->
+    <linearGradient id="key-left-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#1e3a6e" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#112050" stop-opacity="0.85"/>
+    </linearGradient>
+
+    <!-- Key card glass gradient (right – cyrillic) -->
+    <linearGradient id="key-right-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#2d1b6e" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#1a0f50" stop-opacity="0.85"/>
+    </linearGradient>
+
+    <!-- Arrow ring gradient -->
+    <linearGradient id="arrow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#4d8eff"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+
+    <!-- Blue glow filter -->
+    <filter id="blue-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft drop shadow for key cards -->
+    <filter id="card-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="24" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+
+    <!-- Inner highlight for glass top edge -->
+    <linearGradient id="highlight-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── BACKGROUND ── -->
+  <g clip-path="url(#icon-clip)">
+    <rect width="1024" height="1024" fill="url(#bg-grad)"/>
+
+    <!-- Ambient glow -->
+    <ellipse cx="512" cy="512" rx="480" ry="420" fill="url(#centre-glow)"/>
+
+    <!-- Subtle grid texture lines (very faint) -->
+    <g stroke="#1e3a8a" stroke-width="1" opacity="0.12">
+      <line x1="0"    y1="256"  x2="1024" y2="256"/>
+      <line x1="0"    y1="512"  x2="1024" y2="512"/>
+      <line x1="0"    y1="768"  x2="1024" y2="768"/>
+      <line x1="256"  y1="0"    x2="256"  y2="1024"/>
+      <line x1="512"  y1="0"    x2="512"  y2="1024"/>
+      <line x1="768"  y1="0"    x2="768"  y2="1024"/>
+    </g>
+
+    <!-- ── LEFT KEY CARD (Latin "Ab") ── -->
+    <g filter="url(#card-shadow)">
+      <rect x="110" y="330" width="340" height="380" rx="48" ry="48"
+            fill="url(#key-left-grad)" stroke="#3b6fd4" stroke-width="1.5"/>
+      <!-- glass highlight top edge -->
+      <rect x="110" y="330" width="340" height="380" rx="48" ry="48"
+            fill="url(#highlight-grad)" opacity="0.9"/>
+      <!-- inner subtle border glow -->
+      <rect x="113" y="333" width="334" height="374" rx="46" ry="46"
+            fill="none" stroke="#5b8fff" stroke-width="0.8" opacity="0.4"/>
+    </g>
+
+    <!-- Latin text "Ab" -->
+    <text x="280" y="573"
+          font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-size="188" font-weight="700" letter-spacing="-4"
+          text-anchor="middle" fill="#e8f0ff">Ab</text>
+
+    <!-- small label under -->
+    <text x="280" y="648"
+          font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-size="36" font-weight="500" text-anchor="middle"
+          fill="#4d8eff" opacity="0.8" letter-spacing="3">EN</text>
+
+    <!-- ── RIGHT KEY CARD (Cyrillic "Аб") ── -->
+    <g filter="url(#card-shadow)">
+      <rect x="574" y="330" width="340" height="380" rx="48" ry="48"
+            fill="url(#key-right-grad)" stroke="#7c3aed" stroke-width="1.5"/>
+      <!-- glass highlight -->
+      <rect x="574" y="330" width="340" height="380" rx="48" ry="48"
+            fill="url(#highlight-grad)" opacity="0.85"/>
+      <!-- inner glow -->
+      <rect x="577" y="333" width="334" height="374" rx="46" ry="46"
+            fill="none" stroke="#a855f7" stroke-width="0.8" opacity="0.4"/>
+    </g>
+
+    <!-- Cyrillic text "Аб" — using XML char refs to prevent font substitution -->
+    <text x="744" y="573"
+          font-family="Inter, 'Arial Unicode MS', 'Noto Sans', 'Segoe UI', sans-serif"
+          font-size="188" font-weight="700" letter-spacing="-4"
+          text-anchor="middle" fill="#f0e8ff">&#1040;&#1073;</text>
+
+    <!-- small label under -->
+    <text x="744" y="648"
+          font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-size="36" font-weight="500" text-anchor="middle"
+          fill="#a855f7" opacity="0.8" letter-spacing="3">UA</text>
+
+    <!-- ── CENTRE ARROW RING ── -->
+    <!-- Glow halo behind arrow ring -->
+    <circle cx="512" cy="520" r="82" fill="none"
+            stroke="#3b6fd4" stroke-width="52" opacity="0.12"/>
+    <circle cx="512" cy="520" r="82" fill="none"
+            stroke="#a855f7" stroke-width="28" opacity="0.10"/>
+
+    <!-- Main ring arc — clockwise top -->
+    <path d="M 430 520 A 82 82 0 0 1 594 520"
+          fill="none" stroke="url(#arrow-grad)" stroke-width="11"
+          stroke-linecap="round" filter="url(#blue-glow)"/>
+
+    <!-- Main ring arc — counter-clockwise bottom -->
+    <path d="M 594 520 A 82 82 0 0 1 430 520"
+          fill="none" stroke="url(#arrow-grad)" stroke-width="11"
+          stroke-linecap="round" filter="url(#blue-glow)"/>
+
+    <!-- Arrowhead right (top arc end) → pointing right/down -->
+    <polygon points="594,504 614,520 594,536"
+             fill="#a855f7" filter="url(#blue-glow)"/>
+
+    <!-- Arrowhead left (bottom arc end) → pointing left/up -->
+    <polygon points="430,536 410,520 430,504"
+             fill="#4d8eff" filter="url(#blue-glow)"/>
+
+    <!-- ── LIGHTNING BOLT in ring centre ── -->
+    <g transform="translate(512,520)">
+      <polygon points="10,-26 -4,-2 8,-2 -10,26 4,2 -8,2"
+               fill="url(#arrow-grad)" opacity="0.92"
+               filter="url(#blue-glow)"/>
+    </g>
+
+    <!-- ── TOP LABEL "SwitchFix" ── -->
+    <text x="512" y="274"
+          font-family="'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-size="68" font-weight="700" letter-spacing="-1"
+          text-anchor="middle" fill="#c8d8ff" opacity="0.88">SwitchFix</text>
+
+    <!-- Thin underline accent -->
+    <line x1="312" y1="292" x2="712" y2="292"
+          stroke="url(#arrow-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+
+    <!-- ── BOTTOM TAGLINE ── -->
+    <text x="512" y="790"
+          font-family="'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-size="38" font-weight="400" letter-spacing="2"
+          text-anchor="middle" fill="#8b9fd4" opacity="0.7">Auto Layout Fix</text>
+
+    <!-- ── OUTER CHROME FRAME ── -->
+    <rect width="1024" height="1024" rx="230" ry="230"
+          fill="none" stroke="#2a4dff" stroke-width="3" opacity="0.18"/>
+    <rect width="1024" height="1024" rx="230" ry="230"
+          fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.06"/>
+  </g>
+</svg>

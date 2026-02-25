@@ -88,6 +88,9 @@ jobs:
           mkdir -p release-assets
           cp "dist/SwitchFix-${ASSET_ARCH}.dmg" release-assets/
           cp "dist/SwitchFix-${ASSET_ARCH}.app.zip" release-assets/
+          if [ "$ASSET_ARCH" = "arm64" ]; then
+            cp "Resources/Assets.xcassets/AppIcon.svg" "release-assets/AppIcon.svg"
+          fi
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4
@@ -119,4 +122,5 @@ jobs:
           files: |
             release-assets/*.dmg
             release-assets/*.zip
+            release-assets/*.svg
           generate_release_notes: true

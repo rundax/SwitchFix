@@ -40,6 +40,12 @@ cp "$PROJECT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/"
 # Copy the executable
 cp "$PRODUCTS_DIR/SwitchFixApp" "$APP_BUNDLE/Contents/MacOS/"
 
+# Copy app icon asset for distribution/docs consistency
+if [ -f "$PROJECT_DIR/Resources/Assets.xcassets/AppIcon.svg" ]; then
+    cp "$PROJECT_DIR/Resources/Assets.xcassets/AppIcon.svg" "$APP_BUNDLE/Contents/Resources/"
+    echo "Copied AppIcon.svg to Contents/Resources/."
+fi
+
 # Copy the dictionary bundle to Contents/Resources (standard macOS location)
 if [ -d "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" ]; then
     cp -R "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" "$APP_BUNDLE/Contents/Resources/"

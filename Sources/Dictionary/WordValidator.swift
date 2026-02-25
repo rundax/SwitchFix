@@ -1,10 +1,7 @@
 import Foundation
-import AppKit
 
 public class WordValidator {
     private let loader = DictionaryLoader.shared
-    private let spellChecker = NSSpellChecker.shared
-    private let spellTag = NSSpellChecker.uniqueSpellDocumentTag()
 
     public static let shared = WordValidator()
 
@@ -33,6 +30,10 @@ public class WordValidator {
         "'s", "'re", "'ve", "'ll", "'d", "n't"
     ]
 
+    private static let latinLowercaseRange: ClosedRange<UInt32> = 0x0061...0x007A
+    private static let latinUppercaseRange: ClosedRange<UInt32> = 0x0041...0x005A
+    private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
+
     private static let englishVowels = CharacterSet(charactersIn: "aeiouy")
     private static let englishCoreVowels = CharacterSet(charactersIn: "aeiou")
     private static let ukrainianVowels = CharacterSet(charactersIn: "аеєиіїоуюя")
@@ -46,6 +47,9 @@ public class WordValidator {
         }
 
         let normalized = trimmed.lowercased().replacingOccurrences(of: "’", with: "'")
+        guard matchesExpectedScript(normalized, language: language) else {
+            return ValidationResult(isValid: false, correctedWord: nil)
+        }
 
         if language == .english, isEnglishContractionValid(normalized) {
             return ValidationResult(isValid: true, correctedWord: nil)
@@ -68,42 +72,12 @@ public class WordValidator {
         }
 
         let filter = loader.bloomFilter(for: language)
-        var spellCheckedResult: Bool? = nil
         if filter.mightContain(normalized) {
-            if shouldVerifyBloomHit(normalized, language: language) {
-                if let lang = spellCheckerLanguage(for: language) {
-                    let misspelled = spellChecker.checkSpelling(
-                        of: normalized,
-                        startingAt: 0,
-                        language: lang,
-                        wrap: false,
-                        inSpellDocumentWithTag: spellTag,
-                        wordCount: nil
-                    )
-                    let ok = misspelled.location == NSNotFound
-                    spellCheckedResult = ok
-                    if ok {
-                        return ValidationResult(isValid: true, correctedWord: nil)
-                    }
-                } else {
+            if shouldRequireExactDictionaryMatch(normalized, language: language) {
+                if isExactDictionaryWord(normalized, language: language) {
                     return ValidationResult(isValid: true, correctedWord: nil)
                 }
             } else {
-                return ValidationResult(isValid: true, correctedWord: nil)
-            }
-        }
-
-        // Fallback to macOS spell checker for broader coverage
-        if spellCheckedResult == nil, let lang = spellCheckerLanguage(for: language) {
-            let misspelled = spellChecker.checkSpelling(
-                of: normalized,
-                startingAt: 0,
-                language: lang,
-                wrap: false,
-                inSpellDocumentWithTag: spellTag,
-                wordCount: nil
-            )
-            if misspelled.location == NSNotFound {
                 return ValidationResult(isValid: true, correctedWord: nil)
             }
         }
@@ -112,22 +86,9 @@ public class WordValidator {
             return ValidationResult(isValid: false, correctedWord: nil)
         }
 
-        if let best = dictionarySuggestion(for: normalized, language: language) {
+        if let best = dictionarySuggestion(for: normalized, language: language),
+           isSuggestionAcceptable(original: normalized, suggestion: best) {
             return ValidationResult(isValid: true, correctedWord: best)
-        }
-
-        if let lang = spellCheckerLanguage(for: language) {
-            let range = NSRange(location: 0, length: (normalized as NSString).length)
-            let guesses = spellChecker.guesses(
-                forWordRange: range,
-                in: normalized,
-                language: lang,
-                inSpellDocumentWithTag: spellTag
-            )
-
-            if let best = guesses?.first(where: { isSuggestionAcceptable(original: normalized, suggestion: $0) }) {
-                return ValidationResult(isValid: true, correctedWord: best)
-            }
         }
 
         return ValidationResult(isValid: false, correctedWord: nil)
@@ -137,6 +98,20 @@ public class WordValidator {
     /// Returns true if the word is likely in the dictionary (may have false positives from BloomFilter).
     public func isValidWord(_ word: String, language: Language) -> Bool {
         return validate(word, language: language, allowSuggestion: false).isValid
+    }
+
+    /// Check if a word exists exactly in dictionary resources for the language.
+    /// Unlike `isValidWord`, this does not rely on BloomFilter membership only.
+    public func isExactWord(_ word: String, language: Language) -> Bool {
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return false
+        }
+        let normalized = trimmed.lowercased().replacingOccurrences(of: "’", with: "'")
+        guard matchesExpectedScript(normalized, language: language) else {
+            return false
+        }
+        return isExactDictionaryWord(normalized, language: language)
     }
 
     /// Patterns that should not be treated as words.
@@ -188,6 +163,23 @@ public class WordValidator {
         return false
     }
 
+    private func shouldRequireExactDictionaryMatch(_ word: String, language: Language) -> Bool {
+        if word.count <= 4 {
+            return true
+        }
+        return shouldVerifyBloomHit(word, language: language)
+    }
+
+    private func isExactDictionaryWord(_ word: String, language: Language) -> Bool {
+        guard let first = word.first else { return false }
+        let buckets = loader.suggestionBuckets(for: language)
+        guard let byLength = buckets[first],
+              let words = byLength[word.count] else {
+            return false
+        }
+        return words.contains(word)
+    }
+
     private func containsVowel(_ word: String, language: Language) -> Bool {
         let lower = word.lowercased()
         let vowels: CharacterSet
@@ -218,7 +210,7 @@ public class WordValidator {
         let s = suggestion.lowercased()
         if o == s { return true }
         if s.count <= 1 { return false }
-        if abs(o.count - s.count) > 2 { return false }
+        if abs(o.count - s.count) > 1 { return false }
         return damerauLevenshteinDistance(o, s, maxDistance: 2) <= 2
     }
 
@@ -283,23 +275,55 @@ public class WordValidator {
         guard let lengthMap = buckets[first] else { return nil }
 
         var best: String? = nil
-        var bestDistance = 3
-        let minLen = max(1, word.count - 2)
+        var bestScore = Int.max
+        let minLen = max(1, word.count - 1)
         let maxLen = word.count + 2
 
         for len in minLen...maxLen {
             guard let candidates = lengthMap[len] else { continue }
             for candidate in candidates {
                 let dist = damerauLevenshteinDistance(word, candidate, maxDistance: 2)
-                if dist <= 2 && dist < bestDistance {
-                    bestDistance = dist
+                guard dist <= 2 else { continue }
+                let lengthPenalty = abs(candidate.count - word.count)
+                let score = dist * 10 + lengthPenalty
+
+                if score < bestScore {
+                    bestScore = score
                     best = candidate
-                    if dist == 0 { return best }
+                    if dist == 0 && lengthPenalty == 0 { return best }
                 }
             }
         }
 
         return best
+    }
+
+    private func matchesExpectedScript(_ word: String, language: Language) -> Bool {
+        var hasLatin = false
+        var hasCyrillic = false
+
+        for scalar in word.unicodeScalars where scalar.properties.isAlphabetic {
+            let value = scalar.value
+
+            if WordValidator.latinLowercaseRange.contains(value) || WordValidator.latinUppercaseRange.contains(value) {
+                hasLatin = true
+                continue
+            }
+
+            if WordValidator.cyrillicRange.contains(value) {
+                hasCyrillic = true
+                continue
+            }
+
+            return false
+        }
+
+        switch language {
+        case .english:
+            return hasLatin && !hasCyrillic
+        case .ukrainian, .russian:
+            return hasCyrillic && !hasLatin
+        }
     }
 
     /// Damerau-Levenshtein distance with early exit.
@@ -338,28 +362,4 @@ public class WordValidator {
         return dp[n][m]
     }
 
-    private func spellCheckerLanguage(for language: Language) -> String? {
-        let available = Set(spellChecker.availableLanguages)
-        func pick(_ candidates: [String]) -> String? {
-            for c in candidates where available.contains(c) {
-                return c
-            }
-            // Try prefix match (e.g., "en" for "en_US")
-            for c in candidates {
-                if let match = available.first(where: { $0.hasPrefix(c) }) {
-                    return match
-                }
-            }
-            return nil
-        }
-
-        switch language {
-        case .english:
-            return pick(["en_US", "en_GB", "en"])
-        case .ukrainian:
-            return pick(["uk_UA", "uk"])
-        case .russian:
-            return pick(["ru_RU", "ru"])
-        }
-    }
 }

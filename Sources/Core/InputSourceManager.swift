@@ -61,9 +61,7 @@ public class InputSourceManager {
 
     /// Get the current active keyboard layout (cached until input source changes).
     public func currentLayout() -> Layout {
-        if let cached = cachedLayout {
-            return cached
-        }
+        // Query TIS every time to avoid stale cache when system notifications are missed.
         let layout = fetchCurrentLayout()
         cachedLayout = layout
         return layout

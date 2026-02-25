@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import Carbon
 import Utils
 
 public protocol KeyboardMonitorDelegate: AnyObject {
@@ -17,6 +18,7 @@ public class KeyboardMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var selfPointer: UnsafeMutableRawPointer?
     private var isMonitoring = false
 
     // Key codes for special keys
@@ -55,26 +57,32 @@ public class KeyboardMonitor {
 
     public init() {}
 
-    public func start() {
-        guard !isMonitoring else { return }
+    @discardableResult
+    public func start() -> Bool {
+        guard !isMonitoring else { return true }
 
         let eventMask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue)
 
-        // Create the event tap — using a C-convention callback via a wrapper
-        let selfPtr = Unmanaged.passRetained(self).toOpaque()
+        if selfPointer == nil {
+            selfPointer = Unmanaged.passRetained(self).toOpaque()
+        }
+        guard let selfPtr = selfPointer else {
+            return false
+        }
 
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: eventMask,
-            callback: KeyboardMonitor.eventTapCallback,
-            userInfo: selfPtr
-        ) else {
+        var usedTapLocation: CGEventTapLocation?
+        let tap = createEventTap(eventMask: eventMask, userInfo: selfPtr, usedTapLocation: &usedTapLocation)
+        guard let tap else {
+            let accessibility = Permissions.isAccessibilityGranted()
+            let inputMonitoring = Permissions.isInputMonitoringGranted()
+            NSLog("[SwitchFix] KeyboardMonitor: failed to create event tap (Accessibility: %@, Input Monitoring: %@)",
+                  accessibility ? "granted" : "missing",
+                  inputMonitoring ? "granted" : "missing")
             Unmanaged<KeyboardMonitor>.fromOpaque(selfPtr).release()
-            return
+            selfPointer = nil
+            return false
         }
 
         eventTap = tap
@@ -86,10 +94,16 @@ public class KeyboardMonitor {
 
         CGEvent.tapEnable(tap: tap, enable: true)
         isMonitoring = true
+        if usedTapLocation == .cghidEventTap {
+            NSLog("[SwitchFix] KeyboardMonitor: event tap started (HID fallback)")
+        } else {
+            NSLog("[SwitchFix] KeyboardMonitor: event tap started")
+        }
+        return true
     }
 
     public func stop() {
-        guard isMonitoring else { return }
+        guard isMonitoring || selfPointer != nil else { return }
 
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
@@ -100,6 +114,10 @@ public class KeyboardMonitor {
         eventTap = nil
         runLoopSource = nil
         isMonitoring = false
+        if let selfPtr = selfPointer {
+            Unmanaged<KeyboardMonitor>.fromOpaque(selfPtr).release()
+            selfPointer = nil
+        }
     }
 
     /// Temporarily disable/enable monitoring (used during text correction to avoid feedback loops)
@@ -145,6 +163,99 @@ public class KeyboardMonitor {
         let pressedRelevant = flags.intersection(relevantMask)
 
         return pressedRelevant == requiredFlags.intersection(relevantMask)
+    }
+
+    private func createEventTap(
+        eventMask: CGEventMask,
+        userInfo: UnsafeMutableRawPointer,
+        usedTapLocation: inout CGEventTapLocation?
+    ) -> CFMachPort? {
+        let locations: [CGEventTapLocation] = [.cgSessionEventTap, .cghidEventTap]
+        for location in locations {
+            if let tap = CGEvent.tapCreate(
+                tap: location,
+                place: .headInsertEventTap,
+                options: .listenOnly,
+                eventsOfInterest: eventMask,
+                callback: KeyboardMonitor.eventTapCallback,
+                userInfo: userInfo
+            ) {
+                usedTapLocation = location
+                return tap
+            }
+        }
+        return nil
+    }
+
+    private static func characterString(from event: CGEvent, keyCode: UInt16, flags: CGEventFlags) -> String? {
+        // Prefer explicit translation via current input source. In some event tap modes
+        // keyboardGetUnicodeString may return US keycap characters even when a non-Latin
+        // layout is active, which breaks wrong-layout detection.
+        if let fromLayout = fallbackCharacterFromCurrentLayout(keyCode: keyCode, flags: flags),
+           !fromLayout.isEmpty {
+            return fromLayout
+        }
+
+        let maxLen = 8
+        var actualLen = 0
+        var chars = [UniChar](repeating: 0, count: maxLen)
+        event.keyboardGetUnicodeString(maxStringLength: maxLen, actualStringLength: &actualLen, unicodeString: &chars)
+
+        if actualLen > 0 {
+            let fromEvent = String(utf16CodeUnits: chars, count: actualLen)
+            if !fromEvent.isEmpty {
+                return fromEvent
+            }
+        }
+
+        return nil
+    }
+
+    private static func fallbackCharacterFromCurrentLayout(keyCode: UInt16, flags: CGEventFlags) -> String? {
+        let currentSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue()
+        let layoutSource = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
+        let sources = [currentSource, layoutSource].compactMap { $0 }
+
+        for source in sources {
+            guard let layoutDataRef = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
+                continue
+            }
+
+            let layoutData = unsafeBitCast(layoutDataRef, to: CFData.self) as Data
+            guard let keyboardLayout = layoutData.withUnsafeBytes({ ptr in
+                ptr.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self)
+            }) else {
+                continue
+            }
+
+            var modifierKeyState: UInt32 = 0
+            if flags.contains(.maskShift) {
+                modifierKeyState |= UInt32(shiftKey >> 8)
+            }
+
+            var deadKeyState: UInt32 = 0
+            var chars = [UniChar](repeating: 0, count: 8)
+            var actualLength: Int = 0
+
+            let status = UCKeyTranslate(
+                keyboardLayout,
+                keyCode,
+                UInt16(kUCKeyActionDown),
+                modifierKeyState,
+                UInt32(LMGetKbdType()),
+                OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState,
+                chars.count,
+                &actualLength,
+                &chars
+            )
+
+            if status == noErr, actualLength > 0 {
+                return String(utf16CodeUnits: chars, count: actualLength)
+            }
+        }
+
+        return nil
     }
 
     // The C-convention callback for CGEventTap
@@ -256,14 +367,7 @@ public class KeyboardMonitor {
             return Unmanaged.passUnretained(event)
         }
 
-        // Get the character from the event
-        let maxLen = 4
-        var actualLen = 0
-        var chars = [UniChar](repeating: 0, count: maxLen)
-        event.keyboardGetUnicodeString(maxStringLength: maxLen, actualStringLength: &actualLen, unicodeString: &chars)
-
-        if actualLen > 0 {
-            let str = String(utf16CodeUnits: chars, count: actualLen)
+        if let str = characterString(from: event, keyCode: keyCode, flags: flags) {
             if str.count == 1, let scalar = str.unicodeScalars.first,
                boundaryCharacterSet.contains(scalar),
                !softBoundaryCharacterSet.contains(scalar) {

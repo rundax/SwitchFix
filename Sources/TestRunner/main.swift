@@ -226,6 +226,8 @@ runSuite("WordValidator: Valid English words") {
     assert(wv.isValidWord("hello", language: .english), "'hello' should be valid in English")
     assert(wv.isValidWord("world", language: .english), "'world' should be valid in English")
     assert(wv.isValidWord("the", language: .english), "'the' should be valid in English")
+    assert(wv.isValidWord("seems", language: .english), "'seems' should be valid in English")
+    assert(wv.isValidWord("after", language: .english), "'after' should be valid in English")
 }
 
 runSuite("WordValidator: English contractions") {
@@ -256,6 +258,18 @@ runSuite("WordValidator: Invalid cross-language") {
     let wv = WordValidator.shared
     assert(!wv.isValidWord("ghbdtn", language: .english), "'ghbdtn' should NOT be valid in English")
     assert(!wv.isValidWord("руддщ", language: .russian), "'руддщ' should NOT be valid in Russian")
+}
+
+runSuite("WordValidator: Script mismatch rejected") {
+    let wv = WordValidator.shared
+    assert(!wv.isValidWord("феефсрштп", language: .english), "Cyrillic word should NOT be valid in English")
+    assert(!wv.isValidWord("hello", language: .ukrainian), "Latin word should NOT be valid in Ukrainian")
+}
+
+runSuite("WordValidator: Short false positives avoided") {
+    let wv = WordValidator.shared
+    assert(!wv.isValidWord("дуе", language: .ukrainian), "'дуе' should NOT be treated as valid Ukrainian word")
+    assert(!wv.isExactWord("фаеук", language: .ukrainian), "'фаеук' should NOT be an exact Ukrainian dictionary word")
 }
 
 runSuite("WordValidator: Short word suggestions") {
@@ -292,8 +306,114 @@ runSuite("LayoutDetector: Detect EN→RU wrong layout") {
 
     assert(mockDelegate.results.count == 1, "should detect one wrong layout")
     if let result = mockDelegate.results.first {
-        assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+        assertEqual(result.targetLayout, .russian, "target should be Russian")
         assertEqual(result.convertedWord, "привет", "converted should be 'привет'")
+    }
+}
+
+runSuite("LayoutDetector: Suggest typo after EN→UK conversion") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.suggestionMaxLength = 5
+
+    for char in "pdhdp" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should detect typo-correctable wrong-layout word")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+        assertEqual(result.convertedWord, "зараз", "should suggest 'зараз' from converted typo")
+    }
+}
+
+runSuite("LayoutDetector: Avoid aggressive EN→UK typo suggestion") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.suggestionMaxLength = 5
+
+    for char in "fethc" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "should not auto-correct 'fethc' to unrelated Ukrainian word")
+}
+
+runSuite("LayoutDetector: Reject EN→UK bloom false positives") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "after" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "should not convert 'after' to non-exact Ukrainian word")
+}
+
+runSuite("LayoutDetector: Convert Ukrainian 'фаеук' to English 'after'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "фаеук" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should convert wrong-layout Ukrainian buffer to English")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .english, "target should be English")
+        assertEqual(result.convertedWord, "after", "should convert to 'after'")
+    }
+}
+
+runSuite("LayoutDetector: Correct typo in Ukrainian without layout switch") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "дуе" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should detect typo in Ukrainian word")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.sourceLayout, .ukrainian, "source should stay Ukrainian")
+        assertEqual(result.targetLayout, .ukrainian, "target should stay Ukrainian")
+        assertEqual(result.convertedWord, "дує", "should correct to 'дує'")
+        assert(!result.shouldSwitchLayout, "typo correction should not switch layout")
+    }
+}
+
+runSuite("LayoutDetector: Ukrainian variant fallback converts legacy word to English") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .standard
+    detector.ukrainianToVariant = .standard
+
+    for char in "Иууьи" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should recover from wrong Ukrainian variant assumption")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .english, "target should be English")
+        assertEqual(result.convertedWord, "Seems", "should convert to 'Seems'")
     }
 }
 

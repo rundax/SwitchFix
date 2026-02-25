@@ -34,7 +34,7 @@ public class LayoutDetector {
     public var consecutiveThreshold: Int = 1
     public var lowConfidenceMaxLength: Int = 3
     public var lowConfidenceConfirmations: Int = 2
-    public var suggestionMaxLength: Int = 2
+    public var suggestionMaxLength: Int = 5
     public var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
     public var ukrainianToVariant: UkrainianKeyboardVariant = .standard
     public var shortWordSuppressionLength: Int = 2
@@ -80,6 +80,12 @@ public class LayoutDetector {
     private static let englishVowels = CharacterSet(charactersIn: "aeiouyAEIOUY")
     private static let ukrainianVowels = CharacterSet(charactersIn: "аеєиіїоуюяАЕЄИІЇОУЮЯ")
     private static let russianVowels = CharacterSet(charactersIn: "аеёиоуыэюяАЕЁИОУЫЭЮЯ")
+    private static let latinLowercaseRange: ClosedRange<UInt32> = 0x0061...0x007A
+    private static let latinUppercaseRange: ClosedRange<UInt32> = 0x0041...0x005A
+    private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
+    private static let ukrainianTypoOverrides: [String: String] = [
+        "дуе": "дує"
+    ]
 
     /// The currently active keyboard layout (set externally by InputSourceManager).
     public var currentLayout: Layout = .english
@@ -177,6 +183,10 @@ public class LayoutDetector {
 
         let word = wordBuffer
         NSLog("[SwitchFix] Detection: checking buffer '%@' (layout: %@)", word, currentLayout.rawValue)
+        let sourceLayout = resolvedSourceLayout(for: word)
+        if sourceLayout != currentLayout {
+            NSLog("[SwitchFix] Detection: inferred source layout %@ for buffer '%@'", sourceLayout.rawValue, word)
+        }
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
         if containsMixedScripts(word) {
@@ -186,101 +196,161 @@ public class LayoutDetector {
         }
 
         // Check if the word is valid in the current layout's language
-        let currentLanguage = languageForLayout(currentLayout)
+        let currentLanguage = languageForLayout(sourceLayout)
         if validator.validate(word, language: currentLanguage, allowSuggestion: false).isValid {
-            // Word is valid in current layout — reset consecutive counter
-            NSLog("[SwitchFix] Detection: '%@' is valid in %@ — no correction needed", word, currentLayout.rawValue)
-            consecutiveWrongCount = 0
-            lastDetectionResult = nil
-            pendingSwitchLayout = nil
-            pendingSwitchCount = 0
-            recordOutcome(.validCurrent)
-            state = .buffering
-            return
+            // BloomFilter may produce false positives. For Cyrillic layouts, require an exact
+            // dictionary hit before treating the current-layout word as definitely valid.
+            if sourceLayout != .english && !validator.isExactWord(word, language: currentLanguage) {
+                NSLog("[SwitchFix] Detection: '%@' in %@ rejected as current-layout false positive",
+                      word, sourceLayout.rawValue)
+            } else {
+                // Word is valid in current layout — reset consecutive counter
+                NSLog("[SwitchFix] Detection: '%@' is valid in %@ — no correction needed", word, sourceLayout.rawValue)
+                consecutiveWrongCount = 0
+                lastDetectionResult = nil
+                pendingSwitchLayout = nil
+                pendingSwitchCount = 0
+                recordOutcome(.validCurrent)
+                state = .buffering
+                return
+            }
+        }
+
+        if sourceLayout == .ukrainian,
+           let override = ukrainianTypoOverride(for: word) {
+                let correctedWord = applyCase(from: word, to: override)
+                let result = DetectionResult(
+                    sourceLayout: sourceLayout,
+                    targetLayout: sourceLayout,
+                    convertedWord: correctedWord,
+                    originalWord: word,
+                    shouldSwitchLayout: false
+                )
+                NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), typo correction in current layout",
+                      word, correctedWord, sourceLayout.rawValue)
+                lastDetectionResult = result
+                pendingSwitchLayout = nil
+                pendingSwitchCount = 0
+                consecutiveWrongCount = 0
+                delegate?.layoutDetector(self, didDetectWrongLayout: result, boundaryCharacter: pendingBoundaryCharacter)
+                recordOutcome(.corrected)
+                state = .buffering
+                return
         }
 
         // Try converting to alternative layouts
         let alternatives = LayoutMapper.convertToAlternatives(
             word,
-            from: currentLayout,
+            from: sourceLayout,
             ukrainianFromVariant: ukrainianFromVariant,
             ukrainianToVariant: ukrainianToVariant
         )
             .filter { allowedLayouts.contains($0.0) }
         for (targetLayout, converted) in alternatives {
             let targetLanguage = languageForLayout(targetLayout)
-            // Avoid substituting into a different valid word (e.g. "pe" -> "за").
-            // Auto-detection should accept only exact layout mapping here.
-            let allowSuggestion = false
-            let validation = validator.validate(
-                converted,
-                language: targetLanguage,
-                allowSuggestion: allowSuggestion
-            )
-            if validation.isValid {
-                var finalWord = applyCase(from: word, to: validation.correctedWord ?? converted)
-                var originalForCorrection = word
-                let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
-                let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
+            var candidateConversions: [String] = [converted]
+            if sourceLayout == .ukrainian && targetLayout == .english {
+                let fallbackVariant: UkrainianKeyboardVariant = (ukrainianFromVariant == .legacy) ? .standard : .legacy
+                let fallbackConverted = LayoutMapper.convert(
+                    word,
+                    from: .ukrainian,
+                    to: .english,
+                    ukrainianFromVariant: fallbackVariant,
+                    ukrainianToVariant: ukrainianToVariant
+                )
+                if fallbackConverted != converted && !candidateConversions.contains(fallbackConverted) {
+                    candidateConversions.append(fallbackConverted)
+                }
+            }
 
-                if shouldSuppressLowConfidenceCorrection(
-                    original: word,
-                    converted: finalWord,
-                    targetLayout: targetLayout,
-                    isLowConfidence: isLowConfidence,
-                    shouldSwitch: shouldSwitch
-                ) {
-                    NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context",
-                          word, finalWord, targetLayout.rawValue, currentLayout.rawValue)
-                    consecutiveWrongCount = 0
-                    lastDetectionResult = nil
-                    if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
-                        pendingSuppressedShort = SuppressedShort(
-                            originalWord: word,
-                            convertedWord: finalWord,
-                            targetLayout: targetLayout,
-                            boundaryAfterWord: boundary
-                        )
+            for candidate in candidateConversions {
+                // Avoid substituting into a different valid word (e.g. "pe" -> "за").
+                // Allow typo-tolerant suggestions only for EN -> Cyrillic conversion.
+                // This keeps automatic mode conservative and avoids aggressive rewrites in other directions.
+                let allowSuggestion =
+                    sourceLayout == .english &&
+                    targetLayout != .english &&
+                    word.count >= 4 &&
+                    word.count <= suggestionMaxLength &&
+                    !containsVowel(candidate, language: targetLanguage)
+                let validation = validator.validate(
+                    candidate,
+                    language: targetLanguage,
+                    allowSuggestion: allowSuggestion
+                )
+                if validation.isValid {
+                    if validation.correctedWord == nil &&
+                        !validator.isExactWord(candidate, language: targetLanguage) {
+                        NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) rejected — non-exact dictionary hit",
+                              word, candidate, targetLayout.rawValue)
+                        continue
                     }
-                    recordOutcome(.unknown)
+
+                    var finalWord = applyCase(from: word, to: validation.correctedWord ?? candidate)
+                    var originalForCorrection = word
+                    let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
+                    let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
+
+                    if shouldSuppressLowConfidenceCorrection(
+                        original: word,
+                        converted: finalWord,
+                        targetLayout: targetLayout,
+                        sourceLayout: sourceLayout,
+                        isLowConfidence: isLowConfidence,
+                        shouldSwitch: shouldSwitch
+                    ) {
+                        NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context",
+                              word, finalWord, targetLayout.rawValue, sourceLayout.rawValue)
+                        consecutiveWrongCount = 0
+                        lastDetectionResult = nil
+                        if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
+                            pendingSuppressedShort = SuppressedShort(
+                                originalWord: word,
+                                convertedWord: finalWord,
+                                targetLayout: targetLayout,
+                                boundaryAfterWord: boundary
+                            )
+                        }
+                        recordOutcome(.unknown)
+                        state = .buffering
+                        return
+                    }
+
+                    if let merged = mergeSuppressedShort(
+                        suppressedShort,
+                        currentOriginal: word,
+                        currentConverted: finalWord,
+                        targetLayout: targetLayout,
+                        isLowConfidence: isLowConfidence,
+                        shouldSwitch: shouldSwitch
+                    ) {
+                        originalForCorrection = merged.original
+                        finalWord = merged.converted
+                        NSLog("[SwitchFix] Detection: replayed suppressed short word for contextual correction")
+                    }
+
+                    consecutiveWrongCount += 1
+                    lastDetectionResult = DetectionResult(
+                        sourceLayout: sourceLayout,
+                        targetLayout: targetLayout,
+                        convertedWord: finalWord,
+                        originalWord: originalForCorrection,
+                        shouldSwitchLayout: shouldSwitch
+                    )
+
+                    NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), consecutive: %d/%d, switch: %@",
+                          word, finalWord, targetLayout.rawValue, consecutiveWrongCount, consecutiveThreshold,
+                          shouldSwitch ? "yes" : "no")
+
+                    if consecutiveWrongCount >= consecutiveThreshold {
+                        delegate?.layoutDetector(self, didDetectWrongLayout: lastDetectionResult!, boundaryCharacter: pendingBoundaryCharacter)
+                        consecutiveWrongCount = 0
+                    }
+
+                    recordOutcome(.corrected)
                     state = .buffering
                     return
                 }
-
-                if let merged = mergeSuppressedShort(
-                    suppressedShort,
-                    currentOriginal: word,
-                    currentConverted: finalWord,
-                    targetLayout: targetLayout,
-                    isLowConfidence: isLowConfidence,
-                    shouldSwitch: shouldSwitch
-                ) {
-                    originalForCorrection = merged.original
-                    finalWord = merged.converted
-                    NSLog("[SwitchFix] Detection: replayed suppressed short word for contextual correction")
-                }
-
-                consecutiveWrongCount += 1
-                lastDetectionResult = DetectionResult(
-                    sourceLayout: currentLayout,
-                    targetLayout: targetLayout,
-                    convertedWord: finalWord,
-                    originalWord: originalForCorrection,
-                    shouldSwitchLayout: shouldSwitch
-                )
-
-                NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), consecutive: %d/%d, switch: %@",
-                      word, finalWord, targetLayout.rawValue, consecutiveWrongCount, consecutiveThreshold,
-                      shouldSwitch ? "yes" : "no")
-
-                if consecutiveWrongCount >= consecutiveThreshold {
-                    delegate?.layoutDetector(self, didDetectWrongLayout: lastDetectionResult!, boundaryCharacter: pendingBoundaryCharacter)
-                    consecutiveWrongCount = 0
-                }
-
-                recordOutcome(.corrected)
-                state = .buffering
-                return
             }
 
             if shouldAllowAcronymFallback(original: word, converted: converted, currentLanguage: currentLanguage) {
@@ -289,10 +359,11 @@ public class LayoutDetector {
 
                 if shouldSuppressAcronymFallback(
                     targetLayout: targetLayout,
+                    sourceLayout: sourceLayout,
                     shouldSwitch: shouldSwitch
                 ) {
                     NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context (acronym)",
-                          word, finalWord, targetLayout.rawValue, currentLayout.rawValue)
+                          word, finalWord, targetLayout.rawValue, sourceLayout.rawValue)
                     consecutiveWrongCount = 0
                     lastDetectionResult = nil
                     recordOutcome(.unknown)
@@ -302,7 +373,7 @@ public class LayoutDetector {
 
                 consecutiveWrongCount += 1
                 lastDetectionResult = DetectionResult(
-                    sourceLayout: currentLayout,
+                    sourceLayout: sourceLayout,
                     targetLayout: targetLayout,
                     convertedWord: finalWord,
                     originalWord: word,
@@ -359,22 +430,24 @@ public class LayoutDetector {
         original: String,
         converted: String,
         targetLayout: Layout,
+        sourceLayout: Layout,
         isLowConfidence: Bool,
         shouldSwitch: Bool
     ) -> Bool {
         guard isLowConfidence else { return false }
         guard original.count <= shortWordSuppressionLength else { return false }
         guard !shouldSwitch else { return false }
-        guard targetLayout != currentLayout else { return false }
+        guard targetLayout != sourceLayout else { return false }
         guard !converted.isEmpty else { return false }
         return hasStrongCurrentContext()
     }
 
     private func shouldSuppressAcronymFallback(
         targetLayout: Layout,
+        sourceLayout: Layout,
         shouldSwitch: Bool
     ) -> Bool {
-        guard targetLayout != currentLayout else { return false }
+        guard targetLayout != sourceLayout else { return false }
         guard !shouldSwitch else { return false }
         return hasStrongCurrentContext()
     }
@@ -515,6 +588,81 @@ public class LayoutDetector {
             if hasLatin && hasCyrillic { return true }
         }
         return false
+    }
+
+    private enum ScriptKind {
+        case latin
+        case cyrillic
+        case mixed
+        case unknown
+    }
+
+    private func resolvedSourceLayout(for word: String) -> Layout {
+        let script = scriptKind(for: word)
+        switch script {
+        case .latin:
+            if allowedLayouts.contains(.english) {
+                return .english
+            }
+            return currentLayout
+        case .cyrillic:
+            if currentLayout == .ukrainian || currentLayout == .russian {
+                return currentLayout
+            }
+            return inferCyrillicLayout(for: word) ?? currentLayout
+        case .mixed, .unknown:
+            return currentLayout
+        }
+    }
+
+    private func scriptKind(for text: String) -> ScriptKind {
+        var hasLatin = false
+        var hasCyrillic = false
+
+        for scalar in text.unicodeScalars where scalar.properties.isAlphabetic {
+            let value = scalar.value
+            if LayoutDetector.latinLowercaseRange.contains(value) || LayoutDetector.latinUppercaseRange.contains(value) {
+                hasLatin = true
+            } else if LayoutDetector.cyrillicRange.contains(value) {
+                hasCyrillic = true
+            }
+            if hasLatin && hasCyrillic {
+                return .mixed
+            }
+        }
+
+        if hasLatin { return .latin }
+        if hasCyrillic { return .cyrillic }
+        return .unknown
+    }
+
+    private func inferCyrillicLayout(for word: String) -> Layout? {
+        let lower = word.lowercased()
+
+        if containsAnyCharacter(from: "іїєґ", in: lower), allowedLayouts.contains(.ukrainian) {
+            return .ukrainian
+        }
+        if containsAnyCharacter(from: "ыэёъ", in: lower), allowedLayouts.contains(.russian) {
+            return .russian
+        }
+
+        let hasUkrainian = allowedLayouts.contains(.ukrainian)
+        let hasRussian = allowedLayouts.contains(.russian)
+        if hasUkrainian && !hasRussian { return .ukrainian }
+        if hasRussian && !hasUkrainian { return .russian }
+        if hasUkrainian { return .ukrainian }
+        if hasRussian { return .russian }
+        return nil
+    }
+
+    private func containsAnyCharacter(from candidates: String, in text: String) -> Bool {
+        let set = Set(candidates)
+        return text.contains { set.contains($0) }
+    }
+
+    private func ukrainianTypoOverride(for word: String) -> String? {
+        let normalized = word.lowercased()
+        return LayoutDetector.ukrainianTypoOverrides[normalized]
     }
 
     /// Split trailing punctuation/symbols from a word.

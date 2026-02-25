@@ -23,6 +23,7 @@ macOS menu bar utility that auto-corrects keyboard layout mistakes. Type in the 
 
 - macOS 13.0+
 - Accessibility permission (prompted on first launch)
+- Input Monitoring permission (prompted on first launch)
 - Swift 5.9+ and Command Line Tools (for building)
 
 ## Installation
@@ -31,7 +32,7 @@ Download the latest release from the [Releases page](https://github.com/rundax/S
 
 1. Open the downloaded `.dmg` file.
 2. Drag `SwitchFix.app` to your Applications folder.
-3. Launch the app. You will need to grant Accessibility permissions for it to work.
+3. Launch the app. You will need to grant both Accessibility and Input Monitoring permissions for it to work.
 
 > **Note**: Since the app is not notarized by Apple, you might see a warning. Right-click the app and choose "Open" to bypass it, or go to System Settings > Privacy & Security to allow it.
 
@@ -47,11 +48,26 @@ swift run TestRunner
 # Build .app bundle (ad-hoc signed)
 scripts/build-app.sh
 
+# Optional: use a stable signing identity to preserve TCC permissions across rebuilds
+SWITCHFIX_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/build-app.sh
+
 # Create DMG for distribution
 scripts/create-dmg.sh
 ```
 
 The built app is at `dist/SwitchFix.app`.
+
+### TCC permissions in dev builds
+
+If you use ad-hoc signing (default), macOS may treat each rebuilt app as a new binary and drop Accessibility/Input Monitoring approval.
+
+Use:
+
+```bash
+scripts/regrant-permissions.sh
+```
+
+Or set `SWITCHFIX_CODESIGN_IDENTITY` when building so permissions remain stable across rebuilds.
 
 ## How It Works
 

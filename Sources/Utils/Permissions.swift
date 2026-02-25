@@ -2,6 +2,14 @@ import AppKit
 import ApplicationServices
 
 public class Permissions {
+    public static func ensureRequiredPermissions(completion: @escaping () -> Void) {
+        ensureAccessibility {
+            ensureInputMonitoring {
+                completion()
+            }
+        }
+    }
+
     public static func isAccessibilityGranted() -> Bool {
         return AXIsProcessTrusted()
     }
@@ -9,6 +17,15 @@ public class Permissions {
     public static func requestAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
+    }
+
+    public static func isInputMonitoringGranted() -> Bool {
+        return CGPreflightListenEventAccess()
+    }
+
+    @discardableResult
+    public static func requestInputMonitoring() -> Bool {
+        return CGRequestListenEventAccess()
     }
 
     /// Shows an alert prompting the user to grant accessibility access,
@@ -19,34 +36,63 @@ public class Permissions {
             return
         }
 
-        let alert = NSAlert()
-        alert.messageText = "SwitchFix Needs Accessibility Access"
-        alert.informativeText = "SwitchFix needs Accessibility permissions to monitor keyboard input and correct layout mistakes.\n\nPlease enable SwitchFix in System Settings → Privacy & Security → Accessibility."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Quit")
+        NSLog("[SwitchFix] Permissions: Accessibility not granted, requesting access")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        requestAccessibility()
+        openAccessibilitySettings()
+        pollForAccessibilityAccess(completion: completion)
+    }
 
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            NSApplication.shared.terminate(nil)
+    public static func ensureInputMonitoring(completion: @escaping () -> Void) {
+        if isInputMonitoringGranted() {
+            completion()
             return
         }
 
-        // Open System Settings to Accessibility pane
+        NSLog("[SwitchFix] Permissions: Input Monitoring not granted, requesting access")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        _ = requestInputMonitoring()
+        openInputMonitoringSettings()
+        pollForInputMonitoringAccess(completion: completion)
+    }
+
+    public static func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
-
-        // Poll for permission every 2 seconds
-        pollForAccessibility(completion: completion)
     }
 
-    private static func pollForAccessibility(completion: @escaping () -> Void) {
+    public static func openInputMonitoringSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+
+        if let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
+            NSWorkspace.shared.open(fallback)
+        }
+    }
+
+    private static func pollForAccessibilityAccess(completion: @escaping () -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             while !isAccessibilityGranted() {
                 Thread.sleep(forTimeInterval: 2.0)
             }
             DispatchQueue.main.async {
+                NSLog("[SwitchFix] Permissions: Accessibility granted")
+                completion()
+            }
+        }
+    }
+
+    private static func pollForInputMonitoringAccess(completion: @escaping () -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            while !isInputMonitoringGranted() {
+                Thread.sleep(forTimeInterval: 2.0)
+            }
+            DispatchQueue.main.async {
+                NSLog("[SwitchFix] Permissions: Input Monitoring granted")
                 completion()
             }
         }

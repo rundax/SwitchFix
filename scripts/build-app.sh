@@ -46,9 +46,19 @@ if [ -d "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" ]; then
     echo "Copied dictionary bundle to Contents/Resources/."
 fi
 
-# Ad-hoc code sign
-echo "Signing with ad-hoc identity..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+# Code sign
+# Prefer a stable signing identity (set via SWITCHFIX_CODESIGN_IDENTITY) so
+# macOS TCC permissions survive across rebuilds.
+if [ -n "${SWITCHFIX_CODESIGN_IDENTITY:-}" ]; then
+    echo "Signing with identity: $SWITCHFIX_CODESIGN_IDENTITY"
+    codesign --force --deep --sign "$SWITCHFIX_CODESIGN_IDENTITY" "$APP_BUNDLE"
+else
+    echo "Signing with ad-hoc identity..."
+    codesign --force --deep --sign - "$APP_BUNDLE"
+    echo "WARNING: ad-hoc signature changes on each rebuild."
+    echo "         Accessibility/Input Monitoring may need to be granted again."
+    echo "         Use scripts/regrant-permissions.sh after rebuilding."
+fi
 
 echo ""
 echo "Build complete: $APP_BUNDLE"

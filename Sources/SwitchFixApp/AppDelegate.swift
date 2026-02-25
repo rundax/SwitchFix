@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import Core
+import Dictionary
 import UI
 import Utils
 
@@ -14,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Cached result for whether the current frontmost app is allowed (updated on app switch).
     private var isCurrentAppAllowed: Bool = true
     private var capsLockConflictProbeToken: UUID?
+    private var monitoringObserversRegistered: Bool = false
     private static let capsLockKeyCode: UInt16 = 57
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -22,11 +24,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController = StatusBarController()
 
         setupCorrectionEngine()
+        prewarmDictionaries()
 
-        Permissions.ensureAccessibility { [weak self] in
-            self?.startMonitoring()
-            NSLog("[SwitchFix] Monitoring started, available layouts: %@",
-                  InputSourceManager.shared.availableLayouts().map { $0.rawValue }.joined(separator: ", "))
+        Permissions.ensureRequiredPermissions { [weak self] in
+            guard let self else { return }
+            if self.startMonitoring() {
+                NSLog("[SwitchFix] Monitoring started, available layouts: %@",
+                      InputSourceManager.shared.availableLayouts().map { $0.rawValue }.joined(separator: ", "))
+            } else {
+                let accessibility = Permissions.isAccessibilityGranted()
+                let inputMonitoring = Permissions.isInputMonitoringGranted()
+                NSLog("[SwitchFix] Monitoring failed to start (Accessibility: %@, Input Monitoring: %@)",
+                      accessibility ? "granted" : "missing",
+                      inputMonitoring ? "granted" : "missing")
+            }
         }
 
         NotificationCenter.default.addObserver(
@@ -56,7 +67,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startMonitoring() {
+    private func prewarmDictionaries() {
+        let availableLayouts = inputSourceManager.availableLayouts()
+        let languages: Set<Language> = Set(
+            availableLayouts.map { layout in
+                switch layout {
+                case .english: return .english
+                case .ukrainian: return .ukrainian
+                case .russian: return .russian
+                }
+            }
+        )
+
+        guard !languages.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let loader = DictionaryLoader.shared
+            for language in languages {
+                _ = loader.bloomFilter(for: language)
+                _ = loader.suggestionBuckets(for: language)
+            }
+            NSLog("[SwitchFix] Dictionary prewarm complete for: %@",
+                  languages.map { $0.rawValue }.sorted().joined(separator: ", "))
+        }
+    }
+
+    @discardableResult
+    private func startMonitoring() -> Bool {
         keyboardMonitor = KeyboardMonitor()
         keyboardMonitor?.delegate = self
 
@@ -76,7 +112,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.textCorrector?.recordUserInput(kind: .character)
         }
 
-        keyboardMonitor?.start()
+        guard keyboardMonitor?.start() == true else {
+            return false
+        }
+
+        guard !monitoringObserversRegistered else { return true }
+        monitoringObserversRegistered = true
 
         // Observe frontmost app changes to reset detector on app switch
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -92,6 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
             object: nil
         )
+        return true
     }
 
     @objc private func activeAppChanged() {

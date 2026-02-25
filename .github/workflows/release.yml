@@ -16,8 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - macos-13
-          - macos-14
+          - macos-15-intel
+          - macos-15
 
     steps:
       - name: Checkout code

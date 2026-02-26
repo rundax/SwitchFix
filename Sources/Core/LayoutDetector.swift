@@ -216,6 +216,17 @@ public class LayoutDetector {
             }
         }
 
+        if shouldSkipAutomaticEnglishAcronymCorrection(word: word, sourceLayout: sourceLayout) {
+            NSLog("[SwitchFix] Detection: '%@' skipped — all-caps English token", word)
+            consecutiveWrongCount = 0
+            lastDetectionResult = nil
+            pendingSwitchLayout = nil
+            pendingSwitchCount = 0
+            recordOutcome(.validCurrent)
+            state = .buffering
+            return
+        }
+
         if sourceLayout == .ukrainian,
            let override = ukrainianTypoOverride(for: word) {
                 let correctedWord = applyCase(from: word, to: override)
@@ -555,6 +566,14 @@ public class LayoutDetector {
         if containsVowel(original, language: currentLanguage) { return false }
         if containsMixedScripts(converted) { return false }
         return true
+    }
+
+    private func shouldSkipAutomaticEnglishAcronymCorrection(word: String, sourceLayout: Layout) -> Bool {
+        guard sourceLayout == .english else { return false }
+        // Keep manual/hotkey correction available; suppress only automatic boundary-triggered rewrites.
+        guard pendingBoundaryCharacter != nil else { return false }
+        guard word.count >= 2 else { return false }
+        return isAllUppercase(word)
     }
 
     private func containsVowel(_ text: String, language: Language) -> Bool {

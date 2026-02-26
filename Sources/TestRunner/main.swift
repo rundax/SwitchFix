@@ -505,6 +505,20 @@ runSuite("LayoutDetector: Acronym fallback preserves case") {
     }
 }
 
+runSuite("LayoutDetector: All-caps English token is not auto-corrected") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "GDPR" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "all-caps English acronym should not auto-correct to Cyrillic")
+}
+
 runSuite("LayoutDetector: Acronym fallback suppressed in strong current context") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()

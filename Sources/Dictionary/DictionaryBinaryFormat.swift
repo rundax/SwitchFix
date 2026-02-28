@@ -93,21 +93,23 @@ enum DictionaryBinaryFormat {
 
     static func readUInt32(from data: Data, at offset: Int) -> UInt32 {
         precondition(offset + 4 <= data.count, "Out-of-bounds UInt32 read")
-        return UInt32(data[offset])
-            | (UInt32(data[offset + 1]) << 8)
-            | (UInt32(data[offset + 2]) << 16)
-            | (UInt32(data[offset + 3]) << 24)
+        let b0 = UInt32(data[offset])
+        let b1 = UInt32(data[offset + 1]) << 8
+        let b2 = UInt32(data[offset + 2]) << 16
+        let b3 = UInt32(data[offset + 3]) << 24
+        return b0 | b1 | b2 | b3
     }
 
     static func readUInt64(from data: Data, at offset: Int) -> UInt64 {
         precondition(offset + 8 <= data.count, "Out-of-bounds UInt64 read")
-        return UInt64(data[offset])
-            | (UInt64(data[offset + 1]) << 8)
-            | (UInt64(data[offset + 2]) << 16)
-            | (UInt64(data[offset + 3]) << 24)
-            | (UInt64(data[offset + 4]) << 32)
-            | (UInt64(data[offset + 5]) << 40)
-            | (UInt64(data[offset + 6]) << 48)
-            | (UInt64(data[offset + 7]) << 56)
+        let b0 = UInt64(data[offset])
+        let b1 = UInt64(data[offset + 1]) << 8
+        let b2 = UInt64(data[offset + 2]) << 16
+        let b3 = UInt64(data[offset + 3]) << 24
+        let b4 = UInt64(data[offset + 4]) << 32
+        let b5 = UInt64(data[offset + 5]) << 40
+        let b6 = UInt64(data[offset + 6]) << 48
+        let b7 = UInt64(data[offset + 7]) << 56
+        return b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7
     }
 }

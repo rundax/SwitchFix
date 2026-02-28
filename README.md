@@ -18,7 +18,8 @@ macOS menu bar utility that auto-corrects keyboard layout mistakes. Type in the 
 - **App blacklist** — disabled in terminals, IDEs, and code editors by default (toggle per app)
 - **Launch at Login** — optional auto-start via SMAppService
 - **Confidence-based switching** — delays layout switch for ambiguous short words
-- **Compact bundle** — ~11MB .app bundle with expanded dictionaries, no external dependencies
+- **Expanded Ukrainian dictionary** — runtime `uk_UA.txt` now includes 2,958,567 normalized single-word entries
+- **Binary dictionary loading** — precompiled `.bin` dictionaries are packaged for faster startup paths
 
 ## Requirements
 
@@ -119,7 +120,8 @@ When these secrets are present, the workflow imports the certificate and signs u
 2. Characters accumulate in **LayoutDetector**'s word buffer
 3. On word boundary (space, enter, tab), the buffer is checked:
    - Convert the word to alternative layouts via **LayoutMapper** character tables
-   - Validate each conversion against **BloomFilter** dictionaries (EN: 48k, UK: 320k, RU: 146k words)
+   - Validate each conversion against dictionary indices (binary `mmap` when available, text fallback otherwise)
+   - Current dictionary sizes: EN `48,241`, UK `2,958,567`, RU `146,229` single-word entries
 4. If a valid word is found in another layout, **TextCorrector**:
    - Deletes the mistyped characters (+ boundary char) via CGEvent backspaces
    - Switches the input source via TIS API
@@ -133,8 +135,8 @@ Sources/
 ├── SwitchFixApp/     # Entry point, AppDelegate (wires the pipeline)
 ├── Core/             # KeyboardMonitor, LayoutDetector, LayoutMapper,
 │                     #   TextCorrector, InputSourceManager
-├── Dictionary/       # BloomFilter, DictionaryLoader, WordValidator
-│   └── Resources/    #   en_US.txt, uk_UA.txt, ru_RU.txt
+├── Dictionary/       # DictionaryLoader, index abstractions, WordValidator
+│   └── Resources/    #   en_US.txt, uk_UA.txt, ru_RU.txt, overrides/
 ├── UI/               # StatusBarController, PreferencesManager
 └── Utils/            # Permissions (AXUIElement), AppFilter, KeyCodeMapping,
                       #   SystemHotkeyConflicts
@@ -181,6 +183,12 @@ SwitchFix logs key decisions via `NSLog`. Open Console.app and filter for `[Swit
 - Detection decisions (buffer contents, conversion results)
 - Correction actions (deletion count, layout switch, typed text)
 - App switching (allowed/blocked)
+
+## Dictionary Notes (v0.0.3)
+
+- `uk_UA.txt` grew from `320,307` (v0.0.2) to `2,958,567` single-word entries.
+- Multi-word phrases are intentionally filtered out from runtime `uk_UA.txt` (kept at `0`).
+- Release bundles are larger now because `uk_UA.bin` is packaged for runtime lookup.
 
 ## License
 

@@ -75,10 +75,20 @@ jobs:
           security find-identity -v -p codesigning
 
       - name: Build App
-        env:
-          SWITCHFIX_CODESIGN_IDENTITY: ${{ secrets.SWITCHFIX_CODESIGN_IDENTITY }}
         run: |
           chmod +x scripts/build-app.sh
+
+          # Use named signing identity only when certs were imported.
+          # Otherwise force ad-hoc signing to avoid CI failures when only
+          # SWITCHFIX_CODESIGN_IDENTITY is configured.
+          if [ "${{ steps.cert_check.outputs.has_certs }}" = "true" ]; then
+            export SWITCHFIX_CODESIGN_IDENTITY="${{ secrets.SWITCHFIX_CODESIGN_IDENTITY }}"
+            echo "Using configured signing identity."
+          else
+            unset SWITCHFIX_CODESIGN_IDENTITY
+            echo "Using ad-hoc signing (no cert secrets configured)."
+          fi
+
           scripts/build-app.sh
 
       - name: Create DMG

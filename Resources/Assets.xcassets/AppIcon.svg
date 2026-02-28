@@ -1,183 +1,102 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Embed Google Fonts with Cyrillic support -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" fill="none" viewBox="0 0 1024 1024">
+  <path d="M3.1 306.8C3.1 206.7 3.1 156.7 22.6 115.1 51.7 51.7 107.5 3.3 178.7 3.3 222.6 3.3 278.2 3.3 380.4 3.3H668C752.3 3.3 798.5 1 841.3 10 920.4 23.6 981.1 83.1 1006.3 160.4 1022.5 210.3 1020.9 264.3 1020.9 350.5V711.7C1020.9 763.9 1020.9 805.1 1009.3 845.5 984.2 936.4 914.7 1001.1 816 1016.8 777.3 1022.9 733.1 1020.6 674.8 1020.6H351.3C279.8 1020.6 235.3 1021.2 196.7 1015 106.7 1000 42 938.7 16.1 857.1 1.4 811.3 3.1 761.8 3.1 685.1V306.8Z" fill="url(#paint1_radial_1301_3178)" stroke="url(#paint2_linear_1301_3178)" stroke-width="6"/>
+  <path d="M535.7 328.4C533.3 287.5 508.3 269.4 475.4 269.4L149.5 268C112.5 268 89.8 285.2 86.7 317.1 83.6 349 84.8 581.2 84.8 612.8 84.8 651.3 104.9 668.5 145.9 668.5H475.4C519.8 668.5 537 654.2 540 611.3 541.9 583.8 537.5 362.6 535.7 328.4Z" fill="url(#paint3_linear_1301_3178)" stroke="url(#paint3_linear_1301_3178)" stroke-width="6"/>
+  <path d="M507.8 333.9C506.5 298.7 492.1 282.1 444.7 282.1L174.5 280.2C132.8 280.2 114.4 293.8 111.9 321S110.1 575.7 111.9 608.6 121.3 657.4 161.1 657.4H457.2C497.6 657.4 506.5 641.5 508.4 605.7 509.7 580.6 509 363.9 507.8 333.9Z" fill="url(#paint5_radial_1301_3178)" stroke="url(#paint6_linear_1301_3178)" stroke-width="6"/>
+  <path d="M495.5 329.7C494.3 302.9 479.2 296.8 439.4 296.8L168 295.2C138.5 295.2 131.1 304.2 129.8 321.9 128.6 339.7 129.8 543.2 131.1 569.9 132.3 596.7 138.5 594.8 164.9 594.8H463.5C491.7 594.8 495.5 587.7 496.7 564.3 498 540.8 496.7 353 495.5 329.7Z" fill="url(#paint7_radial_1301_3178)"/>
+  <path d="M232.4 354.5H270.6L324.8 524.5H293.5L281.6 484.4H222.8L208.7 524.5H178.4L232.4 354.5ZM273.2 457 251.9 389.9 231.3 457H273.2Z" fill="url(#paint8_linear_1301_3178)"/>
+  <path d="M336.2 354.5H364.9V413.2C373.9 405.7 385.1 401.5 399 401.5 435.8 401.5 450.4 430.9 450.4 463.8 450.4 504.9 430.8 527.4 398.3 527.4 384 527.4 371.7 521 363.5 512.2L358.8 524.5H336.2V354.5ZM392.3 500.3C414.7 500.3 420.9 482.9 420.9 462.1 420.9 438.7 414 426.7 393.8 426.7 382.8 426.7 372.8 431.2 364.9 437.1V489.8C372.2 496.3 382.2 500.3 392.3 500.3Z" fill="url(#paint9_linear_1301_3178)"/>
+  <path d="M501.1 107.3C364 110.2 273.5 181 211 268L279.9 267.9C341.9 207 419 167.8 510.1 167.8 616.9 167.8 700.4 217.7 765.7 298.1L723.2 321.3 858.5 388.3 859.4 241 823.4 271.9C749.1 173.3 662.4 107.3 522 106.9L501.1 107.3Z" fill="url(#paint10_linear_1301_3178)" stroke="url(#paint11_linear_1301_3178)" stroke-width="6"/>
+  <path d="M507.8 932.5C630 930.5 721.4 879 808.1 787.7L782.4 787.4C715.5 863 631.7 901.5 514.2 881.4 428.7 879.4 352.9 849.4 282.8 777.6L316.3 753.5 184.6 674.9 183.3 820.3 221.5 798.2C294.5 884.9 373.1 931.5 490 932.5H507.8Z" fill="url(#paint12_linear_1301_3178)" stroke="url(#paint13_linear_1301_3178)" stroke-width="6"/>
+  <path d="M502.2 738.4C500.6 770.3 516.2 787.6 557.3 787.6H886.7C937.2 787.6 950.6 767.1 952.2 721.2V479C952.2 433 932.1 402.1 891.1 402.1H581.2C534.2 402.1 507.9 405.4 504.7 448.4 502.2 483.5 504.1 703.3 502.2 738.4Z" fill="url(#paint14_radial_1301_3178)" stroke="url(#paint15_linear_1301_3178)" stroke-width="6"/>
+  <path d="M532.3 462.5C533.5 433.7 540.4 420.3 588.4 418.4H850.4C890.8 418.4 904.8 427.6 906.1 459.8V686.5C906.1 710.6 903 715.4 880.3 714L575.6 709.6C542.4 709.6 534.2 709 532.9 678.1 531.7 651.6 531.1 489.6 532.3 462.5Z" fill="url(#paint16_radial_1301_3178)" stroke="url(#paint17_linear_1301_3178)" stroke-width="6"/>
+  <path d="M636.1 478.7H671L727.7 645H695.4L680.5 604.9H629.4L615.6 645H582.7L636.1 478.7ZM671 578.1 651.4 514.5 632 578.1H671Z" fill="url(#paint18_linear_1301_3178)"/>
+  <path d="M733.3 546.7C733.3 497.2 753.5 484.6 788.4 484.6 803.5 484.6 817 481.1 828.1 475V501.4C819.3 507.8 808 510.5 790.3 511.1 768.9 511.7 760.2 519.9 758.3 541 766.8 533.2 778.7 529.7 791.9 529.7 827 529.7 844.5 548.9 844.5 585V591.2C844.5 630.7 824.2 647.9 788.7 647.9 753.2 647.9 733.3 630.7 733.3 591.2V546.7ZM788.7 621.4C808.9 621.4 814.6 607.1 814.6 587.3V581.8C814.6 563.4 807.7 552.3 789 552.3 778 552.3 768.5 557.2 761.9 564V590.1C761.9 610 768.5 621.4 788.7 621.4Z" fill="url(#paint19_linear_1301_3178)"/>
   <defs>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;subset=cyrillic,latin');
-    </style>
-    <!-- macOS icon rounded rect clip -->
-    <clipPath id="icon-clip">
-      <rect width="1024" height="1024" rx="230" ry="230"/>
-    </clipPath>
-
-    <!-- Background gradient: deep navy → midnight blue -->
-    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#0d1b3e"/>
-      <stop offset="50%"  stop-color="#0a1628"/>
-      <stop offset="100%" stop-color="#060d1a"/>
-    </linearGradient>
-
-    <!-- Subtle radial glow behind centre -->
-    <radialGradient id="centre-glow" cx="50%" cy="50%" r="55%">
-      <stop offset="0%"   stop-color="#2a4dff" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="#2a4dff" stop-opacity="0"/>
+    <radialGradient id="paint0_radial_1301_3178" cx="0" cy="0" r="1" gradientTransform="translate(523.9 548.5) scale(1454.6 1416.9)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#080245" offset="0"/>
+      <stop stop-color="#000014" offset="1"/>
     </radialGradient>
-
-    <!-- Key card glass gradient (left – latin) -->
-    <linearGradient id="key-left-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#1e3a6e" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#112050" stop-opacity="0.85"/>
+    <radialGradient id="paint1_radial_1301_3178" cx="0" cy="0" r="1" gradientTransform="translate(512.2 511.9) scale(898.1 896.4)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#000A3C" offset="0"/>
+      <stop stop-color="#0B1B76" offset=".6198"/>
+      <stop stop-color="#3446A9" offset="1"/>
+    </radialGradient>
+    <linearGradient id="paint2_linear_1301_3178" x1="512.2" x2="512.2" y1="0.2" y2="1023.7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#94B6FF" offset="0"/>
+      <stop stop-color="#8D45DD" offset="1"/>
     </linearGradient>
-
-    <!-- Key card glass gradient (right – cyrillic) -->
-    <linearGradient id="key-right-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#2d1b6e" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#1a0f50" stop-opacity="0.85"/>
+    <linearGradient id="paint3_linear_1301_3178" x1="312.3" x2="312.3" y1="264.8" y2="671.6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00f" offset="0"/>
+      <stop stop-color="#00D1FF" offset=".5104"/>
+      <stop stop-color="#00008E" offset="1"/>
     </linearGradient>
-
-    <!-- Arrow ring gradient -->
-    <linearGradient id="arrow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#4d8eff"/>
-      <stop offset="100%" stop-color="#a855f7"/>
+    <radialGradient id="paint5_radial_1301_3178" cx="0" cy="0" r="1" gradientTransform="translate(215.1 277) rotate(48.2) scale(348.2 353.9)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BDD4FF" offset="0"/>
+      <stop stop-color="#002C76" offset="1"/>
+    </radialGradient>
+    <linearGradient id="paint6_linear_1301_3178" x1="309.8" x2="309.8" y1="277" y2="660.6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#000082" offset="0"/>
+      <stop stop-color="#00D1FF" offset=".5104"/>
+      <stop stop-color="#00008E" offset="1"/>
     </linearGradient>
-
-    <!-- Blue glow filter -->
-    <filter id="blue-glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="14" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <!-- Soft drop shadow for key cards -->
-    <filter id="card-shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="24" flood-color="#000" flood-opacity="0.55"/>
-    </filter>
-
-    <!-- Inner highlight for glass top edge -->
-    <linearGradient id="highlight-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    <radialGradient id="paint7_radial_1301_3178" cx="0" cy="0" r="1" gradientTransform="translate(211.4 292) rotate(49) scale(329.8 335)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6691C5" offset="0"/>
+      <stop stop-color="#002151" offset="1"/>
+    </radialGradient>
+    <linearGradient id="paint8_linear_1301_3178" x1="257.4" x2="257.4" y1="354.5" y2="524.6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFFFF" offset="0"/>
+      <stop stop-color="#B1D9FF" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint9_linear_1301_3178" x1="393.3" x2="393.3" y1="354.5" y2="527.5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFFFF" offset="0"/>
+      <stop stop-color="#B1D9FF" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint10_linear_1301_3178" x1="535.1" x2="535.1" y1="103.9" y2="391.9" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00D5FF" offset="0"/>
+      <stop stop-color="#B366FF" offset=".4948"/>
+      <stop stop-color="#4F21BA" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint11_linear_1301_3178" x1="535.1" x2="535.1" y1="103.9" y2="391.9" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A7B3FF" offset="0"/>
+      <stop stop-color="#F744FF" offset=".4948"/>
+      <stop stop-color="#4F21BA" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint12_linear_1301_3178" x1="495.5" x2="495.5" y1="671.6" y2="935.9" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60f" offset="0"/>
+      <stop stop-color="#0075FF" offset=".4948"/>
+      <stop stop-color="#A7E9FF" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint13_linear_1301_3178" x1="495.5" x2="495.5" y1="671.6" y2="935.9" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#000082" offset="0"/>
+      <stop stop-color="#00D1FF" offset=".5104"/>
+      <stop stop-color="#00008E" offset="1"/>
+    </linearGradient>
+    <radialGradient id="paint14_radial_1301_3178" cx="0" cy="0" r="1" gradientTransform="translate(727.1 398.9) rotate(89.2) scale(378.4 430.3)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B3D4FF" offset="0"/>
+      <stop stop-color="#8044FF" offset=".5573"/>
+      <stop stop-color="#4F00B1" offset="1"/>
+    </radialGradient>
+    <linearGradient id="paint15_linear_1301_3178" x1="727.1" x2="727.1" y1="398.9" y2="790.7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B3D4FF" offset="0"/>
+      <stop stop-color="#8044FF" offset=".5573"/>
+      <stop stop-color="#4F00B1" offset="1"/>
+    </linearGradient>
+    <radialGradient id="paint16_radial_1301_3178" cx="0" cy="0" r="1" gradientTransform="translate(625.5 421.2) rotate(48.7) scale(317 322.3)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFFFF" offset="0"/>
+      <stop stop-color="#4F21BA" offset="1"/>
+    </radialGradient>
+    <linearGradient id="paint17_linear_1301_3178" x1="719.3" x2="719.3" y1="415.1" y2="715.8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B366FF" offset="0"/>
+      <stop stop-color="#FEADFF" offset=".526"/>
+      <stop stop-color="#FEFFFF" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint18_linear_1301_3178" x1="655.1" x2="655.1" y1="478.7" y2="645.5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFFFF" offset="0"/>
+      <stop stop-color="#B1D9FF" offset="1"/>
+    </linearGradient>
+    <linearGradient id="paint19_linear_1301_3178" x1="789.1" x2="789.1" y1="475.3" y2="647.8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFFFF" offset="0"/>
+      <stop stop-color="#B1D9FF" offset="1"/>
     </linearGradient>
   </defs>
-
-  <!-- ── BACKGROUND ── -->
-  <g clip-path="url(#icon-clip)">
-    <rect width="1024" height="1024" fill="url(#bg-grad)"/>
-
-    <!-- Ambient glow -->
-    <ellipse cx="512" cy="512" rx="480" ry="420" fill="url(#centre-glow)"/>
-
-    <!-- Subtle grid texture lines (very faint) -->
-    <g stroke="#1e3a8a" stroke-width="1" opacity="0.12">
-      <line x1="0"    y1="256"  x2="1024" y2="256"/>
-      <line x1="0"    y1="512"  x2="1024" y2="512"/>
-      <line x1="0"    y1="768"  x2="1024" y2="768"/>
-      <line x1="256"  y1="0"    x2="256"  y2="1024"/>
-      <line x1="512"  y1="0"    x2="512"  y2="1024"/>
-      <line x1="768"  y1="0"    x2="768"  y2="1024"/>
-    </g>
-
-    <!-- ── LEFT KEY CARD (Latin "Ab") ── -->
-    <g filter="url(#card-shadow)">
-      <rect x="110" y="330" width="340" height="380" rx="48" ry="48"
-            fill="url(#key-left-grad)" stroke="#3b6fd4" stroke-width="1.5"/>
-      <!-- glass highlight top edge -->
-      <rect x="110" y="330" width="340" height="380" rx="48" ry="48"
-            fill="url(#highlight-grad)" opacity="0.9"/>
-      <!-- inner subtle border glow -->
-      <rect x="113" y="333" width="334" height="374" rx="46" ry="46"
-            fill="none" stroke="#5b8fff" stroke-width="0.8" opacity="0.4"/>
-    </g>
-
-    <!-- Latin text "Ab" -->
-    <text x="280" y="573"
-          font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-          font-size="188" font-weight="700" letter-spacing="-4"
-          text-anchor="middle" fill="#e8f0ff">Ab</text>
-
-    <!-- small label under -->
-    <text x="280" y="648"
-          font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-          font-size="36" font-weight="500" text-anchor="middle"
-          fill="#4d8eff" opacity="0.8" letter-spacing="3">EN</text>
-
-    <!-- ── RIGHT KEY CARD (Cyrillic "Аб") ── -->
-    <g filter="url(#card-shadow)">
-      <rect x="574" y="330" width="340" height="380" rx="48" ry="48"
-            fill="url(#key-right-grad)" stroke="#7c3aed" stroke-width="1.5"/>
-      <!-- glass highlight -->
-      <rect x="574" y="330" width="340" height="380" rx="48" ry="48"
-            fill="url(#highlight-grad)" opacity="0.85"/>
-      <!-- inner glow -->
-      <rect x="577" y="333" width="334" height="374" rx="46" ry="46"
-            fill="none" stroke="#a855f7" stroke-width="0.8" opacity="0.4"/>
-    </g>
-
-    <!-- Cyrillic text "Аб" — using XML char refs to prevent font substitution -->
-    <text x="744" y="573"
-          font-family="Inter, 'Arial Unicode MS', 'Noto Sans', 'Segoe UI', sans-serif"
-          font-size="188" font-weight="700" letter-spacing="-4"
-          text-anchor="middle" fill="#f0e8ff">&#1040;&#1073;</text>
-
-    <!-- small label under -->
-    <text x="744" y="648"
-          font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-          font-size="36" font-weight="500" text-anchor="middle"
-          fill="#a855f7" opacity="0.8" letter-spacing="3">UA</text>
-
-    <!-- ── CENTRE ARROW RING ── -->
-    <!-- Glow halo behind arrow ring -->
-    <circle cx="512" cy="520" r="82" fill="none"
-            stroke="#3b6fd4" stroke-width="52" opacity="0.12"/>
-    <circle cx="512" cy="520" r="82" fill="none"
-            stroke="#a855f7" stroke-width="28" opacity="0.10"/>
-
-    <!-- Main ring arc — clockwise top -->
-    <path d="M 430 520 A 82 82 0 0 1 594 520"
-          fill="none" stroke="url(#arrow-grad)" stroke-width="11"
-          stroke-linecap="round" filter="url(#blue-glow)"/>
-
-    <!-- Main ring arc — counter-clockwise bottom -->
-    <path d="M 594 520 A 82 82 0 0 1 430 520"
-          fill="none" stroke="url(#arrow-grad)" stroke-width="11"
-          stroke-linecap="round" filter="url(#blue-glow)"/>
-
-    <!-- Arrowhead right (top arc end) → pointing right/down -->
-    <polygon points="594,504 614,520 594,536"
-             fill="#a855f7" filter="url(#blue-glow)"/>
-
-    <!-- Arrowhead left (bottom arc end) → pointing left/up -->
-    <polygon points="430,536 410,520 430,504"
-             fill="#4d8eff" filter="url(#blue-glow)"/>
-
-    <!-- ── LIGHTNING BOLT in ring centre ── -->
-    <g transform="translate(512,520)">
-      <polygon points="10,-26 -4,-2 8,-2 -10,26 4,2 -8,2"
-               fill="url(#arrow-grad)" opacity="0.92"
-               filter="url(#blue-glow)"/>
-    </g>
-
-    <!-- ── TOP LABEL "SwitchFix" ── -->
-    <text x="512" y="274"
-          font-family="'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-          font-size="68" font-weight="700" letter-spacing="-1"
-          text-anchor="middle" fill="#c8d8ff" opacity="0.88">SwitchFix</text>
-
-    <!-- Thin underline accent -->
-    <line x1="312" y1="292" x2="712" y2="292"
-          stroke="url(#arrow-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
-
-    <!-- ── BOTTOM TAGLINE ── -->
-    <text x="512" y="790"
-          font-family="'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-          font-size="38" font-weight="400" letter-spacing="2"
-          text-anchor="middle" fill="#8b9fd4" opacity="0.7">Auto Layout Fix</text>
-
-    <!-- ── OUTER CHROME FRAME ── -->
-    <rect width="1024" height="1024" rx="230" ry="230"
-          fill="none" stroke="#2a4dff" stroke-width="3" opacity="0.18"/>
-    <rect width="1024" height="1024" rx="230" ry="230"
-          fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.06"/>
-  </g>
 </svg>

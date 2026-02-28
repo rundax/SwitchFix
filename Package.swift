@@ -21,8 +21,14 @@ let package = Package(
             name: "Dictionary",
             dependencies: [],
             path: "Sources/Dictionary",
+            exclude: [
+                "Resources/uk_full.txt"
+            ],
             resources: [
-                .copy("Resources")
+                .copy("Resources/en_US.txt"),
+                .copy("Resources/ru_RU.txt"),
+                .copy("Resources/uk_UA.txt"),
+                .copy("Resources/overrides")
             ]
         ),
         .target(

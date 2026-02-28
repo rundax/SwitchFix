@@ -8,6 +8,29 @@ BUILD_DIR="$PROJECT_DIR/.build"
 APP_NAME="SwitchFix"
 APP_BUNDLE="$PROJECT_DIR/dist/$APP_NAME.app"
 
+compile_bin_if_needed() {
+    local lang="$1"
+    local txt="$PROJECT_DIR/Sources/Dictionary/Resources/${lang}.txt"
+    local out_dir="$PROJECT_DIR/.build/dictionary-bin"
+    local bin="$out_dir/${lang}.bin"
+    local compiler="$SCRIPT_DIR/compile_dictionary.swift"
+
+    if [ ! -f "$txt" ]; then
+        return
+    fi
+
+    mkdir -p "$out_dir"
+
+    if [ ! -f "$bin" ] || [ "$txt" -nt "$bin" ] || [ "$compiler" -nt "$bin" ]; then
+        echo "Compiling dictionary binary for $lang..."
+        swift "$compiler" --input "$txt" --output "$bin"
+    fi
+}
+
+compile_bin_if_needed "en_US"
+compile_bin_if_needed "ru_RU"
+compile_bin_if_needed "uk_UA"
+
 echo "Building $APP_NAME in release mode..."
 cd "$PROJECT_DIR"
 swift build -c release
@@ -76,6 +99,15 @@ fi
 if [ -d "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" ]; then
     cp -R "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" "$APP_BUNDLE/Contents/Resources/"
     echo "Copied dictionary bundle to Contents/Resources/."
+
+    DICT_BUNDLE="$APP_BUNDLE/Contents/Resources/SwitchFix_Dictionary.bundle"
+    for lang in en_US ru_RU uk_UA; do
+        BIN_PATH="$PROJECT_DIR/.build/dictionary-bin/${lang}.bin"
+        if [ -f "$BIN_PATH" ]; then
+            cp "$BIN_PATH" "$DICT_BUNDLE/"
+        fi
+    done
+    echo "Copied compiled dictionary binaries into resource bundle."
 fi
 
 # Code sign

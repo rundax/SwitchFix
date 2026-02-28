@@ -71,8 +71,7 @@ public class WordValidator {
             return ValidationResult(isValid: false, correctedWord: nil)
         }
 
-        let filter = loader.bloomFilter(for: language)
-        if filter.mightContain(normalized) {
+        if loader.mightContain(normalized, language: language) {
             if shouldRequireExactDictionaryMatch(normalized, language: language) {
                 if isExactDictionaryWord(normalized, language: language) {
                     return ValidationResult(isValid: true, correctedWord: nil)
@@ -171,13 +170,7 @@ public class WordValidator {
     }
 
     private func isExactDictionaryWord(_ word: String, language: Language) -> Bool {
-        guard let first = word.first else { return false }
-        let buckets = loader.suggestionBuckets(for: language)
-        guard let byLength = buckets[first],
-              let words = byLength[word.count] else {
-            return false
-        }
-        return words.contains(word)
+        return loader.containsExact(word, language: language)
     }
 
     private func containsVowel(_ word: String, language: Language) -> Bool {
@@ -223,7 +216,7 @@ public class WordValidator {
             if WordValidator.shortWords[.english]?.contains(base) == true {
                 return true
             }
-            if loader.bloomFilter(for: .english).mightContain(base) {
+            if loader.mightContain(base, language: .english) {
                 return true
             }
         }
@@ -270,28 +263,31 @@ public class WordValidator {
     }
 
     private func dictionarySuggestion(for word: String, language: Language) -> String? {
-        guard let first = word.first else { return nil }
-        let buckets = loader.suggestionBuckets(for: language)
-        guard let lengthMap = buckets[first] else { return nil }
-
         var best: String? = nil
         var bestScore = Int.max
-        let minLen = max(1, word.count - 1)
-        let maxLen = word.count + 2
+        var workspace = DamerauLevenshtein.Workspace()
+        let candidates = loader.suggestionCandidates(
+            for: word,
+            language: language,
+            maxCandidates: 768,
+            maxLengthDelta: 2
+        )
 
-        for len in minLen...maxLen {
-            guard let candidates = lengthMap[len] else { continue }
-            for candidate in candidates {
-                let dist = damerauLevenshteinDistance(word, candidate, maxDistance: 2)
-                guard dist <= 2 else { continue }
-                let lengthPenalty = abs(candidate.count - word.count)
-                let score = dist * 10 + lengthPenalty
+        for candidate in candidates {
+            let dist = damerauLevenshteinDistance(
+                word,
+                candidate,
+                maxDistance: 2,
+                workspace: &workspace
+            )
+            guard dist <= 2 else { continue }
+            let lengthPenalty = abs(candidate.count - word.count)
+            let score = dist * 10 + lengthPenalty
 
-                if score < bestScore {
-                    bestScore = score
-                    best = candidate
-                    if dist == 0 && lengthPenalty == 0 { return best }
-                }
+            if score < bestScore {
+                bestScore = score
+                best = candidate
+                if dist == 0 && lengthPenalty == 0 { return best }
             }
         }
 
@@ -327,39 +323,18 @@ public class WordValidator {
     }
 
     /// Damerau-Levenshtein distance with early exit.
+    private func damerauLevenshteinDistance(
+        _ a: String,
+        _ b: String,
+        maxDistance: Int,
+        workspace: inout DamerauLevenshtein.Workspace
+    ) -> Int {
+        return DamerauLevenshtein.distance(a, b, maxDistance: maxDistance, workspace: &workspace)
+    }
+
     private func damerauLevenshteinDistance(_ a: String, _ b: String, maxDistance: Int) -> Int {
-        let aChars = Array(a)
-        let bChars = Array(b)
-        let n = aChars.count
-        let m = bChars.count
-
-        if abs(n - m) > maxDistance { return maxDistance + 1 }
-        if n == 0 { return m }
-        if m == 0 { return n }
-
-        var dp = Array(repeating: Array(repeating: 0, count: m + 1), count: n + 1)
-        for i in 0...n { dp[i][0] = i }
-        for j in 0...m { dp[0][j] = j }
-
-        var minRow = 0
-        for i in 1...n {
-            minRow = maxDistance + 1
-            for j in 1...m {
-                let cost = aChars[i - 1] == bChars[j - 1] ? 0 : 1
-                var value = min(
-                    dp[i - 1][j] + 1,        // deletion
-                    dp[i][j - 1] + 1,        // insertion
-                    dp[i - 1][j - 1] + cost  // substitution
-                )
-                if i > 1 && j > 1 && aChars[i - 1] == bChars[j - 2] && aChars[i - 2] == bChars[j - 1] {
-                    value = min(value, dp[i - 2][j - 2] + 1) // transposition
-                }
-                dp[i][j] = value
-                if value < minRow { minRow = value }
-            }
-            if minRow > maxDistance { return maxDistance + 1 }
-        }
-        return dp[n][m]
+        var workspace = DamerauLevenshtein.Workspace()
+        return DamerauLevenshtein.distance(a, b, maxDistance: maxDistance, workspace: &workspace)
     }
 
 }

@@ -69,25 +69,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func prewarmDictionaries() {
         let availableLayouts = inputSourceManager.availableLayouts()
-        let languages: Set<Language> = Set(
-            availableLayouts.map { layout in
-                switch layout {
-                case .english: return .english
-                case .ukrainian: return .ukrainian
-                case .russian: return .russian
-                }
-            }
-        )
+        guard !availableLayouts.isEmpty else { return }
 
-        guard !languages.isEmpty else { return }
+        let currentLayout = inputSourceManager.currentLayout()
+        let currentLanguage: Language
+        switch currentLayout {
+        case .english:
+            currentLanguage = .english
+        case .ukrainian:
+            currentLanguage = .ukrainian
+        case .russian:
+            currentLanguage = .russian
+        }
+
         DispatchQueue.global(qos: .utility).async {
             let loader = DictionaryLoader.shared
-            for language in languages {
-                _ = loader.bloomFilter(for: language)
-                _ = loader.suggestionBuckets(for: language)
-            }
-            NSLog("[SwitchFix] Dictionary prewarm complete for: %@",
-                  languages.map { $0.rawValue }.sorted().joined(separator: ", "))
+            loader.prewarm(language: currentLanguage, includeSuggestions: false)
+            NSLog("[SwitchFix] Dictionary prewarm complete for current layout: %@",
+                  currentLanguage.rawValue)
         }
     }
 

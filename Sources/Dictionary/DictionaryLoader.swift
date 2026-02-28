@@ -7,140 +7,244 @@ public enum Language: String, CaseIterable {
 }
 
 public class DictionaryLoader {
-    private var filters: [Language: BloomFilter] = [:]
-    private var suggestionBuckets: [Language: [Character: [Int: [String]]]] = [:]
+    private var indices: [Language: DictionaryIndex] = [:]
+    private var fallbackBloomFilters: [Language: BloomFilter] = [:]
+    private var trigramIndices: [Language: TrigramIndex] = [:]
+    private var allowLists: [Language: Set<String>] = [:]
+    private var denyLists: [Language: Set<String>] = [:]
     private let lock = NSLock()
 
     public static let shared = DictionaryLoader()
 
     private init() {}
 
-    /// Get or lazily load the BloomFilter for a given language.
+    /// Prewarm a language dictionary. Suggestions stay lazy by default.
+    public func prewarm(language: Language, includeSuggestions: Bool = false) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let _ = ensureIndexLoaded(for: language)
+        if includeSuggestions {
+            let _ = ensureTrigramIndexLoaded(for: language)
+        }
+    }
+
+    /// Test-only cache reset for reproducible benchmark runs.
+    public func resetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        indices = [:]
+        fallbackBloomFilters = [:]
+        trigramIndices = [:]
+        allowLists = [:]
+        denyLists = [:]
+    }
+
+    /// Exposes the Bloom filter for compatibility with existing call-sites/tests.
     public func bloomFilter(for language: Language) -> BloomFilter {
         lock.lock()
         defer { lock.unlock() }
 
-        if let existing = filters[language] {
+        let index = ensureIndexLoaded(for: language)
+        if let filter = index.bloomFilter {
+            return filter
+        }
+
+        if let existing = fallbackBloomFilters[language] {
             return existing
         }
 
-        let filter = loadDictionary(for: language)
-        filters[language] = filter
-        return filter
+        let built = buildFallbackBloomFilter(from: index, language: language)
+        fallbackBloomFilters[language] = built
+        return built
     }
 
-    /// Get or lazily load the suggestion buckets for a given language.
-    /// Buckets are keyed by first letter and word length.
-    public func suggestionBuckets(for language: Language) -> [Character: [Int: [String]]] {
+    public func mightContain(_ word: String, language: Language) -> Bool {
         lock.lock()
         defer { lock.unlock() }
 
-        if let existing = suggestionBuckets[language] {
+        let index = ensureIndexLoaded(for: language)
+        let denyList = denyLists[language] ?? []
+        if denyList.contains(word) {
+            return false
+        }
+
+        let allowList = allowLists[language] ?? []
+        if allowList.contains(word) {
+            return true
+        }
+
+        if let filter = index.bloomFilter {
+            return filter.mightContain(word)
+        }
+
+        return index.contains(word)
+    }
+
+    public func containsExact(_ word: String, language: Language) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let index = ensureIndexLoaded(for: language)
+
+        let denyList = denyLists[language] ?? []
+        if denyList.contains(word) {
+            return false
+        }
+
+        let allowList = allowLists[language] ?? []
+        if allowList.contains(word) {
+            return true
+        }
+
+        return index.contains(word)
+    }
+
+    public func suggestionCandidates(
+        for word: String,
+        language: Language,
+        maxCandidates: Int = 512,
+        maxLengthDelta: Int = 2
+    ) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let index = ensureIndexLoaded(for: language)
+        let trigram = ensureTrigramIndexLoaded(for: language)
+        let denyList = denyLists[language] ?? []
+        let allowList = allowLists[language] ?? []
+
+        let candidateIDs = trigram.candidateIDs(
+            for: word,
+            maxLengthDelta: maxLengthDelta,
+            maxCandidates: maxCandidates
+        )
+
+        var seen: Set<String> = []
+        seen.reserveCapacity(candidateIDs.count + allowList.count)
+
+        var result: [String] = []
+        result.reserveCapacity(candidateIDs.count)
+
+        for id in candidateIDs {
+            guard let candidate = index.word(at: id) else { continue }
+            if denyList.contains(candidate) { continue }
+            if seen.insert(candidate).inserted {
+                result.append(candidate)
+            }
+        }
+
+        // Fallback for low-overlap typos: scan a bounded first-character partition.
+        if let firstScalar = word.unicodeScalars.first?.value,
+           let range = index.partitionRange(for: firstScalar),
+           result.count < max(32, maxCandidates / 4) {
+            for id in range {
+                guard let candidate = index.word(at: id) else { continue }
+                if abs(candidate.count - word.count) > maxLengthDelta { continue }
+                if denyList.contains(candidate) { continue }
+                if seen.insert(candidate).inserted {
+                    result.append(candidate)
+                    if result.count >= maxCandidates { break }
+                }
+            }
+        }
+
+        // Overlay allow-list words for misspelled custom vocabulary.
+        for candidate in allowList {
+            if abs(candidate.count - word.count) > maxLengthDelta { continue }
+            if seen.insert(candidate).inserted {
+                result.append(candidate)
+            }
+        }
+
+        return result
+    }
+
+    private func ensureIndexLoaded(for language: Language) -> DictionaryIndex {
+        if let existing = indices[language] {
             return existing
         }
 
-        let filter = loadDictionary(for: language)
-        filters[language] = filter
-        return suggestionBuckets[language] ?? [:]
+        let allow = loadOverrideList(for: language, type: "allow")
+        let deny = loadOverrideList(for: language, type: "deny")
+        allowLists[language] = allow
+        denyLists[language] = deny
+
+        let index = loadDictionaryIndex(for: language)
+        indices[language] = index
+
+        NSLog("[SwitchFix] Dictionary: loaded %@ (words: %d, bloom: %@)",
+              language.rawValue,
+              index.wordCount,
+              index.bloomFilter == nil ? "no" : "yes")
+
+        return index
     }
 
-    /// Locate the dictionary file, trying multiple bundle paths.
-    /// SPM's Bundle.module works during development but may fail in .app bundles
-    /// where the resource bundle is at Contents/Resources/SwitchFix_Dictionary.bundle.
-    private func findDictionaryURL(for language: Language) -> URL? {
-        // Helper: try both root and nested "Resources" (some bundles flatten copied directories)
+    private func ensureTrigramIndexLoaded(for language: Language) -> TrigramIndex {
+        if let existing = trigramIndices[language] {
+            return existing
+        }
+
+        let index = ensureIndexLoaded(for: language)
+        let deny = denyLists[language] ?? []
+        let allow = allowLists[language] ?? []
+
+        NSLog("[SwitchFix] Dictionary: building trigram index for %@", language.rawValue)
+        let built = TrigramIndex(dictionary: index, denyList: deny, allowList: allow)
+        trigramIndices[language] = built
+        return built
+    }
+
+    private func loadDictionaryIndex(for language: Language) -> DictionaryIndex {
+        if let binURL = findDictionaryURL(for: language, ext: "bin") {
+            if let mapped = MappedDictionary(url: binURL) {
+                NSLog("[SwitchFix] Dictionary: using mmap binary %@", binURL.path)
+                return mapped
+            }
+            NSLog("[SwitchFix] Dictionary: failed to parse %@.bin, fallback to txt", language.rawValue)
+        }
+
+        if let txtURL = findDictionaryURL(for: language, ext: "txt") {
+            NSLog("[SwitchFix] Dictionary: using text fallback %@", txtURL.path)
+            return TextDictionary(url: txtURL)
+        }
+
+        NSLog("[SwitchFix] Dictionary: missing dictionary resources for %@", language.rawValue)
+        return TextDictionary(words: [])
+    }
+
+    /// Locate a dictionary resource by extension, trying multiple bundle paths.
+    private func findDictionaryURL(for language: Language, ext: String) -> URL? {
         func lookup(in bundle: Bundle) -> URL? {
-            if let url = bundle.url(forResource: language.rawValue, withExtension: "txt") {
+            if let url = bundle.url(forResource: language.rawValue, withExtension: ext) {
                 return url
             }
-            if let url = bundle.url(forResource: language.rawValue, withExtension: "txt", subdirectory: "Resources") {
+            if let url = bundle.url(forResource: language.rawValue, withExtension: ext, subdirectory: "Resources") {
                 return url
             }
             return nil
         }
 
-        // 1. SPM's Bundle.module (works in development/debug)
         if let url = lookup(in: Bundle.module) {
             return url
         }
 
-        // 2. Main bundle's resourceURL + SwitchFix_Dictionary.bundle (works in .app)
         if let resourceURL = Bundle.main.resourceURL {
             let bundlePath = resourceURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
-            if let resourceBundle = Bundle(url: bundlePath) {
-                if let url = lookup(in: resourceBundle) {
-                    return url
-                }
-            }
-        }
-
-        // 3. Alongside the executable (flat layout fallback)
-        let execURL = Bundle.main.bundleURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
-        if let resourceBundle = Bundle(url: execURL) {
-            if let url = lookup(in: resourceBundle) {
+            if let resourceBundle = Bundle(url: bundlePath),
+               let url = lookup(in: resourceBundle) {
                 return url
             }
         }
 
-        NSLog("[SwitchFix] Dictionary: could not find %@.txt in any bundle location", language.rawValue)
+        let execURL = Bundle.main.bundleURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
+        if let resourceBundle = Bundle(url: execURL),
+           let url = lookup(in: resourceBundle) {
+            return url
+        }
+
         return nil
-    }
-
-    private func loadDictionary(for language: Language) -> BloomFilter {
-        let filter = BloomFilter(expectedItems: 400_000, falsePositiveRate: 0.01)
-        var buckets: [Character: [Int: [String]]] = [:]
-        let maxSuggestionWordLength = 20
-        let denyList = loadOverrideList(for: language, type: "deny")
-        let allowList = loadOverrideList(for: language, type: "allow")
-
-        guard let url = findDictionaryURL(for: language) else {
-            return filter
-        }
-
-        NSLog("[SwitchFix] Dictionary: loading %@ from %@", language.rawValue, url.path)
-
-        guard let data = try? Data(contentsOf: url),
-              let content = String(data: data, encoding: .utf8) else {
-            return filter
-        }
-
-        // Read line by line to avoid loading entire word list into memory
-        var wordCount = 0
-        content.enumerateLines { line, _ in
-            let word = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if !word.isEmpty {
-                if denyList.contains(word) {
-                    return
-                }
-                filter.insert(word)
-                if word.count <= maxSuggestionWordLength, let first = word.first {
-                    var lengthMap = buckets[first] ?? [:]
-                    var list = lengthMap[word.count] ?? []
-                    list.append(word)
-                    lengthMap[word.count] = list
-                    buckets[first] = lengthMap
-                }
-                wordCount += 1
-            }
-        }
-
-        if !allowList.isEmpty {
-            for word in allowList {
-                filter.insert(word)
-                if word.count <= maxSuggestionWordLength, let first = word.first {
-                    var lengthMap = buckets[first] ?? [:]
-                    var list = lengthMap[word.count] ?? []
-                    list.append(word)
-                    lengthMap[word.count] = list
-                    buckets[first] = lengthMap
-                }
-            }
-        }
-
-        suggestionBuckets[language] = buckets
-
-        NSLog("[SwitchFix] Dictionary: loaded %d words for %@", wordCount, language.rawValue)
-        return filter
     }
 
     private func loadOverrideList(for language: Language, type: String) -> Set<String> {
@@ -186,5 +290,26 @@ public class DictionaryLoader {
             }
         }
         return result
+    }
+
+    private func buildFallbackBloomFilter(from index: DictionaryIndex, language: Language) -> BloomFilter {
+        let expected = max(index.wordCount, 1)
+        let filter = BloomFilter(expectedItems: expected, falsePositiveRate: 0.01)
+
+        for i in 0..<index.wordCount {
+            guard let word = index.word(at: i) else { continue }
+            if denyLists[language]?.contains(word) == true {
+                continue
+            }
+            filter.insert(word)
+        }
+
+        if let allow = allowLists[language] {
+            for word in allow {
+                filter.insert(word)
+            }
+        }
+
+        return filter
     }
 }

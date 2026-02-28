@@ -4,8 +4,8 @@ import Foundation
 /// False positives are possible, but false negatives are not.
 public class BloomFilter {
     private var bits: [UInt8]
-    private let bitCount: Int
-    private let hashCount: Int
+    public let bitCount: Int
+    public let hashCount: Int
 
     /// Create a BloomFilter with the specified number of bits and hash functions.
     /// For 50K words with ~1% false positive rate: bitCount ≈ 480,000, hashCount = 7
@@ -14,6 +14,13 @@ public class BloomFilter {
         self.hashCount = hashCount
         let byteCount = (bitCount + 7) / 8
         self.bits = [UInt8](repeating: 0, count: byteCount)
+    }
+
+    /// Create a BloomFilter from a serialized bit-array.
+    public init(bitCount: Int, hashCount: Int, bits: [UInt8]) {
+        self.bitCount = bitCount
+        self.hashCount = hashCount
+        self.bits = bits
     }
 
     /// Create a BloomFilter optimized for a given number of items and false positive rate.
@@ -29,7 +36,7 @@ public class BloomFilter {
     public func insert(_ word: String) {
         let hashes = computeHashes(word)
         for h in hashes {
-            let index = h % bitCount
+            let index = h
             let byteIndex = index / 8
             let bitIndex = index % 8
             bits[byteIndex] |= (1 << bitIndex)
@@ -42,7 +49,7 @@ public class BloomFilter {
     public func mightContain(_ word: String) -> Bool {
         let hashes = computeHashes(word)
         for h in hashes {
-            let index = h % bitCount
+            let index = h
             let byteIndex = index / 8
             let bitIndex = index % 8
             if bits[byteIndex] & (1 << bitIndex) == 0 {
@@ -55,6 +62,11 @@ public class BloomFilter {
     /// The approximate memory usage of this filter in bytes.
     public var memoryUsage: Int {
         return bits.count
+    }
+
+    /// Serialized bit-array for persistence.
+    public var serializedBits: [UInt8] {
+        return bits
     }
 
     // MARK: - Hashing

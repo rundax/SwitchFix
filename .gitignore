@@ -8,4 +8,9 @@ DerivedData/
 .vscode/
 .claude/settings.local.json
 .grepai/
-plan/
+
+# Generated dictionary artifacts
+.build/dictionary-bin/
+plan/artifacts/*.json
+plan/artifacts/*.txt
+scripts/__pycache__/

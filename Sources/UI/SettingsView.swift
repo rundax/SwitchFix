@@ -166,7 +166,18 @@ struct HotkeyRecorder: View {
 
 struct SettingsView: View {
     @StateObject private var model = SettingsViewModel()
-    
+
+    private var correctionModeDescription: String {
+        switch model.correctionMode {
+        case .automatic:
+            return "Auto-corrects on word boundaries (space, enter)."
+        case .hotkey:
+            return "Corrects only when triggered via hotkey."
+        case .layoutSwitch:
+            return "Corrects the current word (or selection) when you switch the system keyboard layout."
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             
@@ -185,12 +196,11 @@ struct SettingsView: View {
                 Picker("", selection: $model.correctionMode) {
                     Text("Automatic (Space / Enter)").tag(CorrectionMode.automatic)
                     Text("Hotkey Only").tag(CorrectionMode.hotkey)
+                    Text("On Layout Switch").tag(CorrectionMode.layoutSwitch)
                 }
                 .pickerStyle(RadioGroupPickerStyle())
                 
-                Text(model.correctionMode == .automatic
-                     ? "Auto-corrects on word boundaries (space, enter)."
-                     : "Corrects only when triggered via hotkey.")
+                Text(correctionModeDescription)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

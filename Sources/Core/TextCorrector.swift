@@ -199,7 +199,12 @@ public class TextCorrector {
     }
 
     /// Perform correction on selected text by replacing it via clipboard paste.
-    public func performSelectionCorrection(selectedText: String, convertedText: String, targetLayout: Layout) {
+    public func performSelectionCorrection(
+        selectedText: String,
+        convertedText: String,
+        targetLayout: Layout,
+        shouldSwitchLayout: Bool = true
+    ) {
         lastOriginalText = selectedText
         lastCorrectedText = convertedText
         lastCorrectionTime = Date()
@@ -219,8 +224,9 @@ public class TextCorrector {
         // Simulate Cmd+V to replace selection
         simulatePaste()
 
-        // Switch layout to target
-        inputSourceManager.switchTo(targetLayout)
+        if shouldSwitchLayout {
+            inputSourceManager.switchTo(targetLayout)
+        }
 
         // Restore clipboard and resume monitoring after paste completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in

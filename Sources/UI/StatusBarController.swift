@@ -77,6 +77,11 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         hotkeyItem.state = prefs.correctionMode == .hotkey ? .on : .off
         modeMenu.addItem(hotkeyItem)
 
+        let layoutSwitchItem = NSMenuItem(title: "On Layout Switch", action: #selector(setLayoutSwitchMode), keyEquivalent: "")
+        layoutSwitchItem.target = self
+        layoutSwitchItem.state = prefs.correctionMode == .layoutSwitch ? .on : .off
+        modeMenu.addItem(layoutSwitchItem)
+
         let modeMenuItem = NSMenuItem(title: "Correction Mode", action: nil, keyEquivalent: "")
         modeMenuItem.submenu = modeMenu
         menu.addItem(modeMenuItem)
@@ -148,6 +153,11 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         refreshModeMenu()
     }
 
+    @objc private func setLayoutSwitchMode() {
+        PreferencesManager.shared.correctionMode = .layoutSwitch
+        refreshModeMenu()
+    }
+
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
         let prefs = PreferencesManager.shared
         prefs.launchAtLogin = !prefs.launchAtLogin
@@ -168,6 +178,8 @@ public class StatusBarController: NSObject, NSMenuDelegate {
                 item.state = mode == .automatic ? .on : .off
             } else if item.title == "Hotkey Only" {
                 item.state = mode == .hotkey ? .on : .off
+            } else if item.title == "On Layout Switch" {
+                item.state = mode == .layoutSwitch ? .on : .off
             }
         }
     }

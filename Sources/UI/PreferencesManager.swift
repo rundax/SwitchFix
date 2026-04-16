@@ -5,6 +5,7 @@ import ServiceManagement
 public enum CorrectionMode: String {
     case automatic
     case hotkey
+    case layoutSwitch
 }
 
 public class PreferencesManager {

@@ -8,6 +8,20 @@ public struct DetectionResult {
     public let convertedWord: String
     public let originalWord: String
     public let shouldSwitchLayout: Bool
+
+    public init(
+        sourceLayout: Layout,
+        targetLayout: Layout,
+        convertedWord: String,
+        originalWord: String,
+        shouldSwitchLayout: Bool
+    ) {
+        self.sourceLayout = sourceLayout
+        self.targetLayout = targetLayout
+        self.convertedWord = convertedWord
+        self.originalWord = originalWord
+        self.shouldSwitchLayout = shouldSwitchLayout
+    }
 }
 
 /// State machine for layout detection.

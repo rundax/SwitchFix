@@ -16,6 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isCurrentAppAllowed: Bool = true
     private var capsLockConflictProbeToken: UUID?
     private var monitoringObserversRegistered: Bool = false
+    private var previousLayout: Layout = .english
+    private var isCorrectionInProgress: Bool = false
     private static let capsLockKeyCode: UInt16 = 57
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -25,6 +27,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupCorrectionEngine()
         prewarmDictionaries()
+
+        previousLayout = inputSourceManager.currentLayout()
 
         Permissions.ensureRequiredPermissions { [weak self] in
             guard let self else { return }
@@ -58,10 +62,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         textCorrector = TextCorrector()
         textCorrector?.onCorrectionStarted = { [weak self] in
+            self?.isCorrectionInProgress = true
             self?.keyboardMonitor?.isPaused = true
             self?.layoutDetector?.beginCorrection()
         }
         textCorrector?.onCorrectionFinished = { [weak self] in
+            self?.isCorrectionInProgress = false
             self?.keyboardMonitor?.isPaused = false
             self?.layoutDetector?.endCorrection()
         }
@@ -145,10 +151,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func selectedInputSourceChanged() {
-        guard capsLockConflictProbeToken != nil else { return }
-        capsLockConflictProbeToken = nil
-        SystemHotkeyConflicts.markObservedCapsLockConflict()
-        NSLog("[SwitchFix] Warning: observed CapsLock conflict (input source changed immediately after revert hotkey)")
+        let newLayout = inputSourceManager.currentLayout()
+        defer { previousLayout = newLayout }
+
+        if capsLockConflictProbeToken != nil {
+            capsLockConflictProbeToken = nil
+            SystemHotkeyConflicts.markObservedCapsLockConflict()
+            NSLog("[SwitchFix] Warning: observed CapsLock conflict (input source changed immediately after revert hotkey)")
+            return
+        }
+        
+        NSLog("[SwitchFix] Input source changed: %@ -> %@", previousLayout.rawValue, newLayout.rawValue)
+
+        guard !isCorrectionInProgress else { return }
+        guard PreferencesManager.shared.correctionMode == .layoutSwitch else { return }
+        guard PreferencesManager.shared.isEnabled else { return }
+        guard isCurrentAppAllowed else { return }
+        guard newLayout != previousLayout else { return }
+
+        triggerLayoutSwitchCorrection(from: previousLayout, to: newLayout)
+    }
+
+    /// Returns true when `text` contains at least one letter belonging to the script
+    /// of `layout` (Latin for English, Cyrillic for Ukrainian/Russian). Text that has
+    /// no letters of the expected script is considered foreign and should not be
+    /// transcribed from `layout`.
+    private func textContainsScript(of layout: Layout, text: String) -> Bool {
+        let latinLowercase: ClosedRange<UInt32> = 0x0061...0x007A
+        let latinUppercase: ClosedRange<UInt32> = 0x0041...0x005A
+        let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x04FF
+
+        switch layout {
+        case .english:
+            return text.unicodeScalars.contains { scalar in
+                latinLowercase.contains(scalar.value) || latinUppercase.contains(scalar.value)
+            }
+        case .ukrainian, .russian:
+            return text.unicodeScalars.contains { scalar in
+                cyrillicRange.contains(scalar.value)
+            }
+        }
     }
 
     private func startCapsLockConflictProbe() {
@@ -215,6 +257,67 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         textCorrector?.recordUserInput(kind: .other)
         return true
     }
+    
+    private func triggerLayoutSwitchCorrection(from fromLayout: Layout, to toLayout: Layout) {
+        let fromVariant = inputSourceManager.currentUkrainianVariant() ?? inputSourceManager.preferredUkrainianVariant()
+        let toVariant = inputSourceManager.preferredUkrainianVariant()
+
+        if let selection = Permissions.getSelectedText(), !selection.isEmpty {
+            guard textContainsScript(of: fromLayout, text: selection) else {
+                NSLog("[SwitchFix] Layout-switch correction: selection not in %@ script, skipping", fromLayout.rawValue)
+                return
+            }
+            let converted = LayoutMapper.convert(
+                selection,
+                from: fromLayout,
+                to: toLayout,
+                ukrainianFromVariant: fromVariant,
+                ukrainianToVariant: toVariant
+            )
+            guard converted != selection else { return }
+            NSLog("[SwitchFix] Layout-switch correction: selection '%@' → '%@' (%@→%@)", selection, converted, fromLayout.rawValue, toLayout.rawValue)
+            layoutDetector?.discardBuffer()
+            textCorrector?.performSelectionCorrection(
+                selectedText: selection,
+                convertedText: converted,
+                targetLayout: toLayout,
+                shouldSwitchLayout: false
+            )
+            return
+        }
+
+        guard let detector = layoutDetector, !detector.currentBuffer.isEmpty else { return }
+        let originalWord = detector.currentBuffer
+        guard textContainsScript(of: fromLayout, text: originalWord) else {
+            NSLog("[SwitchFix] Layout-switch correction: buffer '%@' not in %@ script, skipping",
+                  originalWord, fromLayout.rawValue)
+            detector.discardBuffer()
+            return
+        }
+        let converted = LayoutMapper.convert(
+            originalWord,
+            from: fromLayout,
+            to: toLayout,
+            ukrainianFromVariant: fromVariant,
+            ukrainianToVariant: toVariant
+        )
+        guard converted != originalWord else { return }
+
+        NSLog("[SwitchFix] Layout-switch correction: buffer '%@' → '%@' (%@→%@)",
+              originalWord, converted, fromLayout.rawValue, toLayout.rawValue)
+
+        let result = DetectionResult(
+            sourceLayout: fromLayout,
+            targetLayout: toLayout,
+            convertedWord: converted,
+            originalWord: originalWord,
+            shouldSwitchLayout: false
+        )
+        detector.discardBuffer()
+        textCorrector?.performCorrection(result: result, boundaryCharacter: nil)
+        textCorrector?.recordUserInput(kind: .other)
+    }
+    
     @objc private func preferencesDidUpdate() {
         guard let monitor = keyboardMonitor else { return }
         monitor.hotkeyKeyCode = PreferencesManager.shared.hotkeyKeyCode
@@ -249,7 +352,8 @@ extension AppDelegate: KeyboardMonitorDelegate {
         guard isCurrentAppAllowed else { return }
         textCorrector?.noteUserEdit()
 
-        if PreferencesManager.shared.correctionMode == .automatic {
+        switch PreferencesManager.shared.correctionMode {
+        case .automatic:
             // Automatic mode: flush triggers detection + correction
             // Pass boundary character (space, punctuation, newline, etc.) so correction can retype it
             let layout = inputSourceManager.currentLayout()
@@ -257,8 +361,9 @@ extension AppDelegate: KeyboardMonitorDelegate {
             refreshLayoutVariants(for: layout)
             let boundary = character.isEmpty ? nil : character
             layoutDetector?.flushBuffer(boundaryCharacter: boundary)
-        } else {
-            // Hotkey mode: just discard the buffer (word boundary passed)
+        case .hotkey, .layoutSwitch:
+            // Discard the buffer on word boundary — correction is triggered elsewhere
+            // (via hotkey, or via system keyboard-layout change)
             layoutDetector?.discardBuffer()
         }
         textCorrector?.recordUserInput(kind: .boundary)

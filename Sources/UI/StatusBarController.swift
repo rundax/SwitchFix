@@ -11,6 +11,8 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     private var installedLayoutsMenuItem: NSMenuItem!
     private var conflictMenuItem: NSMenuItem?
     private var conflictSeparatorItem: NSMenuItem?
+    private var permissionMenuItems: [NSMenuItem] = []
+    private var permissionSeparatorItem: NSMenuItem?
 
     public override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -122,6 +124,7 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(quitItem)
 
         refreshSystemHotkeyConflictIndicator()
+        refreshPermissionIndicators()
     }
 
     @objc private func openSettings() {
@@ -241,6 +244,77 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
     }
 
+    private func refreshPermissionIndicators() {
+        permissionMenuItems.forEach { menu.removeItem($0) }
+        permissionMenuItems.removeAll()
+        if let separator = permissionSeparatorItem {
+            menu.removeItem(separator)
+            permissionSeparatorItem = nil
+        }
+
+        var itemsToInsert: [NSMenuItem] = []
+
+        if !Permissions.isAccessibilityGranted() {
+            let item = NSMenuItem(
+                title: "Grant Accessibility Permission…",
+                action: #selector(openAccessibilityPermissionSettings),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.toolTip = "SwitchFix needs Accessibility access to monitor keyboard input and replace mistyped words."
+            itemsToInsert.append(item)
+        }
+
+        if !Permissions.isInputMonitoringGranted() {
+            let item = NSMenuItem(
+                title: "Grant Input Monitoring Permission…",
+                action: #selector(openInputMonitoringPermissionSettings),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.toolTip = "SwitchFix needs Input Monitoring access to observe keystrokes."
+            itemsToInsert.append(item)
+        }
+
+        guard !itemsToInsert.isEmpty else {
+            updateMenuBarTooltipForPermissions()
+            return
+        }
+
+        for (index, item) in itemsToInsert.enumerated() {
+            menu.insertItem(item, at: index)
+        }
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: itemsToInsert.count)
+
+        permissionMenuItems = itemsToInsert
+        permissionSeparatorItem = separator
+
+        updateMenuBarTooltipForPermissions()
+    }
+
+    private func updateMenuBarTooltipForPermissions() {
+        guard permissionMenuItems.isEmpty else {
+            statusItem.button?.toolTip = "SwitchFix (missing permissions)"
+            return
+        }
+
+        let hasConflict = SystemHotkeyConflicts.hasCapsLockConflict(
+            revertHotkeyKeyCode: PreferencesManager.shared.revertHotkeyKeyCode
+        )
+        statusItem.button?.toolTip = hasConflict
+            ? "SwitchFix (CapsLock conflict detected)"
+            : "SwitchFix"
+    }
+
+    @objc private func openAccessibilityPermissionSettings() {
+        Permissions.openAccessibilitySettings()
+    }
+
+    @objc private func openInputMonitoringPermissionSettings() {
+        Permissions.openInputMonitoringSettings()
+    }
+
     private func refreshSystemHotkeyConflictIndicator() {
         let hasConflict = SystemHotkeyConflicts.hasCapsLockConflict(
             revertHotkeyKeyCode: PreferencesManager.shared.revertHotkeyKeyCode
@@ -279,6 +353,7 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     public func menuWillOpen(_ menu: NSMenu) {
         if menu === self.menu {
             refreshSystemHotkeyConflictIndicator()
+            refreshPermissionIndicators()
             refreshAppFilterMenuItem()
             refreshInstalledLayoutsMenu()
             refreshModeMenu()

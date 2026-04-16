@@ -44,12 +44,16 @@ public class InputSourceManager {
             guard let sourceID = stringProperty(source, kTISPropertyInputSourceID) else { continue }
             let sourceName = stringProperty(source, kTISPropertyLocalizedName)
 
-            for layout in Layout.allCases {
-                if layout.matches(sourceID: sourceID) && installedSourceIDs[layout] == nil {
-                    installedSourceIDs[layout] = sourceID
-                    NSLog("[SwitchFix] Discovered layout: %@ → %@", layout.rawValue, sourceID)
+            if let matchingLayout = Layout.allCases.first(where: { $0.matches(sourceID: sourceID) }) {
+                if installedSourceIDs[matchingLayout] == nil {
+                    installedSourceIDs[matchingLayout] = sourceID
+                    NSLog("[SwitchFix] Discovered layout: %@ → %@", matchingLayout.rawValue, sourceID)
                 }
             }
+            else {
+                NSLog("[SwitchFix] Unmatched input source: %@ (%@)", sourceID, sourceName ?? "unnamed")
+            }
+
 
             if Layout.ukrainian.matches(sourceID: sourceID) && ukrainianVariantBySourceID[sourceID] == nil {
                 let variant = detectUkrainianVariant(for: source, sourceName: sourceName)

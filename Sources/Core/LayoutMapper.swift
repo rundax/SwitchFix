@@ -27,28 +27,29 @@ public enum Layout: String, CaseIterable, Equatable {
     public var inputSourceIDs: [String] {
         switch self {
         case .english: return [
-            "com.apple.keylayout.US",
-            "com.apple.keylayout.ABC",
-            "com.apple.keylayout.British",
-            "com.apple.keylayout.USInternational-PC",
-            "com.apple.keylayout.Colemak",
-            "com.apple.keylayout.Dvorak",
+            "keylayout.US",
+            "keylayout.USExtended",
+            "keylayout.ABC",
+            "keylayout.British",
+            "keylayout.USInternational-PC",
+            "keylayout.Colemak",
+            "keylayout.Dvorak",
         ]
         case .ukrainian: return [
-            "com.apple.keylayout.Ukrainian",
-            "com.apple.keylayout.Ukrainian-PC",
+            "keylayout.Ukrainian",
+            "keylayout.Ukrainian-PC",
         ]
         case .russian: return [
-            "com.apple.keylayout.Russian",
-            "com.apple.keylayout.RussianWin",
-            "com.apple.keylayout.Russian-Phonetic",
+            "keylayout.Russian",
+            "keylayout.RussianWin",
+            "keylayout.Russian-Phonetic",
         ]
         }
     }
 
     /// Check if a given input source ID matches this layout.
     public func matches(sourceID: String) -> Bool {
-        return inputSourceIDs.contains(sourceID)
+        return inputSourceIDs.contains(where: { sourceID.hasSuffix($0) })
     }
 }
 

@@ -116,30 +116,27 @@ public class Permissions {
 
     /// Cached result for secure field check to avoid expensive AXUIElement calls on every keystroke.
     private static var cachedSecureResult: Bool = false
-    private static var cachedSecureTime: UInt64 = 0
+    private static var cachedSecureTimeNs: UInt64 = 0
     private static let secureCacheTTL: UInt64 = 500_000_000 // 500ms in nanoseconds
 
     /// Check if the currently focused UI element is a secure text field (password).
     /// Result is cached for 500ms to avoid expensive AXUIElement calls on every keystroke.
     public static func isFocusedElementSecure() -> Bool {
-        let now = mach_absolute_time()
-        // Convert to nanoseconds using timebase
-        var info = mach_timebase_info_data_t()
-        mach_timebase_info(&info)
-        let elapsed = (now - cachedSecureTime) * UInt64(info.numer) / UInt64(info.denom)
+        let now = DispatchTime.now().uptimeNanoseconds
+        let elapsed = now &- cachedSecureTimeNs
 
         if elapsed < secureCacheTTL {
             return cachedSecureResult
         }
 
-        cachedSecureTime = now
+        cachedSecureTimeNs = now
         cachedSecureResult = checkFocusedElementSecure()
         return cachedSecureResult
     }
 
     /// Invalidate the secure field cache (call on focus/app change).
     public static func invalidateSecureFieldCache() {
-        cachedSecureTime = 0
+        cachedSecureTimeNs = 0
     }
 
     private static func checkFocusedElementSecure() -> Bool {

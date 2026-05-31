@@ -14,3 +14,4 @@ DerivedData/
 plan/artifacts/*.json
 plan/artifacts/*.txt
 scripts/__pycache__/
+Sources/Dictionary/Resources/uk_full.txt

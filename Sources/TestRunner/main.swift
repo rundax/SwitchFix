@@ -73,6 +73,11 @@ runSuite("LayoutMapper: UK → EN") {
     assertEqual(LayoutMapper.convert("пшерги", from: .ukrainian, to: .english), "github")
 }
 
+runSuite("LayoutMapper: codex EN ↔ UK") {
+    assertEqual(LayoutMapper.convert("codex", from: .english, to: .ukrainian), "сщвуч")
+    assertEqual(LayoutMapper.convert("сщвуч", from: .ukrainian, to: .english), "codex")
+}
+
 runSuite("LayoutMapper: Ukrainian variants") {
     assertEqual(
         LayoutMapper.convert(
@@ -375,6 +380,24 @@ runSuite("LayoutDetector: Reject EN→UK bloom false positives") {
     assertEqual(mockDelegate.results.count, 0, "should not convert 'after' to non-exact Ukrainian word")
 }
 
+runSuite("LayoutDetector: Convert English 'Ot' to Ukrainian 'Ще' short word") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "Ot" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should convert short whitelisted Ukrainian word")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+        assertEqual(result.convertedWord, "Ще", "should convert to 'Ще'")
+    }
+}
+
 runSuite("LayoutDetector: Convert Ukrainian 'фаеук' to English 'after'") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
@@ -427,6 +450,24 @@ runSuite("LayoutDetector: Convert Ukrainian 'учзусеув' to English 'expec
     if let result = mockDelegate.results.first {
         assertEqual(result.targetLayout, .english, "target should be English")
         assertEqual(result.convertedWord, "expected", "should convert to 'expected'")
+    }
+}
+
+runSuite("LayoutDetector: Convert Ukrainian 'сщвуч' to English 'codex'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "сщвуч" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "should convert to 'codex'")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.targetLayout, .english, "target should be English")
+        assertEqual(result.convertedWord, "codex", "should convert to 'codex'")
     }
 }
 

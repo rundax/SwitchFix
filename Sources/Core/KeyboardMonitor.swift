@@ -20,6 +20,7 @@ public class KeyboardMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var selfPointer: UnsafeMutableRawPointer?
     private var isMonitoring = false
+    private var shouldPreferLayoutTranslation = false
 
     // Key codes for special keys
     private static let spaceKeyCode: UInt16 = 49
@@ -54,6 +55,15 @@ public class KeyboardMonitor {
     // Punctuation keys that can represent letters in alternative layouts (e.g. "," -> "б", "." -> "ю").
     // These should stay in the buffer and be resolved by layout conversion logic.
     private static let softBoundaryCharacterSet = CharacterSet(charactersIn: ",.;'[]`<>:\"{}~")
+    private static let layoutTranslationCacheLock = NSLock()
+    private static var layoutTranslationCache: [LayoutTranslationCacheKey: String] = [:]
+    private static let layoutTranslationCacheLimit = 512
+
+    private struct LayoutTranslationCacheKey: Hashable {
+        let sourceID: String
+        let keyCode: UInt16
+        let shift: Bool
+    }
 
     public init() {}
 
@@ -94,6 +104,7 @@ public class KeyboardMonitor {
 
         CGEvent.tapEnable(tap: tap, enable: true)
         isMonitoring = true
+        shouldPreferLayoutTranslation = (usedTapLocation == .cghidEventTap)
         if usedTapLocation == .cghidEventTap {
             NSLog("[SwitchFix] KeyboardMonitor: event tap started (HID fallback)")
         } else {
@@ -187,15 +198,7 @@ public class KeyboardMonitor {
         return nil
     }
 
-    private static func characterString(from event: CGEvent, keyCode: UInt16, flags: CGEventFlags) -> String? {
-        // Prefer explicit translation via current input source. In some event tap modes
-        // keyboardGetUnicodeString may return US keycap characters even when a non-Latin
-        // layout is active, which breaks wrong-layout detection.
-        if let fromLayout = fallbackCharacterFromCurrentLayout(keyCode: keyCode, flags: flags),
-           !fromLayout.isEmpty {
-            return fromLayout
-        }
-
+    private static func eventCharacterString(from event: CGEvent) -> String? {
         let maxLen = 8
         var actualLen = 0
         var chars = [UniChar](repeating: 0, count: maxLen)
@@ -211,47 +214,141 @@ public class KeyboardMonitor {
         return nil
     }
 
+    private static func characterString(
+        from event: CGEvent,
+        keyCode: UInt16,
+        flags: CGEventFlags,
+        preferLayoutTranslation: Bool
+    ) -> String? {
+        if preferLayoutTranslation,
+           let fromLayout = fallbackCharacterFromCurrentLayout(keyCode: keyCode, flags: flags),
+           !fromLayout.isEmpty {
+            return fromLayout
+        }
+
+        if let fromEvent = eventCharacterString(from: event), !fromEvent.isEmpty {
+            if !preferLayoutTranslation,
+               shouldFallbackToLayoutTranslation(for: fromEvent) {
+                if let fromLayout = fallbackCharacterFromCurrentLayout(keyCode: keyCode, flags: flags),
+                   !fromLayout.isEmpty {
+                    return fromLayout
+                }
+            }
+            return fromEvent
+        }
+
+        if let fromLayout = fallbackCharacterFromCurrentLayout(keyCode: keyCode, flags: flags),
+           !fromLayout.isEmpty {
+            return fromLayout
+        }
+
+        return nil
+    }
+
+    private static func shouldFallbackToLayoutTranslation(for text: String) -> Bool {
+        let currentLayout = InputSourceManager.shared.currentLayout()
+        guard currentLayout != .english else { return false }
+        guard text.count == 1, let scalar = text.unicodeScalars.first else { return false }
+        return scalar.value >= 0x0020 && scalar.value <= 0x007E
+    }
+
+    private static func inputSourceID(from source: TISInputSource) -> String? {
+        guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+            return nil
+        }
+        return Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+    }
+
+    private static func cachedLayoutTranslation(
+        sourceID: String,
+        keyCode: UInt16,
+        shift: Bool
+    ) -> String? {
+        let key = LayoutTranslationCacheKey(sourceID: sourceID, keyCode: keyCode, shift: shift)
+        layoutTranslationCacheLock.lock()
+        defer { layoutTranslationCacheLock.unlock() }
+        return layoutTranslationCache[key]
+    }
+
+    private static func storeLayoutTranslation(
+        _ value: String,
+        sourceID: String,
+        keyCode: UInt16,
+        shift: Bool
+    ) {
+        let key = LayoutTranslationCacheKey(sourceID: sourceID, keyCode: keyCode, shift: shift)
+        layoutTranslationCacheLock.lock()
+        defer { layoutTranslationCacheLock.unlock() }
+        if layoutTranslationCache.count >= layoutTranslationCacheLimit {
+            layoutTranslationCache.removeAll(keepingCapacity: true)
+        }
+        layoutTranslationCache[key] = value
+    }
+
+    private static func translatedCharacter(
+        from source: TISInputSource,
+        keyCode: UInt16,
+        flags: CGEventFlags
+    ) -> String? {
+        let shift = flags.contains(.maskShift)
+        guard let sourceID = inputSourceID(from: source) else {
+            return nil
+        }
+        if let cached = cachedLayoutTranslation(sourceID: sourceID, keyCode: keyCode, shift: shift) {
+            return cached
+        }
+
+        guard let layoutDataRef = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
+            return nil
+        }
+
+        let layoutData = unsafeBitCast(layoutDataRef, to: CFData.self) as Data
+        guard let keyboardLayout = layoutData.withUnsafeBytes({ ptr in
+            ptr.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self)
+        }) else {
+            return nil
+        }
+
+        var modifierKeyState: UInt32 = 0
+        if shift {
+            modifierKeyState |= UInt32(shiftKey >> 8)
+        }
+
+        var deadKeyState: UInt32 = 0
+        var chars = [UniChar](repeating: 0, count: 8)
+        var actualLength: Int = 0
+
+        let status = UCKeyTranslate(
+            keyboardLayout,
+            keyCode,
+            UInt16(kUCKeyActionDown),
+            modifierKeyState,
+            UInt32(LMGetKbdType()),
+            OptionBits(kUCKeyTranslateNoDeadKeysBit),
+            &deadKeyState,
+            chars.count,
+            &actualLength,
+            &chars
+        )
+
+        guard status == noErr, actualLength > 0 else {
+            return nil
+        }
+
+        let translated = String(utf16CodeUnits: chars, count: actualLength)
+        storeLayoutTranslation(translated, sourceID: sourceID, keyCode: keyCode, shift: shift)
+        return translated
+    }
+
     private static func fallbackCharacterFromCurrentLayout(keyCode: UInt16, flags: CGEventFlags) -> String? {
         let currentSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue()
         let layoutSource = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
         let sources = [currentSource, layoutSource].compactMap { $0 }
 
         for source in sources {
-            guard let layoutDataRef = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
-                continue
-            }
-
-            let layoutData = unsafeBitCast(layoutDataRef, to: CFData.self) as Data
-            guard let keyboardLayout = layoutData.withUnsafeBytes({ ptr in
-                ptr.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self)
-            }) else {
-                continue
-            }
-
-            var modifierKeyState: UInt32 = 0
-            if flags.contains(.maskShift) {
-                modifierKeyState |= UInt32(shiftKey >> 8)
-            }
-
-            var deadKeyState: UInt32 = 0
-            var chars = [UniChar](repeating: 0, count: 8)
-            var actualLength: Int = 0
-
-            let status = UCKeyTranslate(
-                keyboardLayout,
-                keyCode,
-                UInt16(kUCKeyActionDown),
-                modifierKeyState,
-                UInt32(LMGetKbdType()),
-                OptionBits(kUCKeyTranslateNoDeadKeysBit),
-                &deadKeyState,
-                chars.count,
-                &actualLength,
-                &chars
-            )
-
-            if status == noErr, actualLength > 0 {
-                return String(utf16CodeUnits: chars, count: actualLength)
+            if let translated = translatedCharacter(from: source, keyCode: keyCode, flags: flags),
+               !translated.isEmpty {
+                return translated
             }
         }
 
@@ -367,7 +464,12 @@ public class KeyboardMonitor {
             return Unmanaged.passUnretained(event)
         }
 
-        if let str = characterString(from: event, keyCode: keyCode, flags: flags) {
+        if let str = characterString(
+            from: event,
+            keyCode: keyCode,
+            flags: flags,
+            preferLayoutTranslation: monitor.shouldPreferLayoutTranslation
+        ) {
             if str.count == 1, let scalar = str.unicodeScalars.first,
                boundaryCharacterSet.contains(scalar),
                !softBoundaryCharacterSet.contains(scalar) {

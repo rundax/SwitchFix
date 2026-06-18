@@ -210,11 +210,14 @@ public class LayoutDetector {
         }
 
         // Check if the word is valid in the current layout's language
+        let currentWordParts = splitTokenForValidation(word)
+        let currentValidationInput = currentWordParts.core.isEmpty ? word : currentWordParts.core
+        
         let currentLanguage = languageForLayout(sourceLayout)
-        if validator.validate(word, language: currentLanguage, allowSuggestion: false).isValid {
+        if validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid {
             // BloomFilter may produce false positives. For Cyrillic layouts, require an exact
             // dictionary hit before treating the current-layout word as definitely valid.
-            if sourceLayout != .english && !validator.isExactWord(word, language: currentLanguage) {
+            if sourceLayout != .english && !validator.isExactWord(currentValidationInput, language: currentLanguage) {
                 NSLog("[SwitchFix] Detection: '%@' in %@ rejected as current-layout false positive",
                       word, sourceLayout.rawValue)
             } else {
@@ -290,6 +293,14 @@ public class LayoutDetector {
 
             for candidate in candidateConversions {
                 let tokenParts = splitTokenForValidation(candidate)
+                let originalParts = splitTokenForValidation(word)
+
+                // Prevent 'fake switches' where a letter key maps to punctuation at the start of a word.
+                // e.g. 'бігу' (no prefix) -> ',sue' (prefix ',').
+                if tokenParts.prefix.count > originalParts.prefix.count {
+                    continue
+                }
+
                 let validationInput = tokenParts.core.isEmpty ? candidate : tokenParts.core
 
                 // Avoid substituting into a different valid word (e.g. "pe" -> "за").
@@ -309,6 +320,7 @@ public class LayoutDetector {
                 )
                 if validation.isValid {
                     if validation.correctedWord == nil &&
+                        validationInput.count > 2 &&
                         !validator.isExactWord(validationInput, language: targetLanguage) {
                         NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) rejected — non-exact dictionary hit",
                               word, candidate, targetLayout.rawValue)

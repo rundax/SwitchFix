@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public enum Language: String, CaseIterable {
     case english = "en_US"
@@ -12,7 +13,7 @@ public class DictionaryLoader {
     private var trigramIndices: [Language: TrigramIndex] = [:]
     private var allowLists: [Language: Set<String>] = [:]
     private var denyLists: [Language: Set<String>] = [:]
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
 
     public static let shared = DictionaryLoader()
 
@@ -20,84 +21,80 @@ public class DictionaryLoader {
 
     /// Prewarm a language dictionary. Suggestions stay lazy by default.
     public func prewarm(language: Language, includeSuggestions: Bool = false) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        let _ = ensureIndexLoaded(for: language)
-        if includeSuggestions {
-            let _ = ensureTrigramIndexLoaded(for: language)
+        lock.withLock {
+            let _ = ensureIndexLoaded(for: language)
+            if includeSuggestions {
+                let _ = ensureTrigramIndexLoaded(for: language)
+            }
         }
     }
 
     /// Test-only cache reset for reproducible benchmark runs.
     public func resetForTesting() {
-        lock.lock()
-        defer { lock.unlock() }
-        indices = [:]
-        fallbackBloomFilters = [:]
-        trigramIndices = [:]
-        allowLists = [:]
-        denyLists = [:]
+        lock.withLock {
+            indices = [:]
+            fallbackBloomFilters = [:]
+            trigramIndices = [:]
+            allowLists = [:]
+            denyLists = [:]
+        }
     }
 
     /// Exposes the Bloom filter for compatibility with existing call-sites/tests.
     public func bloomFilter(for language: Language) -> BloomFilter {
-        lock.lock()
-        defer { lock.unlock() }
+        return lock.withLock {
+            let index = ensureIndexLoaded(for: language)
+            if let filter = index.bloomFilter {
+                return filter
+            }
 
-        let index = ensureIndexLoaded(for: language)
-        if let filter = index.bloomFilter {
-            return filter
+            if let existing = fallbackBloomFilters[language] {
+                return existing
+            }
+
+            let built = buildFallbackBloomFilter(from: index, language: language)
+            fallbackBloomFilters[language] = built
+            return built
         }
-
-        if let existing = fallbackBloomFilters[language] {
-            return existing
-        }
-
-        let built = buildFallbackBloomFilter(from: index, language: language)
-        fallbackBloomFilters[language] = built
-        return built
     }
 
     public func mightContain(_ word: String, language: Language) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
+        return lock.withLock {
+            let index = ensureIndexLoaded(for: language)
+            let denyList = denyLists[language] ?? []
+            if denyList.contains(word) {
+                return false
+            }
 
-        let index = ensureIndexLoaded(for: language)
-        let denyList = denyLists[language] ?? []
-        if denyList.contains(word) {
-            return false
+            let allowList = allowLists[language] ?? []
+            if allowList.contains(word) {
+                return true
+            }
+
+            if let filter = index.bloomFilter {
+                return filter.mightContain(word)
+            }
+
+            return index.contains(word)
         }
-
-        let allowList = allowLists[language] ?? []
-        if allowList.contains(word) {
-            return true
-        }
-
-        if let filter = index.bloomFilter {
-            return filter.mightContain(word)
-        }
-
-        return index.contains(word)
     }
 
     public func containsExact(_ word: String, language: Language) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
+        return lock.withLock {
+            let index = ensureIndexLoaded(for: language)
 
-        let index = ensureIndexLoaded(for: language)
+            let denyList = denyLists[language] ?? []
+            if denyList.contains(word) {
+                return false
+            }
 
-        let denyList = denyLists[language] ?? []
-        if denyList.contains(word) {
-            return false
+            let allowList = allowLists[language] ?? []
+            if allowList.contains(word) {
+                return true
+            }
+
+            return index.contains(word)
         }
-
-        let allowList = allowLists[language] ?? []
-        if allowList.contains(word) {
-            return true
-        }
-
-        return index.contains(word)
     }
 
     public func suggestionCandidates(
@@ -106,58 +103,57 @@ public class DictionaryLoader {
         maxCandidates: Int = 512,
         maxLengthDelta: Int = 2
     ) -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
+        return lock.withLock {
+            let index = ensureIndexLoaded(for: language)
+            let trigram = ensureTrigramIndexLoaded(for: language)
+            let denyList = denyLists[language] ?? []
+            let allowList = allowLists[language] ?? []
 
-        let index = ensureIndexLoaded(for: language)
-        let trigram = ensureTrigramIndexLoaded(for: language)
-        let denyList = denyLists[language] ?? []
-        let allowList = allowLists[language] ?? []
+            let candidateIDs = trigram.candidateIDs(
+                for: word,
+                maxLengthDelta: maxLengthDelta,
+                maxCandidates: maxCandidates
+            )
 
-        let candidateIDs = trigram.candidateIDs(
-            for: word,
-            maxLengthDelta: maxLengthDelta,
-            maxCandidates: maxCandidates
-        )
+            var seen: Set<String> = []
+            seen.reserveCapacity(candidateIDs.count + allowList.count)
 
-        var seen: Set<String> = []
-        seen.reserveCapacity(candidateIDs.count + allowList.count)
+            var result: [String] = []
+            result.reserveCapacity(candidateIDs.count)
 
-        var result: [String] = []
-        result.reserveCapacity(candidateIDs.count)
-
-        for id in candidateIDs {
-            guard let candidate = index.word(at: id) else { continue }
-            if denyList.contains(candidate) { continue }
-            if seen.insert(candidate).inserted {
-                result.append(candidate)
-            }
-        }
-
-        // Fallback for low-overlap typos: scan a bounded first-character partition.
-        if let firstScalar = word.unicodeScalars.first?.value,
-           let range = index.partitionRange(for: firstScalar),
-           result.count < max(32, maxCandidates / 4) {
-            for id in range {
+            for id in candidateIDs {
                 guard let candidate = index.word(at: id) else { continue }
-                if abs(candidate.count - word.count) > maxLengthDelta { continue }
                 if denyList.contains(candidate) { continue }
                 if seen.insert(candidate).inserted {
                     result.append(candidate)
-                    if result.count >= maxCandidates { break }
                 }
             }
-        }
 
-        // Overlay allow-list words for misspelled custom vocabulary.
-        for candidate in allowList {
-            if abs(candidate.count - word.count) > maxLengthDelta { continue }
-            if seen.insert(candidate).inserted {
-                result.append(candidate)
+            // Fallback for low-overlap typos: scan a bounded first-character partition.
+            if let firstScalar = word.unicodeScalars.first?.value,
+               let range = index.partitionRange(for: firstScalar),
+               result.count < max(32, maxCandidates / 4) {
+                for id in range {
+                    guard let candidate = index.word(at: id) else { continue }
+                    if abs(candidate.count - word.count) > maxLengthDelta { continue }
+                    if denyList.contains(candidate) { continue }
+                    if seen.insert(candidate).inserted {
+                        result.append(candidate)
+                        if result.count >= maxCandidates { break }
+                    }
+                }
             }
-        }
 
-        return result
+            // Overlay allow-list words for misspelled custom vocabulary.
+            for candidate in allowList {
+                if abs(candidate.count - word.count) > maxLengthDelta { continue }
+                if seen.insert(candidate).inserted {
+                    result.append(candidate)
+                }
+            }
+
+            return result
+        }
     }
 
     private func ensureIndexLoaded(for language: Language) -> DictionaryIndex {

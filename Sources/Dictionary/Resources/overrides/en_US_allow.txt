@@ -2,3 +2,14 @@ seems
 switched
 after
 expected
+codex
+debug
+debugging
+git
+commit
+json
+yaml
+api
+app
+mac
+sudo

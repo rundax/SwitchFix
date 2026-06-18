@@ -5,6 +5,8 @@ public class InputSourceManager {
     public static let shared = InputSourceManager()
 
     private var cachedLayout: Layout?
+    private var cachedLayoutTimeNs: UInt64 = 0
+    private static let layoutCacheTTLNs: UInt64 = 120_000_000 // 120ms
 
     /// Maps each Layout to the user's actual installed input source ID.
     /// Populated at startup by `discoverInstalledSources()`.
@@ -27,6 +29,7 @@ public class InputSourceManager {
 
     @objc private func inputSourceChanged() {
         cachedLayout = nil
+        cachedLayoutTimeNs = 0
     }
 
     public struct InputSourceDescriptor: Equatable {
@@ -65,15 +68,22 @@ public class InputSourceManager {
 
     /// Get the current active keyboard layout (cached until input source changes).
     public func currentLayout() -> Layout {
-        // Query TIS every time to avoid stale cache when system notifications are missed.
+        let now = DispatchTime.now().uptimeNanoseconds
+        if let cachedLayout,
+           now &- cachedLayoutTimeNs < InputSourceManager.layoutCacheTTLNs {
+            return cachedLayout
+        }
+
         let layout = fetchCurrentLayout()
         cachedLayout = layout
+        cachedLayoutTimeNs = now
         return layout
     }
 
     /// Force-refresh the cached layout after a programmatic switch.
     public func invalidateCache() {
         cachedLayout = nil
+        cachedLayoutTimeNs = 0
     }
 
     /// The raw input source ID of the current keyboard layout.
@@ -132,6 +142,7 @@ public class InputSourceManager {
                     let status = TISSelectInputSource(source)
                     NSLog("[SwitchFix] switchTo(%@): selected %@ (status: %d)", layout.rawValue, sourceID, status)
                     cachedLayout = layout
+                    cachedLayoutTimeNs = DispatchTime.now().uptimeNanoseconds
                     return
                 }
             }

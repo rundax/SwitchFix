@@ -4,10 +4,6 @@ import Carbon
 public class InputSourceManager {
     public static let shared = InputSourceManager()
 
-    private var cachedLayout: Layout?
-    private var cachedLayoutTimeNs: UInt64 = 0
-    private static let layoutCacheTTLNs: UInt64 = 120_000_000 // 120ms
-
     /// Maps each Layout to the user's actual installed input source ID.
     /// Populated at startup by `discoverInstalledSources()`.
     private var installedSourceIDs: [Layout: String] = [:]
@@ -17,19 +13,7 @@ public class InputSourceManager {
     private static let bKeyCode: UInt16 = 11
 
     private init() {
-        // Listen for input source changes to invalidate cache
-        DistributedNotificationCenter.default().addObserver(
-            self,
-            selector: #selector(inputSourceChanged),
-            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
-            object: nil
-        )
         discoverInstalledSources()
-    }
-
-    @objc private func inputSourceChanged() {
-        cachedLayout = nil
-        cachedLayoutTimeNs = 0
     }
 
     public struct InputSourceDescriptor: Equatable {
@@ -68,22 +52,8 @@ public class InputSourceManager {
 
     /// Get the current active keyboard layout (cached until input source changes).
     public func currentLayout() -> Layout {
-        let now = DispatchTime.now().uptimeNanoseconds
-        if let cachedLayout,
-           now &- cachedLayoutTimeNs < InputSourceManager.layoutCacheTTLNs {
-            return cachedLayout
-        }
-
         let layout = fetchCurrentLayout()
-        cachedLayout = layout
-        cachedLayoutTimeNs = now
         return layout
-    }
-
-    /// Force-refresh the cached layout after a programmatic switch.
-    public func invalidateCache() {
-        cachedLayout = nil
-        cachedLayoutTimeNs = 0
     }
 
     /// The raw input source ID of the current keyboard layout.
@@ -141,8 +111,6 @@ public class InputSourceManager {
                 if sourceID == targetID {
                     let status = TISSelectInputSource(source)
                     NSLog("[SwitchFix] switchTo(%@): selected %@ (status: %d)", layout.rawValue, sourceID, status)
-                    cachedLayout = layout
-                    cachedLayoutTimeNs = DispatchTime.now().uptimeNanoseconds
                     return
                 }
             }

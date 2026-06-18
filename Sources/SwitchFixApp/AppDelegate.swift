@@ -136,7 +136,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(selectedInputSourceChanged),
             name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
-            object: nil
+            object: nil,
+            suspensionBehavior: .deliverImmediately
         )
         return true
     }
@@ -160,7 +161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[SwitchFix] Warning: observed CapsLock conflict (input source changed immediately after revert hotkey)")
             return
         }
-        
+
         NSLog("[SwitchFix] Input source changed: %@ -> %@", previousLayout.rawValue, newLayout.rawValue)
 
         guard !isCorrectionInProgress else { return }

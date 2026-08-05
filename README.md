@@ -10,6 +10,8 @@ macOS menu bar utility that auto-corrects keyboard layout mistakes. Type in the 
 - **Automatic correction** — detects wrong-layout words on space/enter and corrects them instantly
 - **Hotkey mode** — correct only when you press Ctrl+Shift+Space (configurable)
 - **Selection correction** — select text and press the hotkey to convert it
+- **Layout change correction** — automatically transcripts selected text when you change the input layout
+- **Permissions indicator** — shows the status of required macOS permissions in the app menu
 - **Undo** — Cmd+Z within 5 seconds reverts the last correction
 - **Revert hotkey** — CapsLock reverts the last correction (configurable)
 - **Three layouts** — English (US/ABC/British/Dvorak/Colemak), Ukrainian, Russian
@@ -148,6 +150,7 @@ SwitchFix lives in the menu bar with an **Ab** icon. The menu provides:
 
 - **Enable/Disable** toggle
 - **Correction Mode** — Automatic or Hotkey Only
+- **Permissions Status** — visually indicates if required Accessibility and Input Monitoring permissions are granted
 - **Conflict warning** — shows when CapsLock is also used by macOS for input source switching
 - **Installed Layouts** — shows all detected system layouts
 - **Launch at Login**

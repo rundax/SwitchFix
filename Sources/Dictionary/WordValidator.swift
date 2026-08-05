@@ -17,6 +17,12 @@ public class WordValidator {
         "'s", "'re", "'ve", "'ll", "'d", "n't"
     ]
 
+    private static let whitelistedWords: [Language: Set<String>] = [
+        .english: [
+            "ccs", "cmd", "opt", "ctrl", "mac", "ios", "api", "url", "app", "dev", "bot", "txt", "csv", "xml", "json"
+        ]
+    ]
+
     private static let latinLowercaseRange: ClosedRange<UInt32> = 0x0061...0x007A
     private static let latinUppercaseRange: ClosedRange<UInt32> = 0x0041...0x005A
     private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
@@ -39,6 +45,10 @@ public class WordValidator {
         }
 
         if language == .english, isEnglishContractionValid(normalized) {
+            return ValidationResult(isValid: true, correctedWord: nil)
+        }
+
+        if WordValidator.whitelistedWords[language]?.contains(normalized) == true {
             return ValidationResult(isValid: true, correctedWord: nil)
         }
 

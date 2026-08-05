@@ -432,6 +432,12 @@ extension AppDelegate: KeyboardMonitorDelegate {
         corrector.undoLastCorrection(currentLayout: currentLayout)
         textCorrector?.recordUserInput(kind: .other)
     }
+
+    func keyboardMonitorDidReceiveNavigation(_ monitor: KeyboardMonitor) {
+        layoutDetector?.invalidateSync()
+        textCorrector?.noteUserEdit()
+        textCorrector?.recordUserInput(kind: .other)
+    }
 }
 
 // MARK: - LayoutDetectorDelegate

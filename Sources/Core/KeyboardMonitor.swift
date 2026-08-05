@@ -11,6 +11,7 @@ public protocol KeyboardMonitorDelegate: AnyObject {
     func keyboardMonitorDidReceiveHotkey(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveRevertHotkey(_ monitor: KeyboardMonitor)
     func keyboardMonitorDidReceiveUndo(_ monitor: KeyboardMonitor)
+    func keyboardMonitorDidReceiveNavigation(_ monitor: KeyboardMonitor)
 }
 
 public class KeyboardMonitor {
@@ -37,8 +38,11 @@ public class KeyboardMonitor {
         105, 107, 113, 106, // F13-F16
     ])
 
-    // Arrow keys
-    private static let arrowKeyCodes: Set<UInt16> = Set([123, 124, 125, 126])
+    // Navigation keys (arrows, home, end, page up, page down)
+    private static let navigationKeyCodes: Set<UInt16> = Set([
+        123, 124, 125, 126, // arrows
+        115, 119, 116, 121  // home, end, page up, page down
+    ])
 
     // Keys that should flush the buffer (word boundary)
     private static let bufferFlushKeyCodes: Set<UInt16> = Set([
@@ -431,8 +435,11 @@ public class KeyboardMonitor {
             return Unmanaged.passUnretained(event)
         }
 
-        // Ignore arrow keys
-        if arrowKeyCodes.contains(keyCode) {
+        // Handle navigation keys (arrows, home, end, page up/down)
+        if navigationKeyCodes.contains(keyCode) {
+            DispatchQueue.main.async {
+                monitor.delegate?.keyboardMonitorDidReceiveNavigation(monitor)
+            }
             return Unmanaged.passUnretained(event)
         }
 

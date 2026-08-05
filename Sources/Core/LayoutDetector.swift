@@ -64,6 +64,7 @@ public class LayoutDetector {
     private var pendingSwitchCount: Int = 0
     private var recentOutcomes: [RecentOutcome] = []
     private var pendingSuppressedShort: SuppressedShort?
+    private var isOutOfSync: Bool = false
 
     private let validator = WordValidator.shared
 
@@ -121,6 +122,7 @@ public class LayoutDetector {
     public func flushBuffer(boundaryCharacter: String? = nil) {
         guard !wordBuffer.isEmpty else {
             state = .idle
+            isOutOfSync = false
             return
         }
 
@@ -130,6 +132,7 @@ public class LayoutDetector {
 
         guard !wordBuffer.isEmpty else {
             state = .idle
+            isOutOfSync = false
             return
         }
 
@@ -138,17 +141,25 @@ public class LayoutDetector {
         pendingBoundaryCharacter = boundary.isEmpty ? nil : boundary
 
         // Check buffer at word boundaries (short words are handled by WordValidator whitelist)
-        checkBuffer()
+        if !isOutOfSync {
+            checkBuffer()
+        } else {
+            NSLog("[SwitchFix] Detection: skipped buffer '%@' due to out-of-sync state", wordBuffer)
+        }
 
         // Reset buffer
         pendingBoundaryCharacter = nil
         wordBuffer = ""
         state = .idle
+        isOutOfSync = false
     }
 
     /// Called when backspace/delete is pressed — remove last character from buffer.
     public func deleteLastCharacter() {
-        guard !wordBuffer.isEmpty else { return }
+        guard !wordBuffer.isEmpty else {
+            isOutOfSync = true
+            return
+        }
         wordBuffer.removeLast()
         if wordBuffer.isEmpty {
             state = .idle
@@ -159,6 +170,14 @@ public class LayoutDetector {
     public func discardBuffer() {
         wordBuffer = ""
         state = .idle
+        isOutOfSync = false
+    }
+
+    /// Mark the detector as out of sync (e.g. when navigation keys are pressed).
+    public func invalidateSync() {
+        wordBuffer = ""
+        state = .idle
+        isOutOfSync = true
     }
 
     /// Reset all state (e.g., when app loses focus).
@@ -171,6 +190,7 @@ public class LayoutDetector {
         pendingSwitchCount = 0
         recentOutcomes = []
         pendingSuppressedShort = nil
+        isOutOfSync = false
     }
 
     /// Enter correction state (prevents buffering during correction).

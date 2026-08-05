@@ -305,7 +305,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 selectedText: selection,
                 convertedText: converted,
                 targetLayout: toLayout,
-                shouldSwitchLayout: false
+                shouldSwitchLayout: false,
+                originalLayout: fromLayout
             )
             return
         }

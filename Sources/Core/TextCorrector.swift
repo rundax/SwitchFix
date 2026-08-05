@@ -203,12 +203,13 @@ public class TextCorrector {
         selectedText: String,
         convertedText: String,
         targetLayout: Layout,
-        shouldSwitchLayout: Bool = true
+        shouldSwitchLayout: Bool = true,
+        originalLayout: Layout? = nil
     ) {
         lastOriginalText = selectedText
         lastCorrectedText = convertedText
         lastCorrectionTime = Date()
-        lastOriginalLayout = inputSourceManager.currentLayout()
+        lastOriginalLayout = originalLayout ?? inputSourceManager.currentLayout()
         lastBoundaryText = nil
         lastCorrectionEditGeneration = userEditGeneration
 

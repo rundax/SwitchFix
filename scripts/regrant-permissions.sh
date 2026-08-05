@@ -13,9 +13,8 @@ echo "Resetting TCC permissions for $BUNDLE_ID..."
 tccutil reset Accessibility "$BUNDLE_ID" || true
 tccutil reset ListenEvent "$BUNDLE_ID" || true
 
-echo "Opening Privacy settings..."
+echo "Opening Privacy settings (Accessibility)..."
 open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" || true
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent" || true
 
 echo "Opening Finder with SwitchFix selected (for drag and drop)..."
 open -R "$APP_BUNDLE"
@@ -27,12 +26,28 @@ IMPORTANT: Due to macOS ad-hoc signature changes,
 you CANNOT just re-check the box in System Settings!
 ==================================================
 
-Next steps in System Settings (for both Accessibility AND Input Monitoring):
+Step 1: Accessibility
 1. Select the existing 'SwitchFix' entry and click the '-' button to remove it.
 2. Drag and drop the SwitchFix.app (from the opened Finder window) into the list.
 3. Ensure the toggle/checkbox is enabled.
 
 EOF
+
+read -p "Press [Enter] when you are done with Accessibility to move to Input Monitoring... "
+
+echo "Opening Privacy settings (Input Monitoring)..."
+open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent" || true
+
+cat <<EOF
+
+Step 2: Input Monitoring
+1. Select the existing 'SwitchFix' entry and click the '-' button to remove it.
+2. Drag and drop the SwitchFix.app (from the Finder window) into the list.
+3. Ensure the toggle/checkbox is enabled.
+
+EOF
+
+read -p "Press [Enter] when you are done to launch SwitchFix... "
 
 echo "Launching app: $APP_BUNDLE"
 open "$APP_BUNDLE"

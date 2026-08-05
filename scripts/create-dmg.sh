@@ -26,6 +26,9 @@ mkdir -p "$DMG_TEMP"
 # Copy app to temp directory
 cp -R "$APP_BUNDLE" "$DMG_TEMP/"
 
+# Copy the double-clickable installer script
+cp "$SCRIPT_DIR/Install_SwitchFix.command" "$DMG_TEMP/Install SwitchFix.command"
+
 # Create a symbolic link to /Applications
 ln -s /Applications "$DMG_TEMP/Applications"
 

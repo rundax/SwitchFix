@@ -38,14 +38,12 @@ The easiest way to install and set up SwitchFix is using the automated install s
 
 > **Note:** If you don't have Apple's Command Line Tools installed, the script will prompt you to install them first. Just follow the macOS prompts and re-run `./install.sh` when it finishes.
 
-### Manual Installation (Pre-built Releases)
+### Easy Installation (Pre-built Releases)
 
-You can also download a pre-compiled version from the [Releases page](https://github.com/rundax/SwitchFix/releases). 
+You can also download a pre-compiled `.dmg` version from the [Releases page](https://github.com/rundax/SwitchFix/releases). 
 1. Open the downloaded `.dmg` file.
-2. Drag `SwitchFix.app` to your Applications folder.
-3. Launch the app and grant Accessibility and Input Monitoring permissions.
-
-> **Note:** Gatekeeper might require you to right-click -> **Open** the app the first time since the pre-built releases are not signed with a paid Apple Developer certificate.
+2. Double-click the **`Install SwitchFix`** script inside.
+3. A terminal will open to securely copy the app to your Applications folder, bypass Apple's "App is damaged" quarantine warning for unsigned apps, and interactively guide you through granting the necessary macOS privacy permissions.
 
 ## Menu Bar Options
 

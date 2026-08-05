@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var capsLockConflictProbeToken: UUID?
     private var monitoringObserversRegistered: Bool = false
     private var previousLayout: Layout = .english
+    private var previousInputSourceID: String = "unknown"
     private var isCorrectionInProgress: Bool = false
     private static let capsLockKeyCode: UInt16 = 57
 
@@ -29,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         prewarmDictionaries()
 
         previousLayout = inputSourceManager.currentLayout()
+        previousInputSourceID = inputSourceManager.currentInputSourceID()
 
         Permissions.ensureRequiredPermissions { [weak self] in
             guard let self else { return }
@@ -152,8 +154,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func selectedInputSourceChanged() {
+        let oldInputSourceID = previousInputSourceID
+        let newInputSourceID = inputSourceManager.currentInputSourceID()
         let newLayout = inputSourceManager.currentLayout()
-        defer { previousLayout = newLayout }
+        defer {
+            previousLayout = newLayout
+            previousInputSourceID = newInputSourceID
+        }
 
         if capsLockConflictProbeToken != nil {
             capsLockConflictProbeToken = nil
@@ -170,7 +177,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard isCurrentAppAllowed else { return }
         guard newLayout != previousLayout else { return }
 
-        triggerLayoutSwitchCorrection(from: previousLayout, to: newLayout)
+        triggerLayoutSwitchCorrection(
+            from: previousLayout,
+            to: newLayout,
+            fromInputSourceID: oldInputSourceID,
+            toInputSourceID: newInputSourceID
+        )
     }
 
     /// Returns true when `text` contains at least one letter belonging to the script
@@ -259,9 +271,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
     
-    private func triggerLayoutSwitchCorrection(from fromLayout: Layout, to toLayout: Layout) {
-        let fromVariant = inputSourceManager.currentUkrainianVariant() ?? inputSourceManager.preferredUkrainianVariant()
-        let toVariant = inputSourceManager.preferredUkrainianVariant()
+    private func ukrainianVariant(for layout: Layout, inputSourceID: String) -> UkrainianKeyboardVariant {
+        guard layout == .ukrainian else { return inputSourceManager.preferredUkrainianVariant() }
+        return inputSourceManager.ukrainianVariant(forInputSourceID: inputSourceID)
+            ?? inputSourceManager.preferredUkrainianVariant()
+    }
+
+    private func triggerLayoutSwitchCorrection(
+        from fromLayout: Layout,
+        to toLayout: Layout,
+        fromInputSourceID: String,
+        toInputSourceID: String
+    ) {
+        let fromVariant = ukrainianVariant(for: fromLayout, inputSourceID: fromInputSourceID)
+        let toVariant = ukrainianVariant(for: toLayout, inputSourceID: toInputSourceID)
 
         if let selection = Permissions.getSelectedText(), !selection.isEmpty {
             guard textContainsScript(of: fromLayout, text: selection) else {

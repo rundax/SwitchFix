@@ -108,7 +108,7 @@ public class InputSourceManager {
                 }
                 let sourceID = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
 
-                if sourceID == targetID {
+                if sourceID == targetID || sourceID.hasSuffix(targetID) {
                     let status = TISSelectInputSource(source)
                     NSLog("[SwitchFix] switchTo(%@): selected %@ (status: %d)", layout.rawValue, sourceID, status)
                     return
@@ -184,7 +184,7 @@ public class InputSourceManager {
         return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
     }
 
-    private func ukrainianVariant(forInputSourceID sourceID: String) -> UkrainianKeyboardVariant? {
+    public func ukrainianVariant(forInputSourceID sourceID: String) -> UkrainianKeyboardVariant? {
         if let cached = ukrainianVariantBySourceID[sourceID] {
             return cached
         }

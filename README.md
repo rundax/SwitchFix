@@ -178,6 +178,12 @@ If SwitchFix observes that pressing CapsLock also triggers a macOS input-source 
 
 SwitchFix logs key decisions via `NSLog`. Open Console.app and filter for `[SwitchFix]` to see:
 
+Or monitor logs from Terminal:
+
+```bash
+log stream --style compact --predicate '(process == "SwitchFixApp" OR process == "SwitchFix") AND eventMessage CONTAINS "[SwitchFix]"'
+```
+
 - Discovered input sources at startup
 - Dictionary loading (word counts, paths)
 - Detection decisions (buffer contents, conversion results)

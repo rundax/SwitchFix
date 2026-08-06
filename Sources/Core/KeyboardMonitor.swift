@@ -22,6 +22,8 @@ public class KeyboardMonitor {
     private var selfPointer: UnsafeMutableRawPointer?
     private var isMonitoring = false
     private var shouldPreferLayoutTranslation = false
+    private var cachedInputSource: TISInputSource?
+    private var cachedLayoutSource: TISInputSource?
 
     // Key codes for special keys
     private static let spaceKeyCode: UInt16 = 49
@@ -109,6 +111,7 @@ public class KeyboardMonitor {
         CGEvent.tapEnable(tap: tap, enable: true)
         isMonitoring = true
         shouldPreferLayoutTranslation = (usedTapLocation == .cghidEventTap)
+        refreshInputSources()
         if usedTapLocation == .cghidEventTap {
             NSLog("[SwitchFix] KeyboardMonitor: event tap started (HID fallback)")
         } else {
@@ -138,6 +141,12 @@ public class KeyboardMonitor {
     /// Temporarily disable/enable monitoring (used during text correction to avoid feedback loops)
     public var isPaused: Bool = false
     public var onKeyDownWhilePaused: (() -> Void)?
+
+    /// Refresh cached input sources (call this when the input source changes).
+    public func refreshInputSources() {
+        cachedInputSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue()
+        cachedLayoutSource = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
+    }
 
     /// Hotkey configuration
     public var hotkeyKeyCode: UInt16 = 49  // Space
@@ -218,7 +227,7 @@ public class KeyboardMonitor {
         return nil
     }
 
-    private static func characterString(
+    private func characterString(
         from event: CGEvent,
         keyCode: UInt16,
         flags: CGEventFlags,
@@ -230,9 +239,9 @@ public class KeyboardMonitor {
             return fromLayout
         }
 
-        if let fromEvent = eventCharacterString(from: event), !fromEvent.isEmpty {
+        if let fromEvent = KeyboardMonitor.eventCharacterString(from: event), !fromEvent.isEmpty {
             if !preferLayoutTranslation,
-               shouldFallbackToLayoutTranslation(for: fromEvent) {
+               KeyboardMonitor.shouldFallbackToLayoutTranslation(for: fromEvent) {
                 if let fromLayout = fallbackCharacterFromCurrentLayout(keyCode: keyCode, flags: flags),
                    !fromLayout.isEmpty {
                     return fromLayout
@@ -344,13 +353,11 @@ public class KeyboardMonitor {
         return translated
     }
 
-    private static func fallbackCharacterFromCurrentLayout(keyCode: UInt16, flags: CGEventFlags) -> String? {
-        let currentSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue()
-        let layoutSource = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
-        let sources = [currentSource, layoutSource].compactMap { $0 }
+    private func fallbackCharacterFromCurrentLayout(keyCode: UInt16, flags: CGEventFlags) -> String? {
+        let sources = [cachedInputSource, cachedLayoutSource].compactMap { $0 }
 
         for source in sources {
-            if let translated = translatedCharacter(from: source, keyCode: keyCode, flags: flags),
+            if let translated = KeyboardMonitor.translatedCharacter(from: source, keyCode: keyCode, flags: flags),
                !translated.isEmpty {
                 return translated
             }
@@ -471,7 +478,7 @@ public class KeyboardMonitor {
             return Unmanaged.passUnretained(event)
         }
 
-        if let str = characterString(
+        if let str = monitor.characterString(
             from: event,
             keyCode: keyCode,
             flags: flags,

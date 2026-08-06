@@ -162,6 +162,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             previousInputSourceID = newInputSourceID
         }
 
+        keyboardMonitor?.refreshInputSources()
+
         if capsLockConflictProbeToken != nil {
             capsLockConflictProbeToken = nil
             SystemHotkeyConflicts.markObservedCapsLockConflict()

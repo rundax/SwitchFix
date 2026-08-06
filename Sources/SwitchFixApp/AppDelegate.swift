@@ -155,6 +155,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func selectedInputSourceChanged() {
         let oldInputSourceID = previousInputSourceID
+        inputSourceManager.refreshCurrentInputSource()
         let newInputSourceID = inputSourceManager.currentInputSourceID()
         let newLayout = inputSourceManager.currentLayout()
         defer {

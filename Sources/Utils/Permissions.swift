@@ -130,7 +130,13 @@ public class Permissions {
         }
 
         cachedSecureTimeNs = now
-        cachedSecureResult = checkFocusedElementSecure()
+        DispatchQueue.global(qos: .userInteractive).async {
+            let isSecure = checkFocusedElementSecure()
+            DispatchQueue.main.async {
+                cachedSecureResult = isSecure
+            }
+        }
+        
         return cachedSecureResult
     }
 

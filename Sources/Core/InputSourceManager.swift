@@ -50,14 +50,29 @@ public class InputSourceManager {
         }
     }
 
+    private var cachedCurrentLayout: Layout?
+    private var cachedCurrentInputSourceID: String?
+
+    public func refreshCurrentInputSource() {
+        cachedCurrentInputSourceID = fetchCurrentInputSourceID()
+        cachedCurrentLayout = fetchCurrentLayout(for: cachedCurrentInputSourceID!)
+    }
+
     /// Get the current active keyboard layout (cached until input source changes).
     public func currentLayout() -> Layout {
-        let layout = fetchCurrentLayout()
-        return layout
+        if let cached = cachedCurrentLayout { return cached }
+        refreshCurrentInputSource()
+        return cachedCurrentLayout!
     }
 
     /// The raw input source ID of the current keyboard layout.
     public func currentInputSourceID() -> String {
+        if let cached = cachedCurrentInputSourceID { return cached }
+        refreshCurrentInputSource()
+        return cachedCurrentInputSourceID!
+    }
+
+    private func fetchCurrentInputSourceID() -> String {
         guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
             return "unknown"
         }
@@ -67,9 +82,7 @@ public class InputSourceManager {
         return Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
     }
 
-    private func fetchCurrentLayout() -> Layout {
-        let sourceID = currentInputSourceID()
-
+    private func fetchCurrentLayout(for sourceID: String) -> Layout {
         // Match against all known IDs for each layout
         for layout in Layout.allCases {
             if layout.matches(sourceID: sourceID) {

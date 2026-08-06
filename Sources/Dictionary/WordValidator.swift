@@ -27,12 +27,7 @@ public class WordValidator {
     private static let latinUppercaseRange: ClosedRange<UInt32> = 0x0041...0x005A
     private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
 
-    private static let englishVowels = CharacterSet(charactersIn: "aeiouyAEIOUY")
-    private static let englishCoreVowels = CharacterSet(charactersIn: "aeiouAEIOU")
-    private static let ukrainianVowels = CharacterSet(charactersIn: "аеєиіїоуюяАЕЄИІЇОУЮЯ")
-    private static let russianVowels = CharacterSet(charactersIn: "аеёиоуыэюяАЕЁИОУЫЭЮЯ")
-
-    /// Validate a word, optionally allowing spellchecker suggestions.
+    /// Validate a word with exact dictionary membership and bounded short-word correction.
     public func validate(_ word: String, language: Language, allowSuggestion: Bool = false) -> ValidationResult {
         let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
         if shouldSkip(trimmed) {
@@ -68,36 +63,21 @@ public class WordValidator {
             return ValidationResult(isValid: false, correctedWord: nil)
         }
 
-        if loader.mightContain(normalized, language: language) {
-            if shouldRequireExactDictionaryMatch(normalized, language: language) {
-                if isExactDictionaryWord(normalized, language: language) {
-                    return ValidationResult(isValid: true, correctedWord: nil)
-                }
-            } else {
-                return ValidationResult(isValid: true, correctedWord: nil)
-            }
-        }
-
-        guard allowSuggestion else {
-            return ValidationResult(isValid: false, correctedWord: nil)
-        }
-
-        if let best = engine.dictionarySuggestion(for: normalized, language: language),
-           engine.isSuggestionAcceptable(original: normalized, suggestion: best) {
-            return ValidationResult(isValid: true, correctedWord: best)
+        if loader.containsExact(normalized, language: language) {
+            return ValidationResult(isValid: true, correctedWord: nil)
         }
 
         return ValidationResult(isValid: false, correctedWord: nil)
     }
 
     /// Check if a word is valid in the given language.
-    /// Returns true if the word is likely in the dictionary (may have false positives from BloomFilter).
+    /// Returns true if the word exists in the exact dictionary or a bounded built-in set.
     public func isValidWord(_ word: String, language: Language) -> Bool {
         return validate(word, language: language, allowSuggestion: false).isValid
     }
 
     /// Check if a word exists exactly in dictionary resources for the language.
-    /// Unlike `isValidWord`, this does not rely on BloomFilter membership only.
+    /// Unlike `isValidWord`, this excludes bounded short-word correction behavior.
     public func isExactWord(_ word: String, language: Language) -> Bool {
         let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -137,59 +117,9 @@ public class WordValidator {
         return false
     }
 
-    private func shouldVerifyBloomHit(_ word: String, language: Language) -> Bool {
-        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.count < 4 {
-            return false
-        }
-
-        if !containsVowel(trimmed, language: language) {
-            return true
-        }
-
-        if language == .english && !containsCoreEnglishVowel(trimmed) {
-            return true
-        }
-
-        return false
-    }
-
-    private func shouldRequireExactDictionaryMatch(_ word: String, language: Language) -> Bool {
-        if word.count <= 4 {
-            return true
-        }
-        return shouldVerifyBloomHit(word, language: language)
-    }
-
     private func isExactDictionaryWord(_ word: String, language: Language) -> Bool {
         return loader.containsExact(word, language: language)
     }
-
-    private func containsVowel(_ word: String, language: Language) -> Bool {
-        let vowels: CharacterSet
-        switch language {
-        case .english:
-            vowels = WordValidator.englishVowels
-        case .ukrainian:
-            vowels = WordValidator.ukrainianVowels
-        case .russian:
-            vowels = WordValidator.russianVowels
-        }
-
-        for scalar in word.unicodeScalars where vowels.contains(scalar) {
-            return true
-        }
-        return false
-    }
-
-    private func containsCoreEnglishVowel(_ word: String) -> Bool {
-        for scalar in word.unicodeScalars where WordValidator.englishCoreVowels.contains(scalar) {
-            return true
-        }
-        return false
-    }
-
-
 
     private func isEnglishContractionValid(_ word: String) -> Bool {
         guard word.contains("'") else { return false }
@@ -200,7 +130,7 @@ public class WordValidator {
             if SuggestionEngine.shortWords[.english]?.contains(base) == true {
                 return true
             }
-            if loader.mightContain(base, language: .english) {
+            if loader.containsExact(base, language: .english) {
                 return true
             }
         }

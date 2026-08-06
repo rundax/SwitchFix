@@ -106,8 +106,10 @@ if [ -d "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" ]; then
         if [ -f "$BIN_PATH" ]; then
             cp "$BIN_PATH" "$DICT_BUNDLE/"
         fi
+        # Production uses mmap binaries only; text resources are test-tool fallback inputs.
+        rm -f "$DICT_BUNDLE/${lang}.txt"
     done
-    echo "Copied compiled dictionary binaries into resource bundle."
+    echo "Copied compiled dictionary binaries and removed text fallbacks."
 fi
 
 # Code sign

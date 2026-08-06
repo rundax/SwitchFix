@@ -52,11 +52,13 @@ public class AppFilter {
     public func addToBlacklist(_ bundleID: String) {
         blacklistedBundleIDs.insert(bundleID)
         save()
+        NotificationCenter.default.post(name: .appFilterDidChange, object: nil)
     }
 
     public func removeFromBlacklist(_ bundleID: String) {
         blacklistedBundleIDs.remove(bundleID)
         save()
+        NotificationCenter.default.post(name: .appFilterDidChange, object: nil)
     }
 
     public func isBlacklisted(_ bundleID: String) -> Bool {
@@ -70,4 +72,8 @@ public class AppFilter {
     private func save() {
         defaults.set(Array(blacklistedBundleIDs), forKey: AppFilter.blacklistKey)
     }
+}
+
+public extension Notification.Name {
+    static let appFilterDidChange = Notification.Name("SwitchFix_AppFilterDidChange")
 }

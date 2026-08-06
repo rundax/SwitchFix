@@ -40,7 +40,7 @@ func runDictionaryPerformanceSuites() {
         let rssBefore = currentRSSBytes()
 
         let loadStart = ContinuousClock.now
-        _ = loader.bloomFilter(for: .ukrainian)
+        assert(loader.prewarm(language: .ukrainian), "dictionary should prepare for performance tests")
         let loadDuration = loadStart.duration(to: .now)
 
         let rssAfterLoad = currentRSSBytes()

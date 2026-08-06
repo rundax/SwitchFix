@@ -25,7 +25,11 @@ public class PreferencesManager {
 
     public var isEnabled: Bool {
         get { defaults.object(forKey: Keys.isEnabled) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Keys.isEnabled) }
+        set {
+            guard newValue != isEnabled else { return }
+            defaults.set(newValue, forKey: Keys.isEnabled)
+            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        }
     }
 
     public var launchAtLogin: Bool {

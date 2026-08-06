@@ -2,6 +2,8 @@ import Foundation
 import Core
 import Dictionary
 
+DictionaryLoader.shared.enableTextFallbackForTesting()
+
 // Simple test runner — no XCTest dependency required
 var passed = 0
 var failed = 0
@@ -318,23 +320,17 @@ runSuite("LayoutDetector: Detect EN→RU wrong layout") {
     }
 }
 
-runSuite("LayoutDetector: Suggest typo after EN→UK conversion") {
+runSuite("LayoutDetector: Long-word typo suggestions are disabled") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
     detector.delegate = mockDelegate
     detector.currentLayout = .english
-    detector.suggestionMaxLength = 5
-
     for char in "pdhdp" {
         detector.addCharacter(String(char))
     }
     detector.flushBuffer(boundaryCharacter: " ")
 
-    assertEqual(mockDelegate.results.count, 1, "should detect typo-correctable wrong-layout word")
-    if let result = mockDelegate.results.first {
-        assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
-        assertEqual(result.convertedWord, "зараз", "should suggest 'зараз' from converted typo")
-    }
+    assertEqual(mockDelegate.results.count, 0, "should not run typo-tolerant whole-dictionary lookup")
 }
 
 runSuite("LayoutDetector: Avoid aggressive EN→UK typo suggestion") {
@@ -342,8 +338,6 @@ runSuite("LayoutDetector: Avoid aggressive EN→UK typo suggestion") {
     let mockDelegate = MockDetectorDelegate()
     detector.delegate = mockDelegate
     detector.currentLayout = .english
-    detector.suggestionMaxLength = 5
-
     for char in "fethc" {
         detector.addCharacter(String(char))
     }
@@ -705,6 +699,35 @@ runSuite("LayoutDetector: Merge suppressed short word when next word confirms la
     if let result = mockDelegate.results.first {
         assertEqual(result.originalWord, "ше цщкли", "should delete both words in one correction")
         assertEqual(result.convertedWord, "it works", "should restore intended English phrase")
+    }
+}
+
+runSuite("LayoutDetector: Reset drops suppressed cross-context history") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("зараз")
+    typeWord("на")
+    typeWord("ше")
+    assertEqual(mockDelegate.results.count, 0, "ambiguous short word should be pending before reset")
+
+    detector.reset()
+    typeWord("цщкли")
+
+    assertEqual(mockDelegate.results.count, 1, "new context should correct only its own word")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "цщкли", "reset must not merge text from an earlier context")
+        assertEqual(result.convertedWord, "works", "current-context conversion should remain intact")
     }
 }
 

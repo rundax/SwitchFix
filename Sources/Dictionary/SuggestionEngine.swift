@@ -1,8 +1,6 @@
 import Foundation
 
 public struct SuggestionEngine {
-    private let loader = DictionaryLoader.shared
-
     public static let shortWords: [Language: Set<String>] = [
         .english: [
             "a", "i", "an", "am", "is", "it", "to", "of", "in", "on", "at", "as", "by",
@@ -18,15 +16,6 @@ public struct SuggestionEngine {
     ]
 
     public init() {}
-
-    public func isSuggestionAcceptable(original: String, suggestion: String) -> Bool {
-        let o = original.lowercased()
-        let s = suggestion.lowercased()
-        if o == s { return true }
-        if s.count <= 1 { return false }
-        if abs(o.count - s.count) > 1 { return false }
-        return damerauLevenshteinDistance(o, s, maxDistance: 2) <= 2
-    }
 
     public func closestShortWord(to word: String, language: Language) -> String? {
         guard let candidates = SuggestionEngine.shortWords[language] else { return nil }
@@ -65,48 +54,6 @@ public struct SuggestionEngine {
             }
         }
         return nil
-    }
-
-    public func dictionarySuggestion(for word: String, language: Language) -> String? {
-        var best: String? = nil
-        var bestScore = Int.max
-        var workspace = DamerauLevenshtein.Workspace()
-        let candidates = loader.suggestionCandidates(
-            for: word,
-            language: language,
-            maxCandidates: 768,
-            maxLengthDelta: 2
-        )
-
-        for candidate in candidates {
-            let dist = damerauLevenshteinDistance(
-                word,
-                candidate,
-                maxDistance: 2,
-                workspace: &workspace
-            )
-            guard dist <= 2 else { continue }
-            let lengthPenalty = abs(candidate.count - word.count)
-            let score = dist * 10 + lengthPenalty
-
-            if score < bestScore {
-                bestScore = score
-                best = candidate
-                if dist == 0 && lengthPenalty == 0 { return best }
-            }
-        }
-
-        return best
-    }
-
-    /// Damerau-Levenshtein distance with early exit.
-    private func damerauLevenshteinDistance(
-        _ a: String,
-        _ b: String,
-        maxDistance: Int,
-        workspace: inout DamerauLevenshtein.Workspace
-    ) -> Int {
-        return DamerauLevenshtein.distance(a, b, maxDistance: maxDistance, workspace: &workspace)
     }
 
     private func damerauLevenshteinDistance(_ a: String, _ b: String, maxDistance: Int) -> Int {

@@ -65,22 +65,11 @@ echo "✅ SwitchFix has been added to your startup items."
 # 5. Handle Permissions
 echo ""
 echo "🛡️ Step 4: Setting up macOS Permissions..."
-if [ "$APP_WAS_RUNNING" -eq 1 ]; then
-    echo "SwitchFix was already running. If you're using ad-hoc signing, you may need to regrant permissions."
-    read -p "Do you want to run the permission setup? (y/N) " RUN_PERMS
-    if [[ "$RUN_PERMS" =~ ^[Yy]$ ]]; then
-        ./scripts/regrant-permissions.sh "/Applications/SwitchFix.app"
-    else
-        echo "Restarting SwitchFix..."
-        open "/Applications/SwitchFix.app"
-    fi
-else
-    echo "Because SwitchFix intercepts keyboard input to fix layouts, macOS requires you to grant it explicit permissions."
-    echo ""
-    read -p "Press [Enter] to begin the permission setup..."
+echo "Because SwitchFix intercepts keyboard input to fix layouts, macOS requires you to grant it explicit permissions."
+echo ""
+read -p "Press [Enter] to begin the permission setup..."
 
-    ./scripts/regrant-permissions.sh "/Applications/SwitchFix.app"
-fi
+./scripts/regrant-permissions.sh "/Applications/SwitchFix.app"
 
 echo ""
 echo "🎉 Setup Complete! SwitchFix is now installed and running."

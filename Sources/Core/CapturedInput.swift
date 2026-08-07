@@ -121,6 +121,7 @@ public struct HotkeyConfiguration: Equatable {
 public struct CaptureStateSnapshot: Equatable {
     public let latestPhysicalSequence: UInt64
     public let editGeneration: UInt64
+    public let correctionEpoch: UInt64
     public let context: InputContextSnapshot
     public let pendingInputCount: Int
     public let correctionAllowed: Bool
@@ -128,12 +129,14 @@ public struct CaptureStateSnapshot: Equatable {
     public init(
         latestPhysicalSequence: UInt64,
         editGeneration: UInt64,
+        correctionEpoch: UInt64,
         context: InputContextSnapshot,
         pendingInputCount: Int,
         correctionAllowed: Bool
     ) {
         self.latestPhysicalSequence = latestPhysicalSequence
         self.editGeneration = editGeneration
+        self.correctionEpoch = correctionEpoch
         self.context = context
         self.pendingInputCount = pendingInputCount
         self.correctionAllowed = correctionAllowed
@@ -144,11 +147,13 @@ public final class CaptureStateStore {
     private struct State {
         var latestPhysicalSequence: UInt64
         var editGeneration: UInt64
+        var correctionEpoch: UInt64 = 0
         var context: InputContextSnapshot
         var hotkeys: HotkeyConfiguration
         var pendingInputCount = 0
         var overloadMarkerPending = false
         var correctionAllowed = true
+        var correctionEnabled = true
     }
 
     public enum EnqueueDecision {
@@ -172,10 +177,23 @@ public final class CaptureStateStore {
             CaptureStateSnapshot(
                 latestPhysicalSequence: value.latestPhysicalSequence,
                 editGeneration: value.editGeneration,
+                correctionEpoch: value.correctionEpoch,
                 context: value.context,
                 pendingInputCount: value.pendingInputCount,
-                correctionAllowed: value.correctionAllowed
+                correctionAllowed: value.correctionAllowed && value.correctionEnabled
             )
+        }
+    }
+
+    @discardableResult
+    public func updateCorrectionEnabled(_ isEnabled: Bool) -> UInt64 {
+        state.withLock { value in
+            guard value.correctionEnabled != isEnabled else {
+                return value.correctionEpoch
+            }
+            value.correctionEnabled = isEnabled
+            value.correctionEpoch &+= 1
+            return value.correctionEpoch
         }
     }
 

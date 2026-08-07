@@ -6,6 +6,7 @@ public struct DetectionRequest: Equatable {
     public let boundary: String
     public let sequence: UInt64
     public let editGeneration: UInt64
+    public let correctionEpoch: UInt64
     public let context: InputContextSnapshot
 
     public init(
@@ -13,12 +14,14 @@ public struct DetectionRequest: Equatable {
         boundary: String,
         sequence: UInt64,
         editGeneration: UInt64,
+        correctionEpoch: UInt64,
         context: InputContextSnapshot
     ) {
         self.word = word
         self.boundary = boundary
         self.sequence = sequence
         self.editGeneration = editGeneration
+        self.correctionEpoch = correctionEpoch
         self.context = context
     }
 }
@@ -48,6 +51,7 @@ public final class InputEngine {
     private let customEmission: CorrectionEmission?
     private let selectedTextRequest: SelectedTextRequest?
     private let detectionConfiguration = OSAllocatedUnfairLock(initialState: DetectionConfiguration())
+    private var correctionEpoch: UInt64
     private var latestProcessedSequence: UInt64 = 0
     private var maximumQueueDepth = 0
     private let logger = Logger(subsystem: "com.switchfix", category: "input-engine")
@@ -69,6 +73,7 @@ public final class InputEngine {
         self.customDetection = exactDetection
         self.customEmission = correctionEmission
         self.selectedTextRequest = selectedTextRequest
+        correctionEpoch = captureState.updateCorrectionEnabled(preferences.isEnabled)
     }
 
     public func enqueue(_ input: CapturedInput) {
@@ -95,8 +100,13 @@ public final class InputEngine {
     }
 
     public func updatePreferences(_ preferences: InputPreferencesSnapshot) {
+        let correctionEpoch = captureState.updateCorrectionEnabled(preferences.isEnabled)
         inputQueue.async { [weak self] in
-            _ = self?.stateMachine.updatePreferences(preferences)
+            guard let self else { return }
+            self.correctionEpoch = correctionEpoch
+            if !self.stateMachine.updatePreferences(preferences).isEmpty {
+                self.resetDetectorState()
+            }
         }
     }
 
@@ -133,6 +143,7 @@ public final class InputEngine {
             }
 
             let latest = self.captureState.snapshot()
+            let requestCorrectionEpoch = self.correctionEpoch
             let applyBufferedCorrection = {
                 guard self.latestProcessedSequence == latest.latestPhysicalSequence,
                       !bufferedWord.isEmpty,
@@ -159,6 +170,7 @@ public final class InputEngine {
                         boundary: "",
                         sequence: latest.latestPhysicalSequence,
                         editGeneration: latest.editGeneration,
+                        correctionEpoch: requestCorrectionEpoch,
                         context: context
                     )
                 )
@@ -172,35 +184,40 @@ public final class InputEngine {
                 selectedTextRequest(context.frontmostPID, context.epoch) { [weak self] selectedText in
                     guard let self else { return }
                     self.inputQueue.async {
-                    let current = self.captureState.snapshot()
-                    guard current.latestPhysicalSequence == latest.latestPhysicalSequence,
-                          current.editGeneration == latest.editGeneration,
-                          current.context == context else {
-                        return
-                    }
-                    if let selectedText, !selectedText.isEmpty {
-                        let converted = LayoutMapper.convert(
-                            selectedText,
-                            from: oldLayout,
-                            to: newLayout,
-                            ukrainianFromVariant: fromVariant,
-                            ukrainianToVariant: toVariant
-                        )
-                        guard converted != selectedText else { return }
-                        self.corrector.performSelectionCorrection(
-                            selectedText: selectedText,
-                            convertedText: converted,
-                            targetLayout: newLayout,
-                            shouldSwitchLayout: false,
-                            originalLayout: oldLayout,
-                            sequence: latest.latestPhysicalSequence,
-                            context: context,
-                            editGeneration: latest.editGeneration,
-                            latestCaptureState: self.captureState.snapshot
-                        )
-                    } else {
-                        applyBufferedCorrection()
-                    }
+                        let current = self.captureState.snapshot()
+                        guard current.latestPhysicalSequence == latest.latestPhysicalSequence,
+                              current.editGeneration == latest.editGeneration,
+                              current.correctionEpoch == requestCorrectionEpoch,
+                              current.context == context else {
+                            return
+                        }
+                        if let selectedText, !selectedText.isEmpty {
+                            guard ScriptAnalyzer.containsScript(for: oldLayout, in: selectedText) else {
+                                return
+                            }
+                            let converted = LayoutMapper.convert(
+                                selectedText,
+                                from: oldLayout,
+                                to: newLayout,
+                                ukrainianFromVariant: fromVariant,
+                                ukrainianToVariant: toVariant
+                            )
+                            guard converted != selectedText else { return }
+                            self.corrector.performSelectionCorrection(
+                                selectedText: selectedText,
+                                convertedText: converted,
+                                targetLayout: newLayout,
+                                shouldSwitchLayout: false,
+                                originalLayout: oldLayout,
+                                sequence: latest.latestPhysicalSequence,
+                                context: context,
+                                editGeneration: latest.editGeneration,
+                                correctionEpoch: requestCorrectionEpoch,
+                                latestCaptureState: self.captureState.snapshot
+                            )
+                        } else {
+                            applyBufferedCorrection()
+                        }
                     }
                 }
             }
@@ -272,11 +289,13 @@ public final class InputEngine {
             resetDetectorState()
             logger.debug("buffer invalidated reason=\(String(describing: reason), privacy: .public)")
         case .flush(let word, let boundary, let sequence, let context):
+            let latest = captureState.snapshot()
             runDetection(DetectionRequest(
                 word: word,
                 boundary: boundary,
                 sequence: sequence,
-                editGeneration: captureState.snapshot().editGeneration,
+                editGeneration: latest.editGeneration,
+                correctionEpoch: correctionEpoch,
                 context: context
             ))
         case .requestManualCorrection(let word, let sequence, let context):
@@ -333,6 +352,7 @@ public final class InputEngine {
         let latest = captureState.snapshot()
         guard latest.latestPhysicalSequence == request.sequence,
               latest.editGeneration == request.editGeneration,
+              latest.correctionEpoch == request.correctionEpoch,
               latest.context == request.context,
               latest.context.secureFocus == .notSecure,
               latest.correctionAllowed,
@@ -347,6 +367,7 @@ public final class InputEngine {
             contextEpoch: request.context.epoch,
             targetPID: request.context.frontmostPID,
             editGeneration: request.editGeneration,
+            correctionEpoch: request.correctionEpoch,
             deleteCount: result.originalWord.count + boundary.count,
             replacementText: result.convertedWord + boundary,
             originalText: result.originalWord,
@@ -358,6 +379,7 @@ public final class InputEngine {
 
         correctionQueue.async { [weak self] in
             guard let self else { return }
+            guard plan.isEligible(using: self.captureState.snapshot()) else { return }
             if let customEmission = self.customEmission {
                 _ = customEmission(plan)
             } else {
@@ -372,7 +394,9 @@ public final class InputEngine {
         context: InputContextSnapshot
     ) {
         guard context.secureFocus == .notSecure, context.appAllowed else { return }
-        let generation = captureState.snapshot().editGeneration
+        let latest = captureState.snapshot()
+        let generation = latest.editGeneration
+        let requestCorrectionEpoch = correctionEpoch
         guard let selectedTextRequest else {
             if let word {
                 runDetection(DetectionRequest(
@@ -380,6 +404,7 @@ public final class InputEngine {
                     boundary: "",
                     sequence: sequence,
                     editGeneration: generation,
+                    correctionEpoch: requestCorrectionEpoch,
                     context: context
                 ))
             }
@@ -393,6 +418,7 @@ public final class InputEngine {
                 let latest = self.captureState.snapshot()
                 guard latest.latestPhysicalSequence == sequence,
                       latest.editGeneration == generation,
+                      latest.correctionEpoch == requestCorrectionEpoch,
                       latest.context == context else {
                     return
                 }
@@ -415,6 +441,7 @@ public final class InputEngine {
                         sequence: sequence,
                         context: context,
                         editGeneration: generation,
+                        correctionEpoch: requestCorrectionEpoch,
                         latestCaptureState: self.captureState.snapshot
                     )
                 } else if let word {
@@ -423,6 +450,7 @@ public final class InputEngine {
                         boundary: "",
                         sequence: sequence,
                         editGeneration: generation,
+                        correctionEpoch: requestCorrectionEpoch,
                         context: context
                     ))
                 }

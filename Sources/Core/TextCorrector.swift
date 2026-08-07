@@ -8,6 +8,7 @@ public struct CorrectionPlan: Equatable {
     public let contextEpoch: UInt64
     public let targetPID: pid_t
     public let editGeneration: UInt64
+    public let correctionEpoch: UInt64
     public let deleteCount: Int
     public let replacementText: String
     public let originalText: String
@@ -21,6 +22,7 @@ public struct CorrectionPlan: Equatable {
         contextEpoch: UInt64,
         targetPID: pid_t,
         editGeneration: UInt64,
+        correctionEpoch: UInt64,
         deleteCount: Int,
         replacementText: String,
         originalText: String,
@@ -33,6 +35,7 @@ public struct CorrectionPlan: Equatable {
         self.contextEpoch = contextEpoch
         self.targetPID = targetPID
         self.editGeneration = editGeneration
+        self.correctionEpoch = correctionEpoch
         self.deleteCount = deleteCount
         self.replacementText = replacementText
         self.originalText = originalText
@@ -45,6 +48,7 @@ public struct CorrectionPlan: Equatable {
     public func isEligible(using state: CaptureStateSnapshot) -> Bool {
         state.latestPhysicalSequence == boundarySequence &&
             state.editGeneration == editGeneration &&
+            state.correctionEpoch == correctionEpoch &&
             state.context.epoch == contextEpoch &&
             state.context.frontmostPID == targetPID &&
             state.context.appAllowed &&
@@ -95,11 +99,13 @@ public final class TextCorrector {
     ) -> Bool {
         latest.latestPhysicalSequence == sequence &&
             latest.editGeneration == recordedPlan.editGeneration &&
+            latest.correctionEpoch == recordedPlan.correctionEpoch &&
             latest.context.frontmostPID == recordedPlan.targetPID &&
             latest.context.frontmostPID == context.frontmostPID &&
             latest.context.epoch == recordedPlan.contextEpoch &&
             latest.context.appAllowed &&
-            latest.context.secureFocus == .notSecure
+            latest.context.secureFocus == .notSecure &&
+            latest.correctionAllowed
     }
 
     public static func eventDescriptors(for plan: CorrectionPlan) -> [CorrectionEventDescriptor] {
@@ -172,6 +178,7 @@ public final class TextCorrector {
                 contextEpoch: context.epoch,
                 targetPID: context.frontmostPID,
                 editGeneration: plan.editGeneration,
+                correctionEpoch: plan.correctionEpoch,
                 deleteCount: plan.deleteCount,
                 replacementText: plan.replacementText,
                 originalText: plan.originalText,
@@ -207,6 +214,7 @@ public final class TextCorrector {
             contextEpoch: latest.context.epoch,
             targetPID: latest.context.frontmostPID,
             editGeneration: latest.editGeneration,
+            correctionEpoch: latest.correctionEpoch,
             deleteCount: undo.plan.correctedText.count + undo.plan.boundaryText.count,
             replacementText: replacement,
             originalText: undo.plan.correctedText,
@@ -236,6 +244,7 @@ public final class TextCorrector {
         sequence: UInt64,
         context: InputContextSnapshot,
         editGeneration: UInt64,
+        correctionEpoch: UInt64,
         latestCaptureState: @escaping () -> CaptureStateSnapshot
     ) {
         DispatchQueue.main.async { [weak self] in
@@ -243,10 +252,12 @@ public final class TextCorrector {
             let latest = latestCaptureState()
             guard latest.latestPhysicalSequence == sequence,
                   latest.editGeneration == editGeneration,
+                  latest.correctionEpoch == correctionEpoch,
                   latest.context.epoch == context.epoch,
                   latest.context.frontmostPID == context.frontmostPID,
                   latest.context.secureFocus == .notSecure,
-                  latest.context.appAllowed else {
+                  latest.context.appAllowed,
+                  latest.correctionAllowed else {
                 return
             }
 
@@ -260,6 +271,8 @@ public final class TextCorrector {
             if shouldSwitchLayout,
                afterPaste.latestPhysicalSequence == sequence,
                afterPaste.editGeneration == editGeneration,
+               afterPaste.correctionEpoch == correctionEpoch,
+               afterPaste.correctionAllowed,
                afterPaste.context == context {
                 self.inputSourceManager.switchTo(targetLayout)
             }
@@ -277,6 +290,7 @@ public final class TextCorrector {
                 contextEpoch: context.epoch,
                 targetPID: context.frontmostPID,
                 editGeneration: editGeneration,
+                correctionEpoch: correctionEpoch,
                 deleteCount: selectedText.count,
                 replacementText: convertedText,
                 originalText: selectedText,
@@ -285,7 +299,10 @@ public final class TextCorrector {
                 originalLayout: originalLayout,
                 targetLayout: shouldSwitchLayout ? targetLayout : nil
             )
-            if latestCaptureState().editGeneration == editGeneration {
+            let finalState = latestCaptureState()
+            if finalState.editGeneration == editGeneration,
+               finalState.correctionEpoch == correctionEpoch,
+               finalState.correctionAllowed {
                 self.undoState.withLock { $0 = UndoState(plan: plan) }
             }
         }

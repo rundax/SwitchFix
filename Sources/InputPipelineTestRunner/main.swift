@@ -165,6 +165,7 @@ run("correction sequence and context gates") {
         contextEpoch: base.epoch,
         targetPID: base.frontmostPID,
         editGeneration: 10,
+        correctionEpoch: 0,
         deleteCount: 5,
         replacementText: "hello ",
         originalText: "руддщ",
@@ -176,6 +177,7 @@ run("correction sequence and context gates") {
     let valid = CaptureStateSnapshot(
         latestPhysicalSequence: 10,
         editGeneration: 10,
+        correctionEpoch: 0,
         context: base,
         pendingInputCount: 0,
         correctionAllowed: true
@@ -184,6 +186,7 @@ run("correction sequence and context gates") {
     check(!plan.isEligible(using: CaptureStateSnapshot(
         latestPhysicalSequence: 11,
         editGeneration: 11,
+        correctionEpoch: 0,
         context: base,
         pendingInputCount: 0,
         correctionAllowed: true
@@ -201,6 +204,7 @@ run("correction sequence and context gates") {
         let state = CaptureStateSnapshot(
             latestPhysicalSequence: 10,
             editGeneration: 10,
+            correctionEpoch: 0,
             context: stale,
             pendingInputCount: 0,
             correctionAllowed: true
@@ -210,6 +214,7 @@ run("correction sequence and context gates") {
     let reset = CaptureStateSnapshot(
         latestPhysicalSequence: 10,
         editGeneration: 10,
+        correctionEpoch: 0,
         context: base,
         pendingInputCount: 0,
         correctionAllowed: false
@@ -234,6 +239,21 @@ run("secure focus fails closed") {
         _ = machine.consume(input(sequence: 1, kind: .character("s"), context: current))
         check(machine.currentBuffer.isEmpty, "unknown and secure focus must never buffer text")
     }
+}
+
+run("layout-switch selection source script") {
+    check(
+        ScriptAnalyzer.containsScript(for: .english, in: "hello [test]"),
+        "Latin selections must be eligible when switching from English"
+    )
+    check(
+        !ScriptAnalyzer.containsScript(for: .english, in: "привіт [тест]"),
+        "Cyrillic selections must not be converted as English text"
+    )
+    check(
+        ScriptAnalyzer.containsScript(for: .ukrainian, in: "привіт [тест]"),
+        "Cyrillic selections must be eligible when switching from Ukrainian"
+    )
 }
 
 run("64 grapheme cap") {
@@ -330,6 +350,7 @@ run("bounded tagged event batch") {
         contextEpoch: 1,
         targetPID: current.frontmostPID,
         editGeneration: 1,
+        correctionEpoch: 0,
         deleteCount: 4,
         replacementText: "code ",
         originalText: "сщву",
@@ -359,6 +380,7 @@ run("undo generation") {
         contextEpoch: 4,
         targetPID: 100,
         editGeneration: 7,
+        correctionEpoch: 0,
         deleteCount: 4,
         replacementText: "code ",
         originalText: "сщву",
@@ -370,6 +392,7 @@ run("undo generation") {
     let valid = CaptureStateSnapshot(
         latestPhysicalSequence: 8,
         editGeneration: 7,
+        correctionEpoch: 0,
         context: originalContext,
         pendingInputCount: 0,
         correctionAllowed: true
@@ -383,6 +406,7 @@ run("undo generation") {
     let edited = CaptureStateSnapshot(
         latestPhysicalSequence: 9,
         editGeneration: 8,
+        correctionEpoch: 0,
         context: originalContext,
         pendingInputCount: 0,
         correctionAllowed: true
@@ -397,6 +421,7 @@ run("undo generation") {
     let moved = CaptureStateSnapshot(
         latestPhysicalSequence: 8,
         editGeneration: 7,
+        correctionEpoch: 0,
         context: otherApp,
         pendingInputCount: 0,
         correctionAllowed: true
@@ -448,6 +473,69 @@ run("missing dictionary seam") {
     ))
     check(detectionCalled.wait(timeout: .now() + 1) == .success, "unavailable exact detector must complete")
     check(correctionCalled.wait(timeout: .now() + 0.05) == .timedOut, "unavailable dictionary must produce no correction")
+}
+
+run("disabling invalidates queued corrections") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let detectionEntered = DispatchSemaphore(value: 0)
+    let releaseDetection = DispatchSemaphore(value: 0)
+    let correctionCalled = DispatchSemaphore(value: 0)
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            detectionEntered.signal()
+            _ = releaseDetection.wait(timeout: .now() + 5)
+            return DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: "ч",
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { _ in
+            correctionCalled.signal()
+            return true
+        }
+    )
+    engine.enqueue(store.capture(
+        timestamp: 1,
+        kind: .character("x"),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 1,
+        sourceUserData: 0
+    ))
+    engine.enqueue(store.capture(
+        timestamp: 2,
+        kind: .boundary(" "),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 1,
+        sourceUserData: 0
+    ))
+    check(detectionEntered.wait(timeout: .now() + 1) == .success, "queued detection must start")
+
+    let initialEpoch = store.snapshot().correctionEpoch
+    engine.updatePreferences(InputPreferencesSnapshot(isEnabled: false, correctionMode: .automatic))
+    let disabled = store.snapshot()
+    check(!disabled.correctionAllowed, "disabling must synchronously block correction")
+    check(disabled.correctionEpoch != initialEpoch, "disabling must invalidate existing correction plans")
+
+    engine.updatePreferences(InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic))
+    let reenabled = store.snapshot()
+    check(reenabled.correctionEpoch != disabled.correctionEpoch, "re-enabling must not revive invalidated plans")
+
+    releaseDetection.signal()
+    check(
+        correctionCalled.wait(timeout: .now() + 0.2) == .timedOut,
+        "a detection queued before disable must not emit after re-enable"
+    )
 }
 
 run("100,000 event stress") {
@@ -631,6 +719,7 @@ private func runIntegrationSmoke() {
         contextEpoch: smokeContext.epoch,
         targetPID: getpid(),
         editGeneration: 1,
+        correctionEpoch: 0,
         deleteCount: 6,
         replacementText: "fixed ",
         originalText: "wrong",
@@ -642,6 +731,7 @@ private func runIntegrationSmoke() {
     let snapshot = CaptureStateSnapshot(
         latestPhysicalSequence: 1,
         editGeneration: 1,
+        correctionEpoch: 0,
         context: smokeContext,
         pendingInputCount: 0,
         correctionAllowed: true

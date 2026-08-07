@@ -1,304 +1,369 @@
-import Foundation
-import CoreGraphics
 import AppKit
+import CoreGraphics
+import Foundation
+import os
 
-public class TextCorrector {
-    private let inputSourceManager = InputSourceManager.shared
+public struct CorrectionPlan: Equatable {
+    public let boundarySequence: UInt64
+    public let contextEpoch: UInt64
+    public let targetPID: pid_t
+    public let editGeneration: UInt64
+    public let correctionEpoch: UInt64
+    public let deleteCount: Int
+    public let replacementText: String
+    public let originalText: String
+    public let correctedText: String
+    public let boundaryText: String
+    public let originalLayout: Layout
+    public let targetLayout: Layout?
 
-    /// Callback to pause/resume the keyboard monitor during correction.
-    public var onCorrectionStarted: (() -> Void)?
-    public var onCorrectionFinished: (() -> Void)?
-
-    /// The last original text before correction (for undo support).
-    public private(set) var lastOriginalText: String?
-    public private(set) var lastCorrectedText: String?
-    public private(set) var lastOriginalLayout: Layout?
-    public private(set) var lastBoundaryText: String?
-
-    /// Timestamp of last correction (for time-limited undo — 5 second window).
-    private var lastCorrectionTime: Date?
-    private static let undoTimeWindow: TimeInterval = 5.0
-    private var sawUserInputDuringCorrection: Bool = false
-
-    public enum UserInputKind {
-        case none
-        case character
-        case boundary
-        case other
+    public init(
+        boundarySequence: UInt64,
+        contextEpoch: UInt64,
+        targetPID: pid_t,
+        editGeneration: UInt64,
+        correctionEpoch: UInt64,
+        deleteCount: Int,
+        replacementText: String,
+        originalText: String,
+        correctedText: String,
+        boundaryText: String,
+        originalLayout: Layout,
+        targetLayout: Layout?
+    ) {
+        self.boundarySequence = boundarySequence
+        self.contextEpoch = contextEpoch
+        self.targetPID = targetPID
+        self.editGeneration = editGeneration
+        self.correctionEpoch = correctionEpoch
+        self.deleteCount = deleteCount
+        self.replacementText = replacementText
+        self.originalText = originalText
+        self.correctedText = correctedText
+        self.boundaryText = boundaryText
+        self.originalLayout = originalLayout
+        self.targetLayout = targetLayout
     }
 
-    private var lastUserInputKind: UserInputKind = .none
-    private var lastUserInputTime: Date = .distantPast
-    private var pendingSwitchLayout: Layout?
-    private var switchTimer: Timer?
-    private let switchDelay: TimeInterval = 0.15
-    private var userEditGeneration: UInt64 = 0
-    private var lastCorrectionEditGeneration: UInt64 = 0
+    public func isEligible(using state: CaptureStateSnapshot) -> Bool {
+        state.latestPhysicalSequence == boundarySequence &&
+            state.editGeneration == editGeneration &&
+            state.correctionEpoch == correctionEpoch &&
+            state.context.epoch == contextEpoch &&
+            state.context.frontmostPID == targetPID &&
+            state.context.appAllowed &&
+            state.context.secureFocus == .notSecure &&
+            state.correctionAllowed
+    }
+}
 
-    /// Whether an undo is available (correction happened within the time window).
+public struct CorrectionEventDescriptor: Equatable {
+    public enum Kind: Equatable {
+        case deleteKeyDown
+        case deleteKeyUp
+        case unicodeKeyDown(String)
+        case unicodeKeyUp(String)
+    }
+
+    public let kind: Kind
+    public let sourceUserData: Int64
+}
+
+public final class TextCorrector {
+    private struct UndoState {
+        let plan: CorrectionPlan
+    }
+
+    private let inputSourceManager: InputSourceManager
+    private let eventSource: CGEventSource?
+    private let undoState = OSAllocatedUnfairLock<UndoState?>(initialState: nil)
+    private let logger = Logger(subsystem: "com.switchfix", category: "correction")
+
+    public init(inputSourceManager: InputSourceManager = .shared) {
+        self.inputSourceManager = inputSourceManager
+        let source = CGEventSource(stateID: .privateState)
+        source?.userData = switchFixEventMarker
+        source?.localEventsSuppressionInterval = 0
+        eventSource = source
+    }
+
     public var canUndo: Bool {
-        guard lastOriginalText != nil, lastCorrectedText != nil,
-              let time = lastCorrectionTime else { return false }
-        guard userEditGeneration == lastCorrectionEditGeneration else { return false }
-        return Date().timeIntervalSince(time) < TextCorrector.undoTimeWindow
+        undoState.withLock { $0 != nil }
     }
 
-    public init() {}
-
-    /// Mark that the user typed during a correction window.
-    public func noteUserInputDuringCorrection() {
-        sawUserInputDuringCorrection = true
+    public static func isUndoEligible(
+        recordedPlan: CorrectionPlan,
+        sequence: UInt64,
+        context: InputContextSnapshot,
+        latest: CaptureStateSnapshot
+    ) -> Bool {
+        latest.latestPhysicalSequence == sequence &&
+            latest.editGeneration == recordedPlan.editGeneration &&
+            latest.correctionEpoch == recordedPlan.correctionEpoch &&
+            latest.context.frontmostPID == recordedPlan.targetPID &&
+            latest.context.frontmostPID == context.frontmostPID &&
+            latest.context.epoch == recordedPlan.contextEpoch &&
+            latest.context.appAllowed &&
+            latest.context.secureFocus == .notSecure &&
+            latest.correctionAllowed
     }
 
-    /// Record user input activity to delay any pending layout switch.
-    public func recordUserInput(kind: UserInputKind) {
-        lastUserInputKind = kind
-        lastUserInputTime = Date()
-        rescheduleSwitchIfNeeded()
-    }
-
-    /// Mark that user edited text in the focused field after a correction.
-    /// Used to disable stale undo/revert operations that would target old text.
-    public func noteUserEdit() {
-        userEditGeneration &+= 1
-    }
-
-    private func scheduleLayoutSwitch(_ layout: Layout) {
-        pendingSwitchLayout = layout
-        rescheduleSwitchIfNeeded()
-    }
-
-    private func rescheduleSwitchIfNeeded() {
-        guard pendingSwitchLayout != nil else { return }
-        switchTimer?.invalidate()
-        switchTimer = Timer.scheduledTimer(withTimeInterval: switchDelay, repeats: false) { [weak self] _ in
-            self?.handleSwitchTimer()
+    public static func eventDescriptors(for plan: CorrectionPlan) -> [CorrectionEventDescriptor] {
+        guard plan.deleteCount >= 0, plan.deleteCount <= 128, !plan.replacementText.isEmpty else {
+            return []
         }
+        var events: [CorrectionEventDescriptor] = []
+        events.reserveCapacity(plan.deleteCount * 2 + 2)
+        for _ in 0..<plan.deleteCount {
+            events.append(CorrectionEventDescriptor(kind: .deleteKeyDown, sourceUserData: switchFixEventMarker))
+            events.append(CorrectionEventDescriptor(kind: .deleteKeyUp, sourceUserData: switchFixEventMarker))
+        }
+        events.append(CorrectionEventDescriptor(
+            kind: .unicodeKeyDown(plan.replacementText),
+            sourceUserData: switchFixEventMarker
+        ))
+        events.append(CorrectionEventDescriptor(
+            kind: .unicodeKeyUp(plan.replacementText),
+            sourceUserData: switchFixEventMarker
+        ))
+        return events
     }
 
-    private func handleSwitchTimer() {
-        guard let layout = pendingSwitchLayout else { return }
-        if lastUserInputKind == .boundary || lastUserInputKind == .none {
+    @discardableResult
+    public func apply(
+        _ plan: CorrectionPlan,
+        latestCaptureState: () -> CaptureStateSnapshot
+    ) -> Bool {
+        guard plan.originalText.count <= 64,
+              plan.deleteCount <= 128,
+              let events = makeCorrectionEvents(plan: plan),
+              plan.isEligible(using: latestCaptureState()) else {
+            logger.debug("correction cancelled")
+            return false
+        }
+        post(events, targetPID: plan.targetPID)
+
+        undoState.withLock { $0 = UndoState(plan: plan) }
+        if let layout = plan.targetLayout,
+           plan.isEligible(using: latestCaptureState()) {
             inputSourceManager.switchTo(layout)
-            usleep(10_000)
-            pendingSwitchLayout = nil
-            switchTimer?.invalidate()
-            switchTimer = nil
-            return
         }
-
-        // User is actively typing characters; wait for the next boundary input to reschedule.
-        switchTimer?.invalidate()
-        switchTimer = nil
+        logger.debug("correction applied delete_count=\(plan.deleteCount, privacy: .public)")
+        return true
     }
 
-    /// Perform text correction: delete the wrong text, switch layout, type the correct text.
-    /// - Parameters:
-    ///   - originalLength: Number of characters to delete (length of the mistyped word)
-    ///   - correctedText: The correct text to type
-    ///   - targetLayout: The layout to switch to
-    public func performCorrection(originalLength: Int, correctedText: String, targetLayout: Layout) {
-        sawUserInputDuringCorrection = false
-        // Save for undo
-        lastOriginalText = nil // We don't have the original text as a string here
-        lastCorrectedText = correctedText
-        lastCorrectionTime = Date()
-        lastOriginalLayout = nil
-        lastBoundaryText = nil
-        lastCorrectionEditGeneration = userEditGeneration
-
-        // Notify monitor to pause (avoid feedback loop)
-        onCorrectionStarted?()
-
-        // Step 1: Delete the incorrect characters by emitting backspace events
-        deleteCharacters(count: originalLength)
-
-        // Step 2: Type the correct text (Unicode typing is layout-independent)
-        typeText(correctedText)
-
-        // Step 3: Schedule keyboard layout switch for subsequent typing
-        if !sawUserInputDuringCorrection {
-            scheduleLayoutSwitch(targetLayout)
-        }
-
-        // Step 4: Resume monitoring
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.onCorrectionFinished?()
+    public func noteUserEdit(generation: UInt64) {
+        undoState.withLock { value in
+            guard let current = value else { return }
+            if current.plan.editGeneration != generation {
+                value = nil
+            }
         }
     }
 
-    /// Perform correction with the full detection result.
-    public func performCorrection(result: DetectionResult) {
-        performCorrection(result: result, boundaryCharacter: nil)
+    public func clearUndo() {
+        undoState.withLock { $0 = nil }
     }
 
-    /// Perform correction with boundary character handling.
-    /// When a boundary character (space, enter) triggered the correction, it's already
-    /// in the text field — so we need to delete it too and re-type it after the corrected word.
-    public func performCorrection(result: DetectionResult, boundaryCharacter: String?) {
-        sawUserInputDuringCorrection = false
-        lastOriginalText = result.originalWord
-        lastCorrectedText = result.convertedWord
-        lastCorrectionTime = Date()
-        lastOriginalLayout = result.sourceLayout
-        lastBoundaryText = boundaryCharacter
-        lastCorrectionEditGeneration = userEditGeneration
-
-        onCorrectionStarted?()
-
-        // Delete the wrong word + any boundary characters (space/punctuation) if present
-        let boundary = boundaryCharacter ?? ""
-        let deleteCount = result.originalWord.count + boundary.count
-        NSLog("[SwitchFix] Correction: deleting %d chars ('%@' + boundary '%@'), typing '%@'",
-              deleteCount, result.originalWord, boundary.isEmpty ? "none" : boundary, result.convertedWord)
-
-        deleteCharacters(count: deleteCount)
-        typeText(result.convertedWord)
-
-        // Re-type the boundary characters after the corrected word
-        if !boundary.isEmpty {
-            typeText(boundary)
-        }
-
-        if result.shouldSwitchLayout && !sawUserInputDuringCorrection {
-            scheduleLayoutSwitch(result.targetLayout)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.onCorrectionFinished?()
+    public func rebaseUndoContext(_ context: InputContextSnapshot, editGeneration: UInt64) {
+        undoState.withLock { value in
+            guard let current = value,
+                  current.plan.targetPID == context.frontmostPID,
+                  current.plan.editGeneration == editGeneration else {
+                return
+            }
+            let plan = current.plan
+            value = UndoState(plan: CorrectionPlan(
+                boundarySequence: plan.boundarySequence,
+                contextEpoch: context.epoch,
+                targetPID: context.frontmostPID,
+                editGeneration: plan.editGeneration,
+                correctionEpoch: plan.correctionEpoch,
+                deleteCount: plan.deleteCount,
+                replacementText: plan.replacementText,
+                originalText: plan.originalText,
+                correctedText: plan.correctedText,
+                boundaryText: plan.boundaryText,
+                originalLayout: plan.originalLayout,
+                targetLayout: plan.targetLayout
+            ))
         }
     }
 
-    /// Undo the last correction: delete corrected text, switch back, type original.
-    public func undoLastCorrection(currentLayout: Layout) {
-        guard let original = lastOriginalText, let corrected = lastCorrectedText else {
-            return
+    @discardableResult
+    public func undo(
+        sequence: UInt64,
+        context: InputContextSnapshot,
+        latestCaptureState: () -> CaptureStateSnapshot
+    ) -> Bool {
+        guard let undo = undoState.withLock({ $0 }) else { return false }
+        let latest = latestCaptureState()
+        guard Self.isUndoEligible(
+            recordedPlan: undo.plan,
+            sequence: sequence,
+            context: context,
+            latest: latest
+        ) else {
+            undoState.withLock { $0 = nil }
+            return false
         }
 
-        onCorrectionStarted?()
-
-        let boundary = lastBoundaryText ?? ""
-        let originalLayout = lastOriginalLayout ?? inferredOriginalLayout(from: currentLayout)
-
-        deleteCharacters(count: corrected.count + boundary.count)
-
-        inputSourceManager.switchTo(originalLayout)
-        usleep(10_000)
-        typeText(original + boundary)
-
-        lastOriginalText = nil
-        lastCorrectedText = nil
-        lastCorrectionTime = nil
-        lastOriginalLayout = nil
-        lastBoundaryText = nil
-        lastCorrectionEditGeneration = userEditGeneration
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.onCorrectionFinished?()
+        let replacement = undo.plan.originalText + undo.plan.boundaryText
+        let inverse = CorrectionPlan(
+            boundarySequence: sequence,
+            contextEpoch: latest.context.epoch,
+            targetPID: latest.context.frontmostPID,
+            editGeneration: latest.editGeneration,
+            correctionEpoch: latest.correctionEpoch,
+            deleteCount: undo.plan.correctedText.count + undo.plan.boundaryText.count,
+            replacementText: replacement,
+            originalText: undo.plan.correctedText,
+            correctedText: undo.plan.originalText,
+            boundaryText: undo.plan.boundaryText,
+            originalLayout: latest.context.layout,
+            targetLayout: undo.plan.originalLayout
+        )
+        guard let events = makeCorrectionEvents(plan: inverse),
+              inverse.isEligible(using: latestCaptureState()) else {
+            return false
         }
+        post(events, targetPID: inverse.targetPID)
+        undoState.withLock { $0 = nil }
+        if inverse.isEligible(using: latestCaptureState()) {
+            inputSourceManager.switchTo(undo.plan.originalLayout)
+        }
+        return true
     }
 
-    /// Perform correction on selected text by replacing it via clipboard paste.
     public func performSelectionCorrection(
         selectedText: String,
         convertedText: String,
         targetLayout: Layout,
-        shouldSwitchLayout: Bool = true,
-        originalLayout: Layout? = nil
+        shouldSwitchLayout: Bool,
+        originalLayout: Layout,
+        sequence: UInt64,
+        context: InputContextSnapshot,
+        editGeneration: UInt64,
+        correctionEpoch: UInt64,
+        latestCaptureState: @escaping () -> CaptureStateSnapshot
     ) {
-        lastOriginalText = selectedText
-        lastCorrectedText = convertedText
-        lastCorrectionTime = Date()
-        lastOriginalLayout = originalLayout ?? inputSourceManager.currentLayout()
-        lastBoundaryText = nil
-        lastCorrectionEditGeneration = userEditGeneration
-
-        onCorrectionStarted?()
-
-        let pasteboard = NSPasteboard.general
-        let oldContents = pasteboard.string(forType: .string)
-
-        // Put converted text on clipboard
-        pasteboard.clearContents()
-        pasteboard.setString(convertedText, forType: .string)
-
-        // Simulate Cmd+V to replace selection
-        simulatePaste()
-
-        if shouldSwitchLayout {
-            inputSourceManager.switchTo(targetLayout)
-        }
-
-        // Restore clipboard and resume monitoring after paste completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            if let old = oldContents {
-                pasteboard.clearContents()
-                pasteboard.setString(old, forType: .string)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let latest = latestCaptureState()
+            guard latest.latestPhysicalSequence == sequence,
+                  latest.editGeneration == editGeneration,
+                  latest.correctionEpoch == correctionEpoch,
+                  latest.context.epoch == context.epoch,
+                  latest.context.frontmostPID == context.frontmostPID,
+                  latest.context.secureFocus == .notSecure,
+                  latest.context.appAllowed,
+                  latest.correctionAllowed else {
+                return
             }
-            self?.onCorrectionFinished?()
+
+            let pasteboard = NSPasteboard.general
+            let previousItems = pasteboard.pasteboardItems
+            pasteboard.clearContents()
+            pasteboard.setString(convertedText, forType: .string)
+            let replacementChangeCount = pasteboard.changeCount
+            self.postPaste(targetPID: context.frontmostPID)
+            let afterPaste = latestCaptureState()
+            if shouldSwitchLayout,
+               afterPaste.latestPhysicalSequence == sequence,
+               afterPaste.editGeneration == editGeneration,
+               afterPaste.correctionEpoch == correctionEpoch,
+               afterPaste.correctionAllowed,
+               afterPaste.context == context {
+                self.inputSourceManager.switchTo(targetLayout)
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                guard pasteboard.changeCount == replacementChangeCount else { return }
+                pasteboard.clearContents()
+                if let previousItems, !previousItems.isEmpty {
+                    pasteboard.writeObjects(previousItems)
+                }
+            }
+
+            let plan = CorrectionPlan(
+                boundarySequence: sequence,
+                contextEpoch: context.epoch,
+                targetPID: context.frontmostPID,
+                editGeneration: editGeneration,
+                correctionEpoch: correctionEpoch,
+                deleteCount: selectedText.count,
+                replacementText: convertedText,
+                originalText: selectedText,
+                correctedText: convertedText,
+                boundaryText: "",
+                originalLayout: originalLayout,
+                targetLayout: shouldSwitchLayout ? targetLayout : nil
+            )
+            let finalState = latestCaptureState()
+            if finalState.editGeneration == editGeneration,
+               finalState.correctionEpoch == correctionEpoch,
+               finalState.correctionAllowed {
+                self.undoState.withLock { $0 = UndoState(plan: plan) }
+            }
         }
     }
 
-    private func inferredOriginalLayout(from currentLayout: Layout) -> Layout {
-        switch currentLayout {
-        case .english:
-            let available = Set(inputSourceManager.availableLayouts())
-            if available.contains(.ukrainian) { return .ukrainian }
-            if available.contains(.russian) { return .russian }
-            return .english
-        case .ukrainian, .russian:
-            return .english
+    private func makeCorrectionEvents(plan: CorrectionPlan) -> [CGEvent]? {
+        guard eventSource != nil else { return nil }
+        var events: [CGEvent] = []
+        events.reserveCapacity(plan.deleteCount * 2 + 2)
+        for _ in 0..<plan.deleteCount {
+            guard let keyDown = makeKeyEvent(keyCode: 51, keyDown: true),
+                  let keyUp = makeKeyEvent(keyCode: 51, keyDown: false) else {
+                return nil
+            }
+            events.append(keyDown)
+            events.append(keyUp)
+        }
+
+        guard let keyDown = makeUnicodeEvent(text: plan.replacementText, keyDown: true),
+              let keyUp = makeUnicodeEvent(text: plan.replacementText, keyDown: false) else {
+            return nil
+        }
+        events.append(keyDown)
+        events.append(keyUp)
+        return events
+    }
+
+    private func post(_ events: [CGEvent], targetPID: pid_t) {
+        for event in events {
+            event.postToPid(targetPID)
         }
     }
 
-    // MARK: - CGEvent helpers
+    private func makeKeyEvent(keyCode: UInt16, keyDown: Bool) -> CGEvent? {
+        guard let event = CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: keyDown) else {
+            return nil
+        }
+        event.setIntegerValueField(.eventSourceUserData, value: switchFixEventMarker)
+        return event
+    }
 
-    /// Simulate Cmd+V paste keystroke.
-    private func simulatePaste() {
-        let vKeyCode: UInt16 = 9
-        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: vKeyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: vKeyCode, keyDown: false) else { return }
+    private func makeUnicodeEvent(text: String, keyDown: Bool) -> CGEvent? {
+        guard let event = makeKeyEvent(keyCode: 0, keyDown: keyDown) else { return nil }
+        let utf16 = Array(text.utf16)
+        utf16.withUnsafeBufferPointer { buffer in
+            event.keyboardSetUnicodeString(
+                stringLength: buffer.count,
+                unicodeString: buffer.baseAddress
+            )
+        }
+        return event
+    }
 
+    private func postPaste(targetPID: pid_t) {
+        guard let keyDown = makeKeyEvent(keyCode: 9, keyDown: true),
+              let keyUp = makeKeyEvent(keyCode: 9, keyDown: false) else {
+            return
+        }
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
-
-        keyDown.post(tap: .cgAnnotatedSessionEventTap)
-        keyUp.post(tap: .cgAnnotatedSessionEventTap)
-        usleep(50_000) // 50ms for paste to complete
-    }
-
-    /// Delete N characters by posting backspace key events.
-    private func deleteCharacters(count: Int) {
-        let backspaceKeyCode: UInt16 = 51
-
-        for _ in 0..<count {
-            guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: backspaceKeyCode, keyDown: true),
-                  let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: backspaceKeyCode, keyDown: false) else {
-                continue
-            }
-            keyDown.post(tap: .cgAnnotatedSessionEventTap)
-            keyUp.post(tap: .cgAnnotatedSessionEventTap)
-            usleep(3_000) // 3ms between keystrokes for reliability
-        }
-    }
-
-    /// Type text by setting the Unicode string on CGEvents.
-    /// Uses keyboardSetUnicodeString which works regardless of active layout.
-    private func typeText(_ text: String) {
-        for char in text {
-            let utf16 = Array(String(char).utf16)
-
-            guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-                  let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
-                continue
-            }
-
-            keyDown.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-            keyUp.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-
-            keyDown.post(tap: .cgAnnotatedSessionEventTap)
-            keyUp.post(tap: .cgAnnotatedSessionEventTap)
-            usleep(3_000) // 3ms between characters
-        }
+        keyDown.postToPid(targetPID)
+        keyUp.postToPid(targetPID)
     }
 }

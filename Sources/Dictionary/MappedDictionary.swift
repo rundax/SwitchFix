@@ -19,18 +19,23 @@ final class MappedDictionary: DictionaryIndex {
             return nil
         }
 
-        let wordsStart = Int(header.wordsOffset)
-        let wordsLength = Int(header.wordsLength)
-        let wordsEnd = wordsStart + wordsLength
+        guard let wordsStart = Int(exactly: header.wordsOffset),
+              let wordsLength = Int(exactly: header.wordsLength) else {
+            return nil
+        }
+        let (wordsEnd, wordsOverflow) = wordsStart.addingReportingOverflow(wordsLength)
 
-        let offsetsStart = Int(header.offsetsOffset)
+        guard let offsetsStart = Int(exactly: header.offsetsOffset) else { return nil }
         let offsetsCount = Int(header.wordCount) + 1
-        let offsetsEnd = offsetsStart + (offsetsCount * MemoryLayout<UInt32>.size)
+        let (offsetsByteCount, offsetsByteOverflow) = offsetsCount.multipliedReportingOverflow(
+            by: MemoryLayout<UInt32>.size
+        )
+        let (offsetsEnd, offsetsEndOverflow) = offsetsStart.addingReportingOverflow(offsetsByteCount)
 
-        guard wordsStart >= 0,
-              wordsLength >= 0,
+        guard !wordsOverflow,
+              !offsetsByteOverflow,
+              !offsetsEndOverflow,
               wordsEnd <= data.count,
-              offsetsStart >= 0,
               offsetsEnd <= data.count else {
             return nil
         }
@@ -54,10 +59,16 @@ final class MappedDictionary: DictionaryIndex {
 
         var bloom: BloomFilter? = nil
         if header.hasBloom {
-            let bloomStart = Int(header.bloomOffset)
-            let bloomLength = Int(header.bloomLength)
-            let bloomEnd = bloomStart + bloomLength
-            guard bloomStart >= 0, bloomLength > 0, bloomEnd <= data.count else {
+            guard header.bloomBitCount > 0, header.bloomHashCount > 0 else { return nil }
+            guard let bloomStart = Int(exactly: header.bloomOffset),
+                  let bloomLength = Int(exactly: header.bloomLength) else {
+                return nil
+            }
+            let (bloomEnd, bloomOverflow) = bloomStart.addingReportingOverflow(bloomLength)
+            let requiredBloomBytes = (Int(header.bloomBitCount) + 7) / 8
+            guard !bloomOverflow,
+                  bloomLength == requiredBloomBytes,
+                  bloomEnd <= data.count else {
                 return nil
             }
             let bytes = Array(data[bloomStart..<bloomEnd])

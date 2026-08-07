@@ -49,6 +49,20 @@ public struct ScriptAnalyzer {
         return .unknown
     }
 
+    public static func containsScript(for layout: Layout, in text: String) -> Bool {
+        switch (layout, scriptKind(for: text)) {
+        case (.english, .latin),
+             (.english, .mixed),
+             (.ukrainian, .cyrillic),
+             (.ukrainian, .mixed),
+             (.russian, .cyrillic),
+             (.russian, .mixed):
+            return true
+        default:
+            return false
+        }
+    }
+
     public static func inferCyrillicLayout(for word: String, allowedLayouts: Set<Layout>) -> Layout? {
         let hasUkrainian = allowedLayouts.contains(.ukrainian)
         let hasRussian = allowedLayouts.contains(.russian)

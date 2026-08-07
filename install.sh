@@ -37,6 +37,15 @@ fi
 # 3. Install to /Applications
 echo ""
 echo "📦 Step 2: Installing to Applications folder..."
+
+APP_WAS_RUNNING=0
+if pgrep -x "SwitchFixApp" > /dev/null; then
+    APP_WAS_RUNNING=1
+    echo "Stopping currently running SwitchFixApp..."
+    pkill -x "SwitchFixApp" || true
+    sleep 1
+fi
+
 if [ -d "/Applications/SwitchFix.app" ]; then
     echo "Removing older version from /Applications..."
     rm -rf "/Applications/SwitchFix.app"

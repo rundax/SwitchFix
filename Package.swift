@@ -44,5 +44,10 @@ let package = Package(
             dependencies: ["Core", "Dictionary", "Utils"],
             path: "Sources/TestRunner"
         ),
+        .executableTarget(
+            name: "InputPipelineTestRunner",
+            dependencies: ["Core", "Utils"],
+            path: "Sources/InputPipelineTestRunner"
+        ),
     ]
 )

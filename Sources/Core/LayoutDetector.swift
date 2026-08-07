@@ -29,8 +29,6 @@ public enum DetectorState {
     case idle
     case buffering
     case detecting
-    case correcting
-    case cooldown
 }
 
 /// Delegate protocol for layout detection events.
@@ -48,7 +46,6 @@ public class LayoutDetector {
     public var consecutiveThreshold: Int = 1
     public var lowConfidenceMaxLength: Int = 3
     public var lowConfidenceConfirmations: Int = 2
-    public var suggestionMaxLength: Int = 5
     public var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
     public var ukrainianToVariant: UkrainianKeyboardVariant = .standard
     public var shortWordSuppressionLength: Int = 2
@@ -109,9 +106,6 @@ public class LayoutDetector {
 
     /// Add a character to the word buffer.
     public func addCharacter(_ char: String) {
-        // Don't accumulate during active correction
-        guard state != .correcting else { return }
-
         wordBuffer += char
         state = .buffering
     }
@@ -119,11 +113,12 @@ public class LayoutDetector {
     /// Called when a word boundary is detected (space, enter, tab, punctuation).
     /// This is the only point where detection fires and triggers correction.
     /// - Parameter boundaryCharacter: The character that triggered the flush (e.g. " ", "\n"), or nil for hotkey-triggered flush.
-    public func flushBuffer(boundaryCharacter: String? = nil) {
+    @discardableResult
+    public func flushBuffer(boundaryCharacter: String? = nil) -> DetectionResult? {
         guard !wordBuffer.isEmpty else {
             state = .idle
             isOutOfSync = false
-            return
+            return nil
         }
 
         // Split trailing punctuation from the buffer (e.g. "hello," -> "hello" + ",")
@@ -133,7 +128,7 @@ public class LayoutDetector {
         guard !wordBuffer.isEmpty else {
             state = .idle
             isOutOfSync = false
-            return
+            return nil
         }
 
         // Store boundary string (trailing punctuation + explicit boundary like space/newline)
@@ -141,10 +136,9 @@ public class LayoutDetector {
         pendingBoundaryCharacter = boundary.isEmpty ? nil : boundary
 
         // Check buffer at word boundaries (short words are handled by WordValidator whitelist)
-        if !isOutOfSync {
-            checkBuffer()
-        } else {
-            NSLog("[SwitchFix] Detection: skipped buffer '%@' due to out-of-sync state", wordBuffer)
+        let result = isOutOfSync ? nil : checkBuffer()
+        if let result {
+            delegate?.layoutDetector(self, didDetectWrongLayout: result, boundaryCharacter: pendingBoundaryCharacter)
         }
 
         // Reset buffer
@@ -152,6 +146,7 @@ public class LayoutDetector {
         wordBuffer = ""
         state = .idle
         isOutOfSync = false
+        return result
     }
 
     /// Called when backspace/delete is pressed — remove last character from buffer.
@@ -193,17 +188,6 @@ public class LayoutDetector {
         isOutOfSync = false
     }
 
-    /// Enter correction state (prevents buffering during correction).
-    public func beginCorrection() {
-        state = .correcting
-    }
-
-    /// Exit correction state after correction is complete.
-    public func endCorrection() {
-        wordBuffer = ""
-        state = .idle
-    }
-
     /// The current word buffer contents.
     public var currentBuffer: String {
         return wordBuffer
@@ -211,22 +195,17 @@ public class LayoutDetector {
 
     // MARK: - Detection Logic
 
-    private func checkBuffer() {
+    private func checkBuffer() -> DetectionResult? {
         state = .detecting
         let suppressedShort = consumePendingSuppressedShort()
 
         let word = wordBuffer
-        NSLog("[SwitchFix] Detection: checking buffer '%@' (layout: %@)", word, currentLayout.rawValue)
         let sourceLayout = resolvedSourceLayout(for: word)
-        if sourceLayout != currentLayout {
-            NSLog("[SwitchFix] Detection: inferred source layout %@ for buffer '%@'", sourceLayout.rawValue, word)
-        }
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
         if containsMixedScripts(word) {
-            NSLog("[SwitchFix] Detection: skipped — mixed scripts")
             state = .buffering
-            return
+            return nil
         }
 
         // Check if the word is valid in the current layout's language
@@ -235,33 +214,23 @@ public class LayoutDetector {
         
         let currentLanguage = languageForLayout(sourceLayout)
         if validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid {
-            // BloomFilter may produce false positives. For Cyrillic layouts, require an exact
-            // dictionary hit before treating the current-layout word as definitely valid.
-            if sourceLayout != .english && !validator.isExactWord(currentValidationInput, language: currentLanguage) {
-                NSLog("[SwitchFix] Detection: '%@' in %@ rejected as current-layout false positive",
-                      word, sourceLayout.rawValue)
-            } else {
-                // Word is valid in current layout — reset consecutive counter
-                NSLog("[SwitchFix] Detection: '%@' is valid in %@ — no correction needed", word, sourceLayout.rawValue)
-                consecutiveWrongCount = 0
-                lastDetectionResult = nil
-                pendingSwitchLayout = nil
-                pendingSwitchCount = 0
-                recordOutcome(.validCurrent)
-                state = .buffering
-                return
-            }
-        }
-
-        if shouldSkipAutomaticEnglishAcronymCorrection(word: word, sourceLayout: sourceLayout) {
-            NSLog("[SwitchFix] Detection: '%@' skipped — all-caps English token", word)
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
             pendingSwitchCount = 0
             recordOutcome(.validCurrent)
             state = .buffering
-            return
+            return nil
+        }
+
+        if shouldSkipAutomaticEnglishAcronymCorrection(word: word, sourceLayout: sourceLayout) {
+            consecutiveWrongCount = 0
+            lastDetectionResult = nil
+            pendingSwitchLayout = nil
+            pendingSwitchCount = 0
+            recordOutcome(.validCurrent)
+            state = .buffering
+            return nil
         }
 
         if sourceLayout == .ukrainian,
@@ -274,16 +243,13 @@ public class LayoutDetector {
                     originalWord: word,
                     shouldSwitchLayout: false
                 )
-                NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), typo correction in current layout",
-                      word, correctedWord, sourceLayout.rawValue)
                 lastDetectionResult = result
                 pendingSwitchLayout = nil
                 pendingSwitchCount = 0
                 consecutiveWrongCount = 0
-                delegate?.layoutDetector(self, didDetectWrongLayout: result, boundaryCharacter: pendingBoundaryCharacter)
                 recordOutcome(.corrected)
                 state = .buffering
-                return
+                return result
         }
 
         // Try converting to alternative layouts
@@ -323,35 +289,17 @@ public class LayoutDetector {
 
                 let validationInput = tokenParts.core.isEmpty ? candidate : tokenParts.core
 
-                // Avoid substituting into a different valid word (e.g. "pe" -> "за").
-                // Allow typo-tolerant suggestions only for EN -> Cyrillic conversion.
-                // This keeps automatic mode conservative and avoids aggressive rewrites in other directions.
-                let allowSuggestion =
-                    sourceLayout == .english &&
-                    targetLayout != .english &&
-                    word.count >= 4 &&
-                    word.count <= suggestionMaxLength &&
-                    !containsVowel(validationInput, language: targetLanguage) &&
-                    !containsVowel(word, language: currentLanguage)
                 let validation = validator.validate(
                     validationInput,
                     language: targetLanguage,
-                    allowSuggestion: allowSuggestion
+                    allowSuggestion: false
                 )
                 if validation.isValid {
-                    if validation.correctedWord == nil &&
-                        validationInput.count > 2 &&
-                        !validator.isExactWord(validationInput, language: targetLanguage) {
-                        NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) rejected — non-exact dictionary hit",
-                              word, candidate, targetLayout.rawValue)
-                        continue
-                    }
-
-                    let correctedCore = validation.correctedWord ?? validationInput
+                    let correctedCore = validationInput
                     let recomposedWord = tokenParts.prefix + correctedCore + tokenParts.suffix
                     var finalWord = applyCase(from: word, to: recomposedWord)
                     var originalForCorrection = word
-                    let isLowConfidence = validation.correctedWord != nil || word.count <= lowConfidenceMaxLength
+                    let isLowConfidence = word.count <= lowConfidenceMaxLength
                     let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: targetLayout)
 
                     if shouldSuppressLowConfidenceCorrection(
@@ -362,8 +310,6 @@ public class LayoutDetector {
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
                     ) {
-                        NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context",
-                              word, finalWord, targetLayout.rawValue, sourceLayout.rawValue)
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
                         if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
@@ -376,7 +322,7 @@ public class LayoutDetector {
                         }
                         recordOutcome(.unknown)
                         state = .buffering
-                        return
+                        return nil
                     }
 
                     if let merged = mergeSuppressedShort(
@@ -389,7 +335,6 @@ public class LayoutDetector {
                     ) {
                         originalForCorrection = merged.original
                         finalWord = merged.converted
-                        NSLog("[SwitchFix] Detection: replayed suppressed short word for contextual correction")
                     }
 
                     consecutiveWrongCount += 1
@@ -401,18 +346,17 @@ public class LayoutDetector {
                         shouldSwitchLayout: shouldSwitch
                     )
 
-                    NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), consecutive: %d/%d, switch: %@",
-                          word, finalWord, targetLayout.rawValue, consecutiveWrongCount, consecutiveThreshold,
-                          shouldSwitch ? "yes" : "no")
-
                     if consecutiveWrongCount >= consecutiveThreshold {
-                        delegate?.layoutDetector(self, didDetectWrongLayout: lastDetectionResult!, boundaryCharacter: pendingBoundaryCharacter)
+                        let result = lastDetectionResult
                         consecutiveWrongCount = 0
+                        recordOutcome(.corrected)
+                        state = .buffering
+                        return result
                     }
 
                     recordOutcome(.corrected)
                     state = .buffering
-                    return
+                    return nil
                 }
             }
 
@@ -425,13 +369,11 @@ public class LayoutDetector {
                     sourceLayout: sourceLayout,
                     shouldSwitch: shouldSwitch
                 ) {
-                    NSLog("[SwitchFix] Detection: '%@' → '%@' (%@) suppressed — strong %@ context (acronym)",
-                          word, finalWord, targetLayout.rawValue, sourceLayout.rawValue)
                     consecutiveWrongCount = 0
                     lastDetectionResult = nil
                     recordOutcome(.unknown)
                     state = .buffering
-                    return
+                    return nil
                 }
 
                 consecutiveWrongCount += 1
@@ -443,27 +385,26 @@ public class LayoutDetector {
                     shouldSwitchLayout: shouldSwitch
                 )
 
-                NSLog("[SwitchFix] Detection: '%@' → '%@' (%@), consecutive: %d/%d, switch: %@ (acronym)",
-                      word, finalWord, targetLayout.rawValue, consecutiveWrongCount, consecutiveThreshold,
-                      shouldSwitch ? "yes" : "no")
-
                 if consecutiveWrongCount >= consecutiveThreshold {
-                    delegate?.layoutDetector(self, didDetectWrongLayout: lastDetectionResult!, boundaryCharacter: pendingBoundaryCharacter)
+                    let result = lastDetectionResult
                     consecutiveWrongCount = 0
+                    recordOutcome(.corrected)
+                    state = .buffering
+                    return result
                 }
 
                 recordOutcome(.corrected)
                 state = .buffering
-                return
+                return nil
             }
         }
 
         // No valid alternative found — unknown word, do nothing
-        NSLog("[SwitchFix] Detection: '%@' — no valid alternative found", word)
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
         recordOutcome(.unknown)
         state = .buffering
+        return nil
     }
 
     private func shouldSwitchLayout(isLowConfidence: Bool, targetLayout: Layout) -> Bool {

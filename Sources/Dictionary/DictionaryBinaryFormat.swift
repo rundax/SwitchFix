@@ -67,12 +67,12 @@ enum DictionaryBinaryFormat {
         from data: Data,
         header: Header
     ) -> [PartitionEntry]? {
-        let start = Int(header.partitionsOffset)
+        guard let start = Int(exactly: header.partitionsOffset) else { return nil }
         let count = Int(header.partitionCount)
-        let byteCount = count * partitionEntrySize
-        let end = start + byteCount
+        let (byteCount, byteCountOverflow) = count.multipliedReportingOverflow(by: partitionEntrySize)
+        let (end, endOverflow) = start.addingReportingOverflow(byteCount)
 
-        guard start >= 0, end <= data.count else {
+        guard !byteCountOverflow, !endOverflow, end <= data.count else {
             return nil
         }
 

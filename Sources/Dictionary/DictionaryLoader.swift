@@ -151,20 +151,7 @@ public class DictionaryLoader {
             return nil
         }
 
-        if let url = lookup(in: Bundle.module) {
-            return url
-        }
-
-        if let resourceURL = Bundle.main.resourceURL {
-            let bundlePath = resourceURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
-            if let resourceBundle = Bundle(url: bundlePath),
-               let url = lookup(in: resourceBundle) {
-                return url
-            }
-        }
-
-        let execURL = Bundle.main.bundleURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
-        if let resourceBundle = Bundle(url: execURL),
+        if let resourceBundle = dictionaryResourceBundle(),
            let url = lookup(in: resourceBundle) {
             return url
         }
@@ -185,21 +172,7 @@ public class DictionaryLoader {
             return nil
         }
 
-        var url: URL? = lookup(in: Bundle.module)
-
-        if url == nil, let resourceURL = Bundle.main.resourceURL {
-            let bundlePath = resourceURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
-            if let resourceBundle = Bundle(url: bundlePath) {
-                url = lookup(in: resourceBundle)
-            }
-        }
-
-        if url == nil {
-            let execURL = Bundle.main.bundleURL.appendingPathComponent("SwitchFix_Dictionary.bundle")
-            if let resourceBundle = Bundle(url: execURL) {
-                url = lookup(in: resourceBundle)
-            }
-        }
+        let url = dictionaryResourceBundle().flatMap(lookup)
 
         guard let finalURL = url,
               let data = try? Data(contentsOf: finalURL),
@@ -215,6 +188,23 @@ public class DictionaryLoader {
             }
         }
         return result
+    }
+
+    private func dictionaryResourceBundle() -> Bundle? {
+        let bundleName = "SwitchFix_Dictionary.bundle"
+        let executableDirectory = Bundle.main.executableURL?.deletingLastPathComponent()
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent(bundleName),
+            Bundle.main.bundleURL.appendingPathComponent(bundleName),
+            executableDirectory?.appendingPathComponent(bundleName)
+        ]
+
+        for case let candidate? in candidates {
+            if let bundle = Bundle(url: candidate) {
+                return bundle
+            }
+        }
+        return nil
     }
 
 }

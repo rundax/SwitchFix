@@ -11,7 +11,6 @@ public final class KeyboardMonitor {
     private struct TapLifecycle {
         var tap: CFMachPort?
         var source: CFRunLoopSource?
-        var runLoop: CFRunLoop?
         var isMonitoring = false
         var prefersLayoutTranslation = false
     }
@@ -35,9 +34,6 @@ public final class KeyboardMonitor {
     private let captureState: CaptureStateStore
     private let lifecycle = OSAllocatedUnfairLock(initialState: TapLifecycle())
     private let translations = OSAllocatedUnfairLock(initialState: [TranslationKey: String]())
-    private let startupCancelled = OSAllocatedUnfairLock(initialState: false)
-    private var tapThread: Thread?
-    private var stoppedSignal = DispatchSemaphore(value: 0)
     private var diagnosticRing = [EventMetadata?](repeating: nil, count: 256)
     private var diagnosticRingIndex = 0
     private var tapResetCount: UInt64 = 0
@@ -147,26 +143,15 @@ public final class KeyboardMonitor {
             return true
         }
 
-        let startupSignal = DispatchSemaphore(value: 0)
-        startupCancelled.withLock { $0 = false }
-        stoppedSignal = DispatchSemaphore(value: 0)
-        let thread = Thread { [weak self] in
-            self?.runTapThread(startupSignal: startupSignal)
-        }
-        thread.name = "com.switchfix.event-tap"
-        thread.qualityOfService = .userInteractive
-        tapThread = thread
-        thread.start()
-
-        guard startupSignal.wait(timeout: .now() + 1) == .success else {
-            startupCancelled.withLock { $0 = true }
-            stop()
-            NSLog("[SwitchFix] KeyboardMonitor: event tap startup timed out")
-            return false
-        }
-
-        let started = lifecycle.withLock { $0.isMonitoring }
-        if !started {
+        let eventMask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue)
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        guard let tapResult = createEventTap(eventMask: eventMask, userInfo: userInfo),
+              let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tapResult.tap, 0) else {
             let accessibility = Permissions.isAccessibilityGranted()
             let inputMonitoring = Permissions.isInputMonitoringGranted()
             NSLog(
@@ -174,8 +159,22 @@ public final class KeyboardMonitor {
                 accessibility ? "granted" : "missing",
                 inputMonitoring ? "granted" : "missing"
             )
+            return false
         }
-        return started
+
+        lifecycle.withLock { value in
+            value.tap = tapResult.tap
+            value.source = source
+            value.isMonitoring = true
+            value.prefersLayoutTranslation = tapResult.location == .cghidEventTap
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tapResult.tap, enable: true)
+        NSLog(
+            "[SwitchFix] KeyboardMonitor: event tap active (%@)",
+            tapResult.location == .cgSessionEventTap ? "session" : "HID"
+        )
+        return true
     }
 
     /// Precompute HID fallback translations away from the event-tap callback.
@@ -201,82 +200,22 @@ public final class KeyboardMonitor {
     }
 
     public func stop() {
-        let resources = lifecycle.withLock { value -> (CFMachPort?, CFRunLoopSource?, CFRunLoop?) in
-            guard value.isMonitoring || value.runLoop != nil else { return (nil, nil, nil) }
+        let resources = lifecycle.withLock { value -> (CFMachPort?, CFRunLoopSource?) in
+            guard value.isMonitoring else { return (nil, nil) }
             value.isMonitoring = false
-            return (value.tap, value.source, value.runLoop)
+            value.prefersLayoutTranslation = false
+            let resources = (value.tap, value.source)
+            value.tap = nil
+            value.source = nil
+            return resources
         }
 
-        guard let runLoop = resources.2 else {
-            tapThread = nil
-            return
+        if let tap = resources.0 {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
-
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) {
-            if let tap = resources.0 {
-                CGEvent.tapEnable(tap: tap, enable: false)
-            }
-            if let source = resources.1 {
-                CFRunLoopRemoveSource(runLoop, source, .commonModes)
-            }
-            if let tap = resources.0 {
-                CFMachPortInvalidate(tap)
-            }
-            CFRunLoopStop(runLoop)
-        }
-        CFRunLoopWakeUp(runLoop)
-        _ = stoppedSignal.wait(timeout: .now() + 1)
-        tapThread = nil
-    }
-
-    private func runTapThread(startupSignal: DispatchSemaphore) {
-        autoreleasepool {
-            let eventMask: CGEventMask =
-                (1 << CGEventType.keyDown.rawValue) |
-                (1 << CGEventType.flagsChanged.rawValue) |
-                (1 << CGEventType.leftMouseDown.rawValue) |
-                (1 << CGEventType.rightMouseDown.rawValue) |
-                (1 << CGEventType.otherMouseDown.rawValue)
-            let userInfo = Unmanaged.passUnretained(self).toOpaque()
-
-            guard let tapResult = createEventTap(eventMask: eventMask, userInfo: userInfo),
-                  let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tapResult.tap, 0) else {
-                startupSignal.signal()
-                stoppedSignal.signal()
-                return
-            }
-            let tap = tapResult.tap
-            let runLoop = CFRunLoopGetCurrent()
-            let activated = startupCancelled.withLock { cancelled in
-                guard !cancelled else { return false }
-                lifecycle.withLock { value in
-                    value.tap = tap
-                    value.source = source
-                    value.runLoop = runLoop
-                    value.isMonitoring = true
-                    value.prefersLayoutTranslation = tapResult.location == .cghidEventTap
-                }
-                return true
-            }
-            guard activated else {
-                CGEvent.tapEnable(tap: tap, enable: false)
-                CFMachPortInvalidate(tap)
-                startupSignal.signal()
-                stoppedSignal.signal()
-                return
-            }
-            CFRunLoopAddSource(runLoop, source, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
-            startupSignal.signal()
-            CFRunLoopRun()
-
-            lifecycle.withLock { value in
-                value.tap = nil
-                value.source = nil
-                value.runLoop = nil
-                value.isMonitoring = false
-            }
-            stoppedSignal.signal()
+        if let source = resources.1 {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
     }
 

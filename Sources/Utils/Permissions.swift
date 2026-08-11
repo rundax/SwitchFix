@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import os
 
 public class Permissions {
@@ -135,6 +136,8 @@ public final class AccessibilityFocusCoordinator {
     private var applicationElement: AXUIElement?
     private var fallbackQuery: DispatchWorkItem?
     private var queryGeneration: UInt64 = 0
+    private var unknownFocusRetryCount = 0
+    private static let maximumUnknownFocusRetries = 8
 
     public init(
         onFocusInvalidated: @escaping FocusInvalidation,
@@ -156,12 +159,22 @@ public final class AccessibilityFocusCoordinator {
         return subroleQueryDefinitive ? .notSecure : .unknown
     }
 
+    /// Falls back to macOS secure-input mode when an app does not expose its focused field.
+    public static func resolveFocus(
+        accessibilityState: AccessibilityFocusState,
+        secureInputEnabled: Bool
+    ) -> AccessibilityFocusState {
+        guard accessibilityState == .unknown else { return accessibilityState }
+        return secureInputEnabled ? .secure : .notSecure
+    }
+
     public func observeApplication(pid: pid_t, epoch: UInt64) {
         runOnMain { [weak self] in
             guard let self else { return }
             self.stopObserving()
             self.observedPID = pid
             self.observedEpoch = epoch
+            self.unknownFocusRetryCount = 0
             guard pid > 0 else { return }
 
             let application = AXUIElementCreateApplication(pid)
@@ -200,6 +213,7 @@ public final class AccessibilityFocusCoordinator {
         runOnMain { [weak self] in
             guard let self, self.observedPID == pid else { return }
             self.observedEpoch = epoch
+            self.unknownFocusRetryCount = 0
             self.scheduleQuery(pid: pid, epoch: epoch, delay: 0.025)
         }
     }
@@ -247,7 +261,18 @@ public final class AccessibilityFocusCoordinator {
                           self.observedEpoch == epoch else {
                         return
                     }
-                    self.onResolved(AccessibilityFocusResolution(pid: pid, epoch: epoch, state: state))
+                    let resolvedState = Self.resolveFocus(
+                        accessibilityState: state,
+                        secureInputEnabled: IsSecureEventInputEnabled()
+                    )
+                    if state == .unknown,
+                       self.unknownFocusRetryCount < Self.maximumUnknownFocusRetries {
+                        self.unknownFocusRetryCount += 1
+                        self.scheduleQuery(pid: pid, epoch: epoch, delay: 0.25)
+                    } else {
+                        self.unknownFocusRetryCount = 0
+                    }
+                    self.onResolved(AccessibilityFocusResolution(pid: pid, epoch: epoch, state: resolvedState))
                 }
             }
         }

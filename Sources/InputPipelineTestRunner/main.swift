@@ -233,6 +233,14 @@ run("secure focus fails closed") {
         subrole: nil,
         subroleQueryDefinitive: false
     ) == .unknown, "failed AX subrole query must remain unknown")
+    check(AccessibilityFocusCoordinator.resolveFocus(
+        accessibilityState: .unknown,
+        secureInputEnabled: true
+    ) == .secure, "secure-input mode must protect inaccessible password fields")
+    check(AccessibilityFocusCoordinator.resolveFocus(
+        accessibilityState: .unknown,
+        secureInputEnabled: false
+    ) == .notSecure, "normal inaccessible web editors must remain available")
     for focus in [SecureFocusState.unknown, .secure] {
         let current = context(focus: focus)
         var machine = automaticMachine(current)

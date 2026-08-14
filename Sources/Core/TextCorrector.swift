@@ -146,7 +146,10 @@ public final class TextCorrector {
         undoState.withLock { $0 = UndoState(plan: plan) }
         if let layout = plan.targetLayout,
            plan.isEligible(using: latestCaptureState()) {
-            inputSourceManager.switchTo(layout)
+            // TIS APIs are main-thread-only; apply() runs on the correction queue.
+            DispatchQueue.main.async { [inputSourceManager] in
+                inputSourceManager.switchTo(layout)
+            }
         }
         logger.debug("correction applied delete_count=\(plan.deleteCount, privacy: .public)")
         return true
@@ -230,7 +233,11 @@ public final class TextCorrector {
         post(events, targetPID: inverse.targetPID)
         undoState.withLock { $0 = nil }
         if inverse.isEligible(using: latestCaptureState()) {
-            inputSourceManager.switchTo(undo.plan.originalLayout)
+            let layout = undo.plan.originalLayout
+            // TIS APIs are main-thread-only; undo() runs on the correction queue.
+            DispatchQueue.main.async { [inputSourceManager] in
+                inputSourceManager.switchTo(layout)
+            }
         }
         return true
     }
@@ -262,7 +269,17 @@ public final class TextCorrector {
             }
 
             let pasteboard = NSPasteboard.general
-            let previousItems = pasteboard.pasteboardItems
+            // Snapshot item data into fresh items: items read from a pasteboard are
+            // invalidated by clearContents() and cannot be written back.
+            let previousItems: [NSPasteboardItem] = (pasteboard.pasteboardItems ?? []).map { item in
+                let copy = NSPasteboardItem()
+                for type in item.types {
+                    if let data = item.data(forType: type) {
+                        copy.setData(data, forType: type)
+                    }
+                }
+                return copy
+            }
             pasteboard.clearContents()
             pasteboard.setString(convertedText, forType: .string)
             let replacementChangeCount = pasteboard.changeCount
@@ -280,7 +297,7 @@ public final class TextCorrector {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 guard pasteboard.changeCount == replacementChangeCount else { return }
                 pasteboard.clearContents()
-                if let previousItems, !previousItems.isEmpty {
+                if !previousItems.isEmpty {
                     pasteboard.writeObjects(previousItems)
                 }
             }
@@ -309,7 +326,7 @@ public final class TextCorrector {
     }
 
     private func makeCorrectionEvents(plan: CorrectionPlan) -> [CGEvent]? {
-        guard eventSource != nil else { return nil }
+        guard eventSource != nil, !plan.replacementText.isEmpty else { return nil }
         var events: [CGEvent] = []
         events.reserveCapacity(plan.deleteCount * 2 + 2)
         for _ in 0..<plan.deleteCount {

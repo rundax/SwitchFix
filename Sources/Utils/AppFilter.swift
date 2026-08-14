@@ -1,11 +1,14 @@
 import Foundation
 import AppKit
+import os
 
 public class AppFilter {
     public static let shared = AppFilter()
 
     private let defaults = UserDefaults.standard
-    private static let blacklistKey = "SwitchFix_blacklistedApps"
+    private static let legacyBlacklistKey = "SwitchFix_blacklistedApps"
+    private static let userAddedKey = "SwitchFix_userAddedApps"
+    private static let userRemovedKey = "SwitchFix_userRemovedApps"
 
     /// Default blacklisted bundle IDs — apps where correction should be disabled.
     private static let defaultBlacklist: Set<String> = [
@@ -30,14 +33,35 @@ public class AppFilter {
         "com.jetbrains.fleet",
     ]
 
-    private var blacklistedBundleIDs: Set<String>
+    private struct State {
+        var userAdded: Set<String>
+        var userRemoved: Set<String>
+
+        var effective: Set<String> {
+            AppFilter.defaultBlacklist.union(userAdded).subtracting(userRemoved)
+        }
+    }
+
+    // Persisting user deltas (instead of the full effective set) lets default
+    // blacklist additions in future releases apply to existing users.
+    private let state: OSAllocatedUnfairLock<State>
 
     private init() {
-        if let saved = defaults.stringArray(forKey: AppFilter.blacklistKey) {
-            blacklistedBundleIDs = Set(saved)
-        } else {
-            blacklistedBundleIDs = AppFilter.defaultBlacklist
+        var userAdded = Set(defaults.stringArray(forKey: AppFilter.userAddedKey) ?? [])
+        var userRemoved = Set(defaults.stringArray(forKey: AppFilter.userRemovedKey) ?? [])
+
+        // Migrate the legacy full-set format: reconstruct deltas against defaults.
+        if defaults.object(forKey: AppFilter.userAddedKey) == nil,
+           defaults.object(forKey: AppFilter.userRemovedKey) == nil,
+           let legacySaved = defaults.stringArray(forKey: AppFilter.legacyBlacklistKey) {
+            let saved = Set(legacySaved)
+            userAdded = saved.subtracting(AppFilter.defaultBlacklist)
+            userRemoved = AppFilter.defaultBlacklist.subtracting(saved)
+            defaults.set(Array(userAdded), forKey: AppFilter.userAddedKey)
+            defaults.set(Array(userRemoved), forKey: AppFilter.userRemovedKey)
         }
+
+        state = OSAllocatedUnfairLock(initialState: State(userAdded: userAdded, userRemoved: userRemoved))
     }
 
     /// Check if correction is allowed for the currently frontmost application.
@@ -46,31 +70,44 @@ public class AppFilter {
               let bundleID = app.bundleIdentifier else {
             return true
         }
-        return !blacklistedBundleIDs.contains(bundleID)
+        return !isBlacklisted(bundleID)
     }
 
     public func addToBlacklist(_ bundleID: String) {
-        blacklistedBundleIDs.insert(bundleID)
-        save()
+        state.withLock { value in
+            value.userRemoved.remove(bundleID)
+            if !AppFilter.defaultBlacklist.contains(bundleID) {
+                value.userAdded.insert(bundleID)
+            }
+            save(value)
+        }
         NotificationCenter.default.post(name: .appFilterDidChange, object: nil)
     }
 
     public func removeFromBlacklist(_ bundleID: String) {
-        blacklistedBundleIDs.remove(bundleID)
-        save()
+        state.withLock { value in
+            value.userAdded.remove(bundleID)
+            if AppFilter.defaultBlacklist.contains(bundleID) {
+                value.userRemoved.insert(bundleID)
+            }
+            save(value)
+        }
         NotificationCenter.default.post(name: .appFilterDidChange, object: nil)
     }
 
     public func isBlacklisted(_ bundleID: String) -> Bool {
-        return blacklistedBundleIDs.contains(bundleID)
+        state.withLock { $0.effective.contains(bundleID) }
     }
 
     public var allBlacklisted: [String] {
-        return Array(blacklistedBundleIDs).sorted()
+        state.withLock { Array($0.effective).sorted() }
     }
 
-    private func save() {
-        defaults.set(Array(blacklistedBundleIDs), forKey: AppFilter.blacklistKey)
+    private func save(_ value: State) {
+        defaults.set(Array(value.userAdded), forKey: AppFilter.userAddedKey)
+        defaults.set(Array(value.userRemoved), forKey: AppFilter.userRemovedKey)
+        // Keep the legacy key in sync so downgrades keep the user's list.
+        defaults.set(Array(value.effective), forKey: AppFilter.legacyBlacklistKey)
     }
 }
 

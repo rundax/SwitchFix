@@ -591,7 +591,7 @@ public class LayoutDetector {
         var hasCyrillic = false
         for char in text {
             for scalar in char.unicodeScalars {
-                if (scalar.value >= 0x0041 && scalar.value <= 0x007A) {
+                if (scalar.value >= 0x0041 && scalar.value <= 0x005A) || (scalar.value >= 0x0061 && scalar.value <= 0x007A) {
                     hasLatin = true
                 } else if (scalar.value >= 0x0400 && scalar.value <= 0x04FF) {
                     hasCyrillic = true

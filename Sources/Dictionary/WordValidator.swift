@@ -17,6 +17,11 @@ public class WordValidator {
         "'s", "'re", "'ve", "'ll", "'d", "n't"
     ]
 
+    /// Contractions whose base does not survive suffix stripping ("can't" → "ca").
+    private static let irregularContractions: Set<String> = [
+        "can't", "won't", "shan't", "ain't", "let's", "y'all", "o'clock", "ma'am"
+    ]
+
     private static let whitelistedWords: [Language: Set<String>] = [
         .english: [
             "ccs", "cmd", "opt", "ctrl", "mac", "ios", "api", "url", "app", "dev", "bot", "txt", "csv", "xml", "json", "tas", "task", "tasks"
@@ -123,6 +128,9 @@ public class WordValidator {
 
     private func isEnglishContractionValid(_ word: String) -> Bool {
         guard word.contains("'") else { return false }
+        if WordValidator.irregularContractions.contains(word.lowercased()) {
+            return true
+        }
         for suffix in WordValidator.englishContractionSuffixes where word.hasSuffix(suffix) {
             let base = String(word.dropLast(suffix.count))
             if base.isEmpty { continue }

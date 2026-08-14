@@ -54,6 +54,9 @@ public class DictionaryLoader {
     }
 
     public func mightContain(_ word: String, language: Language) -> Bool {
+        // Bloom hashing and the binary index operate on raw UTF-8 bytes; the
+        // compiled dictionaries store NFC, so normalize before byte-level lookups.
+        let word = word.precomposedStringWithCanonicalMapping
         return lock.withLock {
             guard let index = ensureIndexLoaded(for: language) else { return false }
             let denyList = denyLists[language] ?? []
@@ -75,6 +78,7 @@ public class DictionaryLoader {
     }
 
     public func containsExact(_ word: String, language: Language) -> Bool {
+        let word = word.precomposedStringWithCanonicalMapping
         return lock.withLock {
             guard let index = ensureIndexLoaded(for: language) else { return false }
 

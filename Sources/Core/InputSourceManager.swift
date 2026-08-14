@@ -238,27 +238,25 @@ public final class InputSourceManager {
             return nil
         }
         let layoutData = unsafeBitCast(layoutDataReference, to: CFData.self) as Data
-        guard let keyboardLayout = layoutData.withUnsafeBytes({ pointer in
-            pointer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self)
-        }) else {
-            return nil
-        }
-
         var deadKeyState: UInt32 = 0
         var characters = [UniChar](repeating: 0, count: 4)
         var actualLength = 0
-        let status = UCKeyTranslate(
-            keyboardLayout,
-            keyCode,
-            UInt16(kUCKeyActionDown),
-            0,
-            UInt32(LMGetKbdType()),
-            UInt32(kUCKeyTranslateNoDeadKeysBit),
-            &deadKeyState,
-            characters.count,
-            &actualLength,
-            &characters
-        )
+        // The layout pointer is only valid inside withUnsafeBytes.
+        let status = layoutData.withUnsafeBytes { pointer -> OSStatus in
+            guard let baseAddress = pointer.baseAddress else { return OSStatus(paramErr) }
+            return UCKeyTranslate(
+                baseAddress.assumingMemoryBound(to: UCKeyboardLayout.self),
+                keyCode,
+                UInt16(kUCKeyActionDown),
+                0,
+                UInt32(LMGetKbdType()),
+                UInt32(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState,
+                characters.count,
+                &actualLength,
+                &characters
+            )
+        }
         guard status == noErr, actualLength > 0 else { return nil }
         return String(utf16CodeUnits: characters, count: actualLength).first
     }

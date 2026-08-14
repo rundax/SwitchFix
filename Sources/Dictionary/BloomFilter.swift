@@ -10,17 +10,24 @@ public class BloomFilter {
     /// Create a BloomFilter with the specified number of bits and hash functions.
     /// For 50K words with ~1% false positive rate: bitCount ≈ 480,000, hashCount = 7
     public init(bitCount: Int, hashCount: Int) {
-        self.bitCount = bitCount
-        self.hashCount = hashCount
-        let byteCount = (bitCount + 7) / 8
+        // Guard against modulo-by-zero in hashing and zero-pass lookups.
+        self.bitCount = max(1, bitCount)
+        self.hashCount = max(1, hashCount)
+        let byteCount = (self.bitCount + 7) / 8
         self.bits = [UInt8](repeating: 0, count: byteCount)
     }
 
     /// Create a BloomFilter from a serialized bit-array.
     public init(bitCount: Int, hashCount: Int, bits: [UInt8]) {
-        self.bitCount = bitCount
-        self.hashCount = hashCount
-        self.bits = bits
+        self.bitCount = max(1, bitCount)
+        self.hashCount = max(1, hashCount)
+        let requiredBytes = (self.bitCount + 7) / 8
+        if bits.count >= requiredBytes {
+            self.bits = bits
+        } else {
+            // Undersized payload would index out of bounds; pad instead of trapping.
+            self.bits = bits + [UInt8](repeating: 0, count: requiredBytes - bits.count)
+        }
     }
 
     /// Create a BloomFilter optimized for a given number of items and false positive rate.

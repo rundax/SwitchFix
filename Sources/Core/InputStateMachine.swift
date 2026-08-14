@@ -60,6 +60,12 @@ public struct InputStateMachine {
         return [.invalidate(.contextChanged)]
     }
 
+    /// Marks the buffer invalid until the next boundary: used when an event was
+    /// dropped (stale context), so on-screen text and the buffer may disagree.
+    public mutating func invalidateUntilBoundary() {
+        invalidate(untilBoundary: true)
+    }
+
     public mutating func updatePreferences(_ preferences: InputPreferencesSnapshot) -> [InputStateCommand] {
         let previous = self.preferences
         self.preferences = preferences

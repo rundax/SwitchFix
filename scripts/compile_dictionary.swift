@@ -137,6 +137,9 @@ func loadWords(from input: URL) throws -> [String] {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "’", with: "'")
+            // NFC: bloom hashing and partition lookup operate on raw UTF-8 bytes,
+            // so stored and queried forms must agree byte-for-byte.
+            .precomposedStringWithCanonicalMapping
         if !normalized.isEmpty {
             words.insert(normalized)
         }

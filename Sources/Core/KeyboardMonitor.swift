@@ -36,6 +36,8 @@ public final class KeyboardMonitor {
     private let translations = OSAllocatedUnfairLock(initialState: [TranslationKey: String]())
     private var diagnosticRing = [EventMetadata?](repeating: nil, count: 256)
     private var diagnosticRingIndex = 0
+    // Tap-callback-thread confined: tracks caps lock toggle state for edge detection.
+    private var lastAlphaShiftState: Bool?
     private var tapResetCount: UInt64 = 0
 
     private static let spaceKeyCode: UInt16 = 49
@@ -48,12 +50,13 @@ public final class KeyboardMonitor {
 
     private static let functionKeyCodes: Set<UInt16> = Set([
         122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
-        105, 107, 113, 106,
+        105, 107, 113, 106, 64, 79, 80,
     ])
 
     private static let navigationKeyCodes: Set<UInt16> = Set([
         123, 124, 125, 126,
         115, 119, 116, 121,
+        117, // forward delete: must not reach the character buffer as U+F728
     ])
 
     private static let boundaryCharacterSet: CharacterSet = {
@@ -315,6 +318,12 @@ public final class KeyboardMonitor {
                   ) else {
                 return nil
             }
+            // Caps lock emits flagsChanged on both press and release with the same
+            // toggled state; fire only when the alpha-shift bit actually flips so a
+            // single press cannot trigger the revert hotkey twice.
+            let alphaShiftEngaged = flags.contains(.maskAlphaShift)
+            guard alphaShiftEngaged != lastAlphaShiftState else { return nil }
+            lastAlphaShiftState = alphaShiftEngaged
             return .revertHotkey
         }
 
@@ -412,27 +421,26 @@ public final class KeyboardMonitor {
             return nil
         }
         let layoutData = unsafeBitCast(layoutDataReference, to: CFData.self) as Data
-        guard let keyboardLayout = layoutData.withUnsafeBytes({ pointer in
-            pointer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self)
-        }) else {
-            return nil
-        }
         let modifierState: UInt32 = shifted ? UInt32(shiftKey >> 8) : 0
         var deadKeyState: UInt32 = 0
         var characters = [UniChar](repeating: 0, count: 8)
         var actualLength = 0
-        let status = UCKeyTranslate(
-            keyboardLayout,
-            keyCode,
-            UInt16(kUCKeyActionDown),
-            modifierState,
-            UInt32(LMGetKbdType()),
-            OptionBits(kUCKeyTranslateNoDeadKeysBit),
-            &deadKeyState,
-            characters.count,
-            &actualLength,
-            &characters
-        )
+        // The layout pointer is only valid inside withUnsafeBytes.
+        let status = layoutData.withUnsafeBytes { pointer -> OSStatus in
+            guard let baseAddress = pointer.baseAddress else { return OSStatus(paramErr) }
+            return UCKeyTranslate(
+                baseAddress.assumingMemoryBound(to: UCKeyboardLayout.self),
+                keyCode,
+                UInt16(kUCKeyActionDown),
+                modifierState,
+                UInt32(LMGetKbdType()),
+                OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState,
+                characters.count,
+                &actualLength,
+                &characters
+            )
+        }
         guard status == noErr, actualLength > 0 else { return nil }
         return String(utf16CodeUnits: characters, count: actualLength)
     }

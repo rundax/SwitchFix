@@ -70,8 +70,9 @@ public class PreferencesManager {
     /// Hotkey virtual key code (default: Space = 49)
     public var hotkeyKeyCode: UInt16 {
         get {
-            let val = defaults.integer(forKey: Keys.hotkeyKeyCode)
-            return val == 0 ? 49 : UInt16(val)
+            // Key code 0 is the letter "A"; only fall back when the key is truly unset.
+            guard let val = defaults.object(forKey: Keys.hotkeyKeyCode) as? Int else { return 49 }
+            return UInt16(truncatingIfNeeded: val)
         }
         set {
             guard newValue != self.hotkeyKeyCode else { return }
@@ -97,8 +98,9 @@ public class PreferencesManager {
     /// Revert-hotkey virtual key code (default: CapsLock = 57)
     public var revertHotkeyKeyCode: UInt16 {
         get {
-            let val = defaults.integer(forKey: Keys.revertHotkeyKeyCode)
-            return val == 0 ? 57 : UInt16(val)
+            // Key code 0 is the letter "A"; only fall back when the key is truly unset.
+            guard let val = defaults.object(forKey: Keys.revertHotkeyKeyCode) as? Int else { return 57 }
+            return UInt16(truncatingIfNeeded: val)
         }
         set {
             guard newValue != self.revertHotkeyKeyCode else { return }

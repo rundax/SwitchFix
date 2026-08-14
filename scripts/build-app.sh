@@ -48,6 +48,11 @@ if [ ! -d "$PRODUCTS_DIR" ]; then
     PRODUCTS_DIR="$BUILD_DIR/release"
 fi
 
+if [ ! -d "$PRODUCTS_DIR" ]; then
+    echo "ERROR: products directory not found: $PRODUCTS_DIR" >&2
+    exit 1
+fi
+
 echo "Products directory: $PRODUCTS_DIR"
 
 # Clean previous bundle

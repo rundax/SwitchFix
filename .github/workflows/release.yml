@@ -6,12 +6,13 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     name: Build (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +125,9 @@ jobs:
     name: Publish Release
     runs-on: ubuntu-latest
     needs: build
+    timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
       - name: Download all release artifacts

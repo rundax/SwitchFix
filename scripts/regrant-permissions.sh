@@ -6,12 +6,21 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 APP_BUNDLE="${1:-$PROJECT_DIR/dist/SwitchFix.app}"
 BUNDLE_ID="${2:-com.switchfix.app}"
 
+if [ ! -d "$APP_BUNDLE" ]; then
+  echo "Error: app bundle not found at $APP_BUNDLE" >&2
+  exit 1
+fi
+
 echo "Stopping running SwitchFix..."
 pkill -x SwitchFixApp || true
 
 echo "Resetting TCC permissions for $BUNDLE_ID..."
-tccutil reset Accessibility "$BUNDLE_ID" || true
-tccutil reset ListenEvent "$BUNDLE_ID" || true
+if ! tccutil reset Accessibility "$BUNDLE_ID"; then
+  echo "Warning: failed to reset Accessibility permissions for $BUNDLE_ID" >&2
+fi
+if ! tccutil reset ListenEvent "$BUNDLE_ID"; then
+  echo "Warning: failed to reset Input Monitoring permissions for $BUNDLE_ID" >&2
+fi
 
 echo "Opening Privacy settings (Accessibility)..."
 open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" || true

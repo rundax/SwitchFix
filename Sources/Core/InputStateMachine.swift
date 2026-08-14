@@ -61,12 +61,17 @@ public struct InputStateMachine {
     }
 
     public mutating func updatePreferences(_ preferences: InputPreferencesSnapshot) -> [InputStateCommand] {
-        let wasEnabled = self.preferences.isEnabled
+        let previous = self.preferences
         self.preferences = preferences
-        guard wasEnabled && !preferences.isEnabled else { return [] }
+        guard previous != preferences else { return [] }
+
         currentBuffer = ""
         isInvalidUntilBoundary = false
-        return [.invalidate(.disabled)]
+
+        if previous.isEnabled && !preferences.isEnabled {
+            return [.invalidate(.disabled)]
+        }
+        return [.invalidate(.contextChanged)]
     }
 
     public mutating func consume(_ input: CapturedInput) -> [InputStateCommand] {

@@ -225,9 +225,7 @@ public final class CaptureStateStore {
                 secureFocus: secureFocus
             )
             value.context = context
-            if secureFocus != .notSecure {
-                value.correctionAllowed = false
-            }
+            value.correctionAllowed = (secureFocus == .notSecure) && appAllowed
             return context
         }
     }

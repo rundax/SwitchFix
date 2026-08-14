@@ -265,6 +265,9 @@ public final class InputEngine {
         let liveContext = captureState.snapshot().context
         guard input.context == liveContext else {
             _ = stateMachine.updateContext(liveContext)
+            // The dropped event may have reached the app; don't let a partial
+            // word buffer up and get "corrected" with a wrong delete count.
+            stateMachine.invalidateUntilBoundary()
             resetDetectorState()
             logger.debug("buffer invalidated reason=stale-capture-context")
             return

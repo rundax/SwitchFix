@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Carbon
+import UniformTypeIdentifiers
 import Utils
 
 // Helpers
@@ -164,6 +165,198 @@ struct HotkeyRecorder: View {
     }
 }
 
+struct ExcludedAppRow: Identifiable, Hashable {
+    let id: String // bundle identifier
+    let name: String
+    let icon: NSImage?
+}
+
+class ExclusionsViewModel: ObservableObject {
+    @Published var apps: [ExcludedAppRow] = []
+    @Published var selection: Set<String> = []
+    @Published var runningApps: [ExcludedAppRow] = []
+    @Published var showingRunningAppsPicker = false
+
+    init() {
+        reload()
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: .appFilterDidChange, object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc func reload() {
+        apps = AppFilter.shared.allBlacklisted.map { bundleID -> ExcludedAppRow in
+            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            let name = url.map { FileManager.default.displayName(atPath: $0.path) } ?? bundleID
+            let icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
+            return ExcludedAppRow(id: bundleID, name: name, icon: icon)
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Refreshes the list of currently running apps eligible to be added (excludes ones already excluded and SwitchFix itself).
+    func refreshRunningApps() {
+        let alreadyExcluded = Set(apps.map { $0.id })
+        let ownBundleID = Bundle.main.bundleIdentifier
+
+        runningApps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app -> ExcludedAppRow? in
+                guard let bundleID = app.bundleIdentifier,
+                      bundleID != ownBundleID,
+                      !alreadyExcluded.contains(bundleID) else { return nil }
+                return ExcludedAppRow(id: bundleID, name: app.localizedName ?? bundleID, icon: app.icon)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func addBundleIDs<S: Sequence>(_ bundleIDs: S) where S.Element == String {
+        for bundleID in bundleIDs {
+            AppFilter.shared.addToBlacklist(bundleID)
+        }
+        reload()
+    }
+
+    /// Presents an Open panel (defaulting to /Applications, but browsable anywhere) to pick app bundles.
+    func addAppFromFileSystem() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+
+        guard panel.runModal() == .OK else { return }
+
+        addBundleIDs(panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier })
+    }
+
+    func removeSelected() {
+        for bundleID in selection {
+            AppFilter.shared.removeFromBlacklist(bundleID)
+        }
+        selection.removeAll()
+        reload()
+    }
+}
+
+struct RunningAppPickerView: View {
+    @ObservedObject var model: ExclusionsViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Choose Running Apps").font(.headline)
+
+            if model.runningApps.isEmpty {
+                Text("All running apps are already excluded.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .frame(width: 360, height: 260, alignment: .center)
+            } else {
+                List(model.runningApps, selection: $selection) { app in
+                    HStack(spacing: 6) {
+                        if let icon = app.icon {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .frame(width: 16, height: 16)
+                        }
+                        Text(app.name)
+                    }
+                    .tag(app.id)
+                }
+                .frame(width: 360, height: 260)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") {
+                    model.addBundleIDs(selection)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selection.isEmpty)
+            }
+        }
+        .padding(20)
+    }
+}
+
+struct ExcludedAppsView: View {
+    @StateObject private var model = ExclusionsViewModel()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Excluded Apps").font(.headline)
+            Text("SwitchFix won't correct text while these apps are active.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 0) {
+                List(model.apps, selection: $model.selection) { app in
+                    HStack(spacing: 6) {
+                        if let icon = app.icon {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .frame(width: 16, height: 16)
+                        }
+                        Text(app.name)
+                        Spacer()
+                        Text(app.id)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .tag(app.id)
+                }
+                .frame(height: 140)
+
+                Divider()
+
+                HStack(spacing: 0) {
+                    Menu {
+                        Button("Choose from Running Apps…") {
+                            model.refreshRunningApps()
+                            model.showingRunningAppsPicker = true
+                        }
+                        Button("Choose from Applications Folder…") {
+                            model.addAppFromFileSystem()
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 20, height: 20)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+
+                    Divider().frame(height: 12)
+
+                    Button(action: model.removeSelected) {
+                        Image(systemName: "minus")
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(model.selection.isEmpty)
+
+                    Spacer()
+                }
+                .padding(4)
+                .background(Color(nsColor: .controlBackgroundColor))
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .sheet(isPresented: $model.showingRunningAppsPicker) {
+            RunningAppPickerView(model: model)
+        }
+    }
+}
+
 struct SettingsView: View {
     @StateObject private var model = SettingsViewModel()
 
@@ -234,10 +427,15 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
+            Divider()
+
+            // EXCLUDED APPS
+            ExcludedAppsView()
+
             Spacer()
         }
         .padding(30)
-        .frame(width: 480, height: 500)
+        .frame(width: 480, height: 700)
     }
 }

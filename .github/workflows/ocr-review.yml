@@ -88,7 +88,7 @@ jobs:
             core.setOutput('title', pullRequest.title);
 
       - name: Run OpenCodeReview
-        uses: alibaba/open-code-review@main
+        uses: alibaba/open-code-review@533f7367cdf064fe84c6b05ddbc5ab4fa90a8d38
         with:
           llm_url: ${{ secrets.OCR_LLM_URL }}
           llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}

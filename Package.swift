@@ -19,7 +19,7 @@ let package = Package(
         ),
         .target(
             name: "Dictionary",
-            dependencies: [],
+            dependencies: ["Utils"],
             path: "Sources/Dictionary",
             exclude: ["Resources/uk_full.txt"],
             resources: [

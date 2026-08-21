@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var previousInputSourceID = "unknown"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        SwitchFixLog.app.notice("launched, pid=\(ProcessInfo.processInfo.processIdentifier)")
         statusBarController = StatusBarController()
         inputSourceManager.refreshCurrentInputSource()
         previousLayout = inputSourceManager.currentLayout()
@@ -107,15 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     unavailable.append(layout.rawValue)
                 }
             }
-            DispatchQueue.main.async {
-                if !unavailable.isEmpty {
-                    NSLog(
-                        "[SwitchFix] Automatic correction unavailable for layouts: %@",
-                        unavailable.joined(separator: ", ")
-                    )
-                }
-                completion(readyLayouts)
+        DispatchQueue.main.async {
+            if !unavailable.isEmpty {
+                SwitchFixLog.app.notice(
+                    "automatic correction unavailable for layouts: \(unavailable.joined(separator: ", "))"
+                )
             }
+            completion(readyLayouts)
+        }
         }
     }
 
@@ -130,12 +130,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardMonitor = monitor
 
         guard monitor.start() else {
-            NSLog("[SwitchFix] Monitoring failed to start")
+            SwitchFixLog.app.error("Monitoring failed to start (event tap creation failed)")
             return
         }
         let context = state.snapshot().context
         focusCoordinator?.observeApplication(pid: context.frontmostPID, epoch: context.epoch)
-        NSLog("[SwitchFix] Monitoring started")
+        SwitchFixLog.app.notice("monitoring started pid=\(context.frontmostPID) layout=\(context.layout.rawValue) appAllowed=\(context.appAllowed)")
     }
 
     private func registerConfigurationObservers() {
@@ -195,6 +195,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inputEngine?.updateContext(context)
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
         focusCoordinator?.observeApplication(pid: context.frontmostPID, epoch: context.epoch)
+        SwitchFixLog.app.notice(
+            "frontmost changed pid=\(context.frontmostPID) bundle=\(application.bundleIdentifier ?? "nil") allowed=\(allowed) layout=\(layout.rawValue)"
+        )
     }
 
     @objc private func selectedInputSourceChanged() {
@@ -211,6 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let current = state.snapshot().context
         guard oldSourceID != newSourceID || oldLayout != newLayout else { return }
+        SwitchFixLog.app.notice(
+            "layout changed old=\(oldLayout.rawValue) new=\(newLayout.rawValue) generated=\(expectedGeneratedSelection)"
+        )
         let context = state.replaceContext(
             frontmostPID: current.frontmostPID,
             appAllowed: current.appAllowed,
@@ -268,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func preferencesDidUpdate() {
+        SwitchFixLog.preferences.notice(
+            "preferences updated enabled=\(PreferencesManager.shared.isEnabled) mode=\(PreferencesManager.shared.correctionMode.rawValue)"
+        )
         captureState?.updateHotkeys(currentHotkeyConfiguration())
         inputEngine?.updatePreferences(currentPreferencesSnapshot())
     }
@@ -338,6 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) else {
             return
         }
+        SwitchFixLog.app.debug("focus resolved pid=\(resolution.pid) state=\(String(describing: secureFocus))")
         inputEngine?.updateContext(context)
     }
 

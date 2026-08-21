@@ -1,6 +1,7 @@
 import Carbon
 import Foundation
 import os
+import Utils
 
 public final class InputSourceManager {
     public static let shared = InputSourceManager()
@@ -146,11 +147,12 @@ public final class InputSourceManager {
             value.pendingSelectionID = sourceID
             return (source, sourceID)
         }) else {
-            NSLog("[SwitchFix] switchTo(%@): no cached source", layout.rawValue)
+            SwitchFixLog.source.error("switchTo(\(layout.rawValue)): no cached input source")
             return false
         }
         if currentInputSourceID() == target.1 {
             state.withLock { $0.pendingSelectionID = nil }
+            SwitchFixLog.source.debug("switchTo(\(layout.rawValue)): already active")
             return true
         }
 
@@ -164,7 +166,9 @@ public final class InputSourceManager {
                 }
             }
             callbacks.selectionFailed?()
-            NSLog("[SwitchFix] switchTo(%@): TISSelectInputSource failed (%d)", layout.rawValue, status)
+            SwitchFixLog.source.error("switchTo(\(layout.rawValue)): TISSelectInputSource failed (\(status))")
+        } else {
+            SwitchFixLog.source.notice("layout switched to \(layout.rawValue) (\(target.1))")
         }
         return status == noErr
     }

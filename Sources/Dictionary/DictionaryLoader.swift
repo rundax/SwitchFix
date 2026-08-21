@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Utils
 
 public enum Language: String, CaseIterable {
     case english = "en_US"
@@ -111,15 +112,14 @@ public class DictionaryLoader {
 
         guard let index = loadDictionaryIndex(for: language) else {
             unavailableLanguages.insert(language)
-            NSLog("[SwitchFix] Dictionary: %@ unavailable; automatic correction target disabled", language.rawValue)
+            SwitchFixLog.dictionary.error("\(language.rawValue) unavailable; automatic correction target disabled")
             return nil
         }
         indices[language] = index
 
-        NSLog("[SwitchFix] Dictionary: loaded %@ (entries: %d, bloom: %@)",
-              language.rawValue,
-              index.wordCount,
-              index.bloomFilter == nil ? "no" : "yes")
+        SwitchFixLog.dictionary.info(
+            "loaded \(language.rawValue) (entries: \(index.wordCount), bloom: \(index.bloomFilter == nil ? "no" : "yes"))"
+        )
 
         return index
     }
@@ -127,19 +127,19 @@ public class DictionaryLoader {
     private func loadDictionaryIndex(for language: Language) -> DictionaryIndex? {
         if let binURL = findDictionaryURL(for: language, ext: "bin") {
             if let mapped = MappedDictionary(url: binURL) {
-                NSLog("[SwitchFix] Dictionary: using mmap binary %@", binURL.path)
+                SwitchFixLog.dictionary.debug("using mmap binary \(binURL.path)")
                 return mapped
             }
-            NSLog("[SwitchFix] Dictionary: failed to parse %@.bin", language.rawValue)
+            SwitchFixLog.dictionary.error("failed to parse \(language.rawValue).bin")
         }
 
         if textFallbackEnabledForTesting,
            let txtURL = findDictionaryURL(for: language, ext: "txt") {
-            NSLog("[SwitchFix] Dictionary: using text fallback %@", txtURL.path)
+            SwitchFixLog.dictionary.debug("using text fallback \(txtURL.path)")
             return TextDictionary(url: txtURL)
         }
 
-        NSLog("[SwitchFix] Dictionary: missing or invalid binary resource for %@", language.rawValue)
+        SwitchFixLog.dictionary.error("missing or invalid binary resource for \(language.rawValue)")
         return nil
     }
 

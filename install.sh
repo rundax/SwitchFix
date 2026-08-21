@@ -73,3 +73,7 @@ read -p "Press [Enter] to begin the permission setup..."
 
 echo ""
 echo "🎉 Setup Complete! SwitchFix is now installed and running."
+echo ""
+echo "📋 To watch live debug logs, run:"
+echo "   log stream --level debug --style compact --predicate 'subsystem == \"com.switchfix\"'"
+echo ""

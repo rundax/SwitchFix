@@ -157,10 +157,8 @@ public final class KeyboardMonitor {
               let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tapResult.tap, 0) else {
             let accessibility = Permissions.isAccessibilityGranted()
             let inputMonitoring = Permissions.isInputMonitoringGranted()
-            NSLog(
-                "[SwitchFix] KeyboardMonitor: failed to create event tap (Accessibility: %@, Input Monitoring: %@)",
-                accessibility ? "granted" : "missing",
-                inputMonitoring ? "granted" : "missing"
+            SwitchFixLog.monitor.error(
+                "KeyboardMonitor: failed to create event tap (Accessibility: \(accessibility ? "granted" : "missing"), Input Monitoring: \(inputMonitoring ? "granted" : "missing"))"
             )
             return false
         }
@@ -173,9 +171,8 @@ public final class KeyboardMonitor {
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tapResult.tap, enable: true)
-        NSLog(
-            "[SwitchFix] KeyboardMonitor: event tap active (%@)",
-            tapResult.location == .cgSessionEventTap ? "session" : "HID"
+        SwitchFixLog.monitor.notice(
+            "KeyboardMonitor: event tap active (\(tapResult.location == .cgSessionEventTap ? "session" : "HID"))"
         )
         return true
     }
@@ -243,6 +240,7 @@ public final class KeyboardMonitor {
 
     private func handleTapReset(event: CGEvent) {
         tapResetCount &+= 1
+        SwitchFixLog.monitor.notice("tap disabled by system, re-enabling (count=\(tapResetCount))")
         let input = captureState.capture(
             timestamp: event.timestamp,
             kind: .tapReset,

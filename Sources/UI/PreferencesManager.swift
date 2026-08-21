@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ServiceManagement
+import Utils
 
 public enum CorrectionMode: String {
     case automatic
@@ -46,7 +47,7 @@ public class PreferencesManager {
                         try SMAppService.mainApp.unregister()
                     }
                 } catch {
-                    NSLog("[PreferencesManager] Failed to toggle launch at login: \(error)")
+                    SwitchFixLog.preferences.error("Failed to toggle launch at login: \(error)")
                 }
             }
         }

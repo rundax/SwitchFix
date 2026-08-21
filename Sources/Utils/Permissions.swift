@@ -38,7 +38,7 @@ public class Permissions {
             return
         }
 
-        NSLog("[SwitchFix] Permissions: Accessibility not granted, requesting access")
+        SwitchFixLog.permissions.notice("Permissions: Accessibility not granted, requesting access")
         NSApplication.shared.activate(ignoringOtherApps: true)
         requestAccessibility()
         openAccessibilitySettings()
@@ -51,7 +51,7 @@ public class Permissions {
             return
         }
 
-        NSLog("[SwitchFix] Permissions: Input Monitoring not granted, requesting access")
+        SwitchFixLog.permissions.notice("Permissions: Input Monitoring not granted, requesting access")
         NSApplication.shared.activate(ignoringOtherApps: true)
         _ = requestInputMonitoring()
         openInputMonitoringSettings()
@@ -78,7 +78,7 @@ public class Permissions {
 
     private static func pollForAccessibilityAccess(completion: @escaping () -> Void) {
         guard !isAccessibilityGranted() else {
-            NSLog("[SwitchFix] Permissions: Accessibility granted")
+            SwitchFixLog.permissions.info("Permissions: Accessibility granted")
             completion()
             return
         }
@@ -89,7 +89,7 @@ public class Permissions {
 
     private static func pollForInputMonitoringAccess(completion: @escaping () -> Void) {
         guard !isInputMonitoringGranted() else {
-            NSLog("[SwitchFix] Permissions: Input Monitoring granted")
+            SwitchFixLog.permissions.info("Permissions: Input Monitoring granted")
             completion()
             return
         }

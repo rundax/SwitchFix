@@ -1,5 +1,6 @@
 import Foundation
 import Dictionary
+import Utils
 
 /// Represents a detection result — the target layout and converted word.
 public struct DetectionResult {
@@ -204,6 +205,7 @@ public class LayoutDetector {
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
         if containsMixedScripts(word) {
+            SwitchFixLog.detector.debug("mixed scripts, skipping '\(word)'")
             state = .buffering
             return nil
         }
@@ -211,9 +213,10 @@ public class LayoutDetector {
         // Check if the word is valid in the current layout's language
         let currentWordParts = splitTokenForValidation(word)
         let currentValidationInput = currentWordParts.core.isEmpty ? word : currentWordParts.core
-        
+
         let currentLanguage = languageForLayout(sourceLayout)
         if validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid {
+            SwitchFixLog.detector.debug("valid in \(currentLanguage.rawValue): '\(word)' — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
@@ -310,6 +313,7 @@ public class LayoutDetector {
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
                     ) {
+                        SwitchFixLog.detector.info("suppressed short word '\(word)' -> '\(finalWord)' (weak evidence, deferring)")
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
                         if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
@@ -400,6 +404,7 @@ public class LayoutDetector {
         }
 
         // No valid alternative found — unknown word, do nothing
+        SwitchFixLog.detector.debug("unknown word '\(word)' — no valid alternative in any layout")
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
         recordOutcome(.unknown)

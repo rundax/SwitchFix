@@ -80,21 +80,29 @@ class SettingsViewModel: ObservableObject {
 class RecorderState: ObservableObject {
     @Published var isRecording = false
     private var monitor: Any?
-    
+
+    deinit {
+        stop()
+    }
+
     func start(completion: @escaping (UInt16, UInt64) -> Void) {
         stop()
         isRecording = true
-        
+
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self = self else { return event }
-            
+
             // Handle CapsLock specifically
             if event.type == .flagsChanged && event.keyCode == 57 {
                 completion(57, 0)
                 self.stop()
                 return nil
             }
-            
+            // Pass through other modifier transitions so app-wide modifier state stays intact.
+            if event.type == .flagsChanged {
+                return event
+            }
+
             if event.type == .keyDown {
                 if event.keyCode == 53 { // ESC
                     self.stop()
@@ -193,6 +201,8 @@ class ExclusionsViewModel: ObservableObject {
             let icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
             return ExcludedAppRow(id: bundleID, name: name, icon: icon)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Drop selections that no longer exist (e.g. removed via the menu-bar toggle).
+        selection.formIntersection(apps.map { $0.id })
     }
 
     /// Refreshes the list of currently running apps eligible to be added (excludes ones already excluded and SwitchFix itself).
@@ -227,9 +237,12 @@ class ExclusionsViewModel: ObservableObject {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
 
-        guard panel.runModal() == .OK else { return }
-
-        addBundleIDs(panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier })
+        // Non-blocking: runModal() would spin a modal session on the main run loop
+        // and steal frontmost-app focus from the capture pipeline.
+        panel.begin { [weak self] response in
+            guard response == .OK, let self else { return }
+            self.addBundleIDs(panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier })
+        }
     }
 
     func removeSelected() {

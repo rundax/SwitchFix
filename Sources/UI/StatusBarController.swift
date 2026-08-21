@@ -17,6 +17,9 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     public override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         menu = NSMenu()
+        // Explicit isEnabled writes (e.g. "App Filtering Unavailable") only take
+        // effect when AppKit's auto-enablement is off.
+        menu.autoenablesItems = false
 
         super.init()
 
@@ -99,8 +102,6 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         installedLayoutsMenuItem = NSMenuItem(title: "Installed Layouts", action: nil, keyEquivalent: "")
         installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
         menu.addItem(installedLayoutsMenuItem)
-
-        menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem.separator())
 

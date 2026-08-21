@@ -44,6 +44,9 @@ public class SettingsWindowController: NSObject {
     }
 
     @objc private func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
+        }
         windowController = nil
     }
 }

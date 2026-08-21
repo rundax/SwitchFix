@@ -18,7 +18,7 @@ public struct ScriptAnalyzer {
         var hasCyrillic = false
         for scalar in text.unicodeScalars {
             let value = scalar.value
-            if (value >= 0x0041 && value <= 0x007A) || (value >= 0x0061 && value <= 0x007A) { // Quick basic latin check (A-Z, a-z)
+            if (value >= 0x0041 && value <= 0x005A) || (value >= 0x0061 && value <= 0x007A) { // Quick basic latin check (A-Z, a-z)
                 hasLatin = true
             } else if (value >= 0x0400 && value <= 0x04FF) {
                 hasCyrillic = true

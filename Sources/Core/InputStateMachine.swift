@@ -104,9 +104,17 @@ public struct InputStateMachine {
             return [.nativeUndo]
         case .hotkey:
             let word = currentBuffer.isEmpty ? nil : currentBuffer
+            // The correction rewrites these characters outside the event stream,
+            // so the buffer must drop them; keeping them desyncs the buffer from
+            // the screen and makes the next flush delete already-corrected text.
+            currentBuffer = ""
             return [.requestManualCorrection(word: word, sequence: input.sequence, context: input.context)]
         case .revertHotkey:
             let word = currentBuffer.isEmpty ? nil : currentBuffer
+            // Same desync hazard: whether the revert succeeds (original text is
+            // restored) or falls back to a manual correction, the on-screen word
+            // is rewritten without buffer-visible events.
+            currentBuffer = ""
             return [.requestRevert(word: word, sequence: input.sequence, context: input.context)]
         case .delete:
             guard canBuffer(input.context) else {

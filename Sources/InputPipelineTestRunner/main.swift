@@ -119,6 +119,54 @@ run("autorepeat preserved") {
     check(word == "cc", "autorepeat characters must not be deduplicated")
 }
 
+run("manual hotkey resyncs buffer") {
+    let current = context()
+    var machine = automaticMachine(current)
+    for (index, character) in ["g", "h", "b", "d", "t", "n"].enumerated() {
+        _ = machine.consume(input(
+            sequence: UInt64(index + 1),
+            kind: .character(character),
+            context: current
+        ))
+    }
+    let hotkeyCommands = machine.consume(input(sequence: 7, kind: .hotkey, context: current))
+    guard case .requestManualCorrection(let word?, _, _) = hotkeyCommands.first else {
+        check(false, "hotkey must request manual correction with the buffered word")
+        return
+    }
+    check(word == "ghbdtn", "hotkey must hand the buffered word to correction")
+    check(machine.currentBuffer.isEmpty, "buffer must drop the word handed to correction")
+
+    // The correction rewrites the word via tagged events the pipeline ignores,
+    // so only post-hotkey typing may remain in the buffer.
+    for (index, character) in ["d", "r", "u", "g"].enumerated() {
+        _ = machine.consume(input(
+            sequence: UInt64(8 + index),
+            kind: .character(character),
+            context: current
+        ))
+    }
+    let flushed = machine.consume(input(sequence: 12, kind: .boundary(" "), context: current))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushed == ["drug"], "stale pre-correction text must never be re-deleted at the next boundary")
+}
+
+run("revert hotkey resyncs buffer") {
+    let current = context()
+    var machine = automaticMachine(current)
+    _ = machine.consume(input(sequence: 1, kind: .character("x"), context: current))
+    let commands = machine.consume(input(sequence: 2, kind: .revertHotkey, context: current))
+    guard case .requestRevert(let word?, _, _) = commands.first else {
+        check(false, "revert hotkey must request revert with the buffered word")
+        return
+    }
+    check(word == "x", "revert must hand the buffered word to the undo path")
+    check(machine.currentBuffer.isEmpty, "revert must drop the buffered word to avoid desync")
+}
+
 run("generated identity ignored") {
     let current = context()
     var machine = automaticMachine(current)

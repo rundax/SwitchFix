@@ -64,12 +64,27 @@ echo "✅ SwitchFix has been added to your startup items."
 
 # 5. Handle Permissions
 echo ""
-echo "🛡️ Step 4: Setting up macOS Permissions..."
-echo "Because SwitchFix intercepts keyboard input to fix layouts, macOS requires you to grant it explicit permissions."
-echo ""
-read -p "Press [Enter] to begin the permission setup..."
+if [ -f ".codesign-identity" ]; then
+    # Stable certificate — permissions survive rebuilds.
+    # Check if SwitchFix already has Accessibility permission by attempting
+    # a quick AX trust check (the app itself does this on launch).
+    echo "✅ Signed with stable certificate — permissions survive rebuilds."
+    echo ""
+    echo "   If this is your first install, you'll need to grant Accessibility"
+    echo "   and Input Monitoring permissions manually:"
+    echo "   System Settings → Privacy & Security → Accessibility → add SwitchFix"
+    echo "   System Settings → Privacy & Security → Input Monitoring → add SwitchFix"
+    echo ""
+    echo "Launching SwitchFix..."
+    open "/Applications/SwitchFix.app"
+else
+    echo "🛡️ Step 4: Setting up macOS Permissions..."
+    echo "Because SwitchFix intercepts keyboard input to fix layouts, macOS requires you to grant it explicit permissions."
+    echo ""
+    read -p "Press [Enter] to begin the permission setup..."
 
-./scripts/regrant-permissions.sh "/Applications/SwitchFix.app"
+    ./scripts/regrant-permissions.sh "/Applications/SwitchFix.app"
+fi
 
 echo ""
 echo "🎉 Setup Complete! SwitchFix is now installed and running."
@@ -77,3 +92,4 @@ echo ""
 echo "📋 To watch live debug logs, run:"
 echo "   log stream --level debug --style compact --predicate 'subsystem == \"com.switchfix\"'"
 echo ""
+

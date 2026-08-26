@@ -8,6 +8,7 @@ DerivedData/
 .vscode/
 .claude/settings.local.json
 .grepai/
+.codesign-identity
 
 # Generated dictionary artifacts
 .build/dictionary-bin/

@@ -113,17 +113,46 @@ if [ -d "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" ]; then
 fi
 
 # Code sign
-# Prefer a stable signing identity (set via SWITCHFIX_CODESIGN_IDENTITY) so
-# macOS TCC permissions survive across rebuilds.
-if [ -n "${SWITCHFIX_CODESIGN_IDENTITY:-}" ]; then
-    echo "Signing with identity: $SWITCHFIX_CODESIGN_IDENTITY"
-    codesign --force --deep --sign "$SWITCHFIX_CODESIGN_IDENTITY" "$APP_BUNDLE"
+# Prefer a stable signing identity so macOS TCC permissions (Accessibility,
+# Input Monitoring) survive across rebuilds. Resolution order:
+#   1. SWITCHFIX_CODESIGN_IDENTITY env var (explicit override)
+#   2. .codesign-identity file (created by scripts/setup-codesign.sh)
+#   3. Ad-hoc signing (last resort — permissions break every rebuild)
+IDENTITY="${SWITCHFIX_CODESIGN_IDENTITY:-}"
+IDENTITY_FILE="$PROJECT_DIR/.codesign-identity"
+
+if [ -z "$IDENTITY" ] && [ -f "$IDENTITY_FILE" ]; then
+    IDENTITY="$(cat "$IDENTITY_FILE")"
+    # Verify the identity still exists in the keychain
+    if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY"; then
+        echo "WARNING: Certificate \"$IDENTITY\" from .codesign-identity not found in keychain."
+        echo "         Run scripts/setup-codesign.sh to recreate it."
+        IDENTITY=""
+    fi
+fi
+
+if [ -n "$IDENTITY" ]; then
+    echo "Signing with identity: $IDENTITY"
+    codesign --force --deep --sign "$IDENTITY" "$APP_BUNDLE"
 else
     echo "Signing with ad-hoc identity..."
     codesign --force --deep --sign - "$APP_BUNDLE"
-    echo "WARNING: ad-hoc signature changes on each rebuild."
-    echo "         Accessibility/Input Monitoring may need to be granted again."
-    echo "         Use scripts/regrant-permissions.sh after rebuilding."
+    echo ""
+    echo "WARNING: Ad-hoc signature changes on each rebuild."
+    echo "         Accessibility/Input Monitoring permissions will break."
+    echo ""
+    echo "  ➜  Run scripts/setup-codesign.sh to create a stable certificate."
+    echo "     This is a one-time setup that eliminates the re-grant cycle."
+    echo ""
+fi
+
+# Unregister dist/SwitchFix.app from LaunchServices to avoid dual-registration
+# with /Applications/SwitchFix.app. Two registrations for the same bundle ID
+# cause ambiguous TCC resolution and can trigger a crash in Apple's
+# SecurityPrivacyExtension when listing apps in Privacy & Security.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+if [ -x "$LSREGISTER" ] && [ -d "/Applications/SwitchFix.app" ]; then
+    "$LSREGISTER" -u "$APP_BUNDLE" 2>/dev/null || true
 fi
 
 echo ""

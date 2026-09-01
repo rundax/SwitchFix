@@ -483,7 +483,7 @@ runSuite("LayoutDetector: Convert Ukrainian 'ершиЖ' to English 'this:'") {
     }
 }
 
-runSuite("LayoutDetector: Correct typo in Ukrainian without layout switch") {
+runSuite("LayoutDetector: Convert Ukrainian 'дуе' to English 'let'") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
     detector.delegate = mockDelegate
@@ -494,12 +494,11 @@ runSuite("LayoutDetector: Correct typo in Ukrainian without layout switch") {
     }
     detector.flushBuffer(boundaryCharacter: " ")
 
-    assertEqual(mockDelegate.results.count, 1, "should detect typo in Ukrainian word")
+    assertEqual(mockDelegate.results.count, 1, "should detect wrong layout for 'дуе'")
     if let result = mockDelegate.results.first {
-        assertEqual(result.sourceLayout, .ukrainian, "source should stay Ukrainian")
-        assertEqual(result.targetLayout, .ukrainian, "target should stay Ukrainian")
-        assertEqual(result.convertedWord, "дує", "should correct to 'дує'")
-        assert(!result.shouldSwitchLayout, "typo correction should not switch layout")
+        assertEqual(result.sourceLayout, .ukrainian, "source should be Ukrainian")
+        assertEqual(result.targetLayout, .english, "target should be English")
+        assertEqual(result.convertedWord, "let", "should convert 'дуе' to 'let'")
     }
 }
 

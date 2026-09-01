@@ -6,8 +6,9 @@ import os
 public class Permissions {
     public static func ensureRequiredPermissions(completion: @escaping () -> Void) {
         ensureAccessibility {
-            ensureInputMonitoring {
-                completion()
+            completion()
+            if !isInputMonitoringGranted() {
+                _ = requestInputMonitoring()
             }
         }
     }

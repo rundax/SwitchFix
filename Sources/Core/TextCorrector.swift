@@ -114,19 +114,22 @@ public final class TextCorrector {
             return []
         }
         var events: [CorrectionEventDescriptor] = []
-        events.reserveCapacity(plan.deleteCount * 2 + 2)
+        events.reserveCapacity(plan.deleteCount * 2 + plan.replacementText.count * 2)
         for _ in 0..<plan.deleteCount {
             events.append(CorrectionEventDescriptor(kind: .deleteKeyDown, sourceUserData: switchFixEventMarker))
             events.append(CorrectionEventDescriptor(kind: .deleteKeyUp, sourceUserData: switchFixEventMarker))
         }
-        events.append(CorrectionEventDescriptor(
-            kind: .unicodeKeyDown(plan.replacementText),
-            sourceUserData: switchFixEventMarker
-        ))
-        events.append(CorrectionEventDescriptor(
-            kind: .unicodeKeyUp(plan.replacementText),
-            sourceUserData: switchFixEventMarker
-        ))
+        for char in plan.replacementText {
+            let str = String(char)
+            events.append(CorrectionEventDescriptor(
+                kind: .unicodeKeyDown(str),
+                sourceUserData: switchFixEventMarker
+            ))
+            events.append(CorrectionEventDescriptor(
+                kind: .unicodeKeyUp(str),
+                sourceUserData: switchFixEventMarker
+            ))
+        }
         return events
     }
 
@@ -244,10 +247,10 @@ public final class TextCorrector {
             "revert APPLIED '\(inverse.correctedText)' <- '\(inverse.originalText)' deletes=\(inverse.deleteCount) pid=\(inverse.targetPID)"
         )
         if inverse.isEligible(using: latestCaptureState()) {
-            let layout = undo.plan.originalLayout
+            let undoLayout = undo.plan.originalLayout
             // TIS APIs are main-thread-only; undo() runs on the correction queue.
             DispatchQueue.main.async { [inputSourceManager] in
-                inputSourceManager.switchTo(layout)
+                inputSourceManager.switchTo(undoLayout)
             }
         }
         return true
@@ -343,7 +346,7 @@ public final class TextCorrector {
     private func makeCorrectionEvents(plan: CorrectionPlan) -> [CGEvent]? {
         guard eventSource != nil, !plan.replacementText.isEmpty else { return nil }
         var events: [CGEvent] = []
-        events.reserveCapacity(plan.deleteCount * 2 + 2)
+        events.reserveCapacity(plan.deleteCount * 2 + plan.replacementText.count * 2)
         for _ in 0..<plan.deleteCount {
             guard let keyDown = makeKeyEvent(keyCode: 51, keyDown: true),
                   let keyUp = makeKeyEvent(keyCode: 51, keyDown: false) else {
@@ -353,12 +356,15 @@ public final class TextCorrector {
             events.append(keyUp)
         }
 
-        guard let keyDown = makeUnicodeEvent(text: plan.replacementText, keyDown: true),
-              let keyUp = makeUnicodeEvent(text: plan.replacementText, keyDown: false) else {
-            return nil
+        for char in plan.replacementText {
+            let str = String(char)
+            guard let keyDown = makeUnicodeEvent(text: str, keyDown: true),
+                  let keyUp = makeUnicodeEvent(text: str, keyDown: false) else {
+                return nil
+            }
+            events.append(keyDown)
+            events.append(keyUp)
         }
-        events.append(keyDown)
-        events.append(keyUp)
         return events
     }
 

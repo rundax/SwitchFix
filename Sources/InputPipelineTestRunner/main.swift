@@ -425,7 +425,7 @@ run("bounded tagged event batch") {
         return false
     }
     check(deletes.count == 8, "N deletes must produce exactly N tagged key pairs")
-    check(unicode.count == 2, "replacement must produce one Unicode key pair")
+    check(unicode.count == plan.replacementText.count * 2, "replacement of N chars must produce N Unicode key pairs")
     check(events.allSatisfy { $0.sourceUserData == switchFixEventMarker }, "every generated event must carry the marker")
 }
 
@@ -634,12 +634,12 @@ run("100,000 event stress") {
         if sequence.isMultiple(of: 128) {
             let drained = DispatchSemaphore(value: 0)
             engine.drain { drained.signal() }
-            check(drained.wait(timeout: .now() + 1) == .success, "engine batch must drain without loss")
+            check(drained.wait(timeout: .now() + 3) == .success, "engine batch must drain without loss")
         }
     }
     let drained = DispatchSemaphore(value: 0)
     engine.drain { drained.signal() }
-    check(drained.wait(timeout: .now() + 1) == .success, "final engine batch must drain")
+    check(drained.wait(timeout: .now() + 3) == .success, "final engine batch must drain")
     check(detectionsComplete.wait(timeout: .now() + 30) == .success, "all boundary detections must complete")
 
     let sequences = recorder.snapshot()

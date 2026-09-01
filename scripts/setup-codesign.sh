@@ -90,20 +90,8 @@ CERTEOF
     rm -f "$CERT_CONFIG"
 fi
 
-# Method 2: Use the security command to create via Certificate Assistant
-if [ "$CREATED" = false ]; then
-    # security create-keypair and then self-sign
-    # This doesn't reliably create codesigning certs, so fall back to
-    # AppleScript driving Keychain Access's Certificate Assistant
-    osascript <<APPLESCRIPT 2>/dev/null && CREATED=true || true
-        -- Use Certificate Assistant to create a self-signed code signing certificate
-        -- This is equivalent to: Keychain Access → Certificate Assistant → Create a Certificate
-        do shell script "
-            # Use the undocumented but stable Certificate Assistant CLI
-            /usr/bin/security create-keypair -a rsa -s 2048 -f -1 '$CERT_NAME' 2>/dev/null || true
-        "
-APPLESCRIPT
-fi
+# Note: security create-keypair only creates key pairs, not certificates.
+# If certtool didn't work, fall through to manual instructions below.
 
 # If automated methods failed, guide the user through manual creation
 if [ "$CREATED" = false ] || ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$CERT_NAME"; then

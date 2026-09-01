@@ -96,9 +96,6 @@ public class LayoutDetector {
     private static let latinLowercaseRange: ClosedRange<UInt32> = 0x0061...0x007A
     private static let latinUppercaseRange: ClosedRange<UInt32> = 0x0041...0x005A
     private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
-    private static let ukrainianTypoOverrides: [String: String] = [
-        "дуе": "дує"
-    ]
 
     /// The currently active keyboard layout (set externally by InputSourceManager).
     public var currentLayout: Layout = .english
@@ -234,25 +231,6 @@ public class LayoutDetector {
             recordOutcome(.validCurrent)
             state = .buffering
             return nil
-        }
-
-        if sourceLayout == .ukrainian,
-           let override = ukrainianTypoOverride(for: word) {
-                let correctedWord = applyCase(from: word, to: override)
-                let result = DetectionResult(
-                    sourceLayout: sourceLayout,
-                    targetLayout: sourceLayout,
-                    convertedWord: correctedWord,
-                    originalWord: word,
-                    shouldSwitchLayout: false
-                )
-                lastDetectionResult = result
-                pendingSwitchLayout = nil
-                pendingSwitchCount = 0
-                consecutiveWrongCount = 0
-                recordOutcome(.corrected)
-                state = .buffering
-                return result
         }
 
         // Try converting to alternative layouts
@@ -705,11 +683,6 @@ public class LayoutDetector {
         let core = start < end ? String(chars[start..<end]) : ""
         let suffix = end < chars.count ? String(chars[end..<chars.count]) : ""
         return (prefix, core, suffix)
-    }
-
-    private func ukrainianTypoOverride(for word: String) -> String? {
-        let normalized = word.lowercased()
-        return LayoutDetector.ukrainianTypoOverrides[normalized]
     }
 
     /// Split trailing punctuation/symbols from a word.

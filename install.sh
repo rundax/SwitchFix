@@ -64,15 +64,23 @@ echo "✅ SwitchFix has been added to your startup items."
 
 # 5. Handle Permissions
 echo ""
-if [ -f ".codesign-identity" ]; then
-    echo "✅ Signed with stable certificate — permissions survive rebuilds."
-    echo ""
-    echo "   If this is your first install, ensure Accessibility and Input"
-    echo "   Monitoring permissions are granted in System Settings."
-    echo ""
-    echo "🚀 Launching SwitchFix..."
-    open "/Applications/SwitchFix.app"
+
+# Decide whether to walk through permission setup:
+#  - ad-hoc signed builds (no stable certificate) always need a fresh grant,
+#  - stable-signed builds keep their grants across rebuilds, except on a
+#    first install when no grant exists yet.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NEEDS_PERMISSION_SETUP=false
+if [ ! -f "$SCRIPT_DIR/.codesign-identity" ]; then
+    NEEDS_PERMISSION_SETUP=true
 else
+    read -p "   Is this the first time SwitchFix is installed on this Mac? (y/N) " FIRST_INSTALL || FIRST_INSTALL="N"
+    if [[ "$FIRST_INSTALL" =~ ^[Yy]$ ]]; then
+        NEEDS_PERMISSION_SETUP=true
+    fi
+fi
+
+if [ "$NEEDS_PERMISSION_SETUP" = true ]; then
     echo "🛡️ Step 4: Setting up macOS Permissions..."
     echo "SwitchFix intercepts keyboard input to fix layouts, so macOS requires you to grant it explicit permissions."
     echo ""
@@ -113,6 +121,12 @@ EOF
     echo ""
     echo "🚀 Launching SwitchFix..."
     open "/Applications/SwitchFix.app"
+else
+    echo "✅ Signed with stable certificate — permissions survive rebuilds."
+    echo "   Your existing Accessibility and Input Monitoring grants are kept."
+    echo ""
+    echo "🚀 Launching SwitchFix..."
+    open "/Applications/SwitchFix.app"
 fi
 
 echo ""
@@ -125,4 +139,3 @@ echo ""
 echo "📋 To watch live debug logs, run:"
 echo "   log stream --level debug --style compact --predicate 'subsystem == \"com.switchfix\"'"
 echo ""
-

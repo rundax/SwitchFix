@@ -42,61 +42,19 @@ fi
 
 # ── Create the certificate via Keychain Access certificate assistant ─────────
 #
-# macOS's `security` CLI doesn't fully support creating code-signing
-# certificates that pass the codesigning policy check. The only reliable
-# method is the Certificate Assistant built into Keychain Access, which
-# we can drive via AppleScript/osascript.
+# macOS has no reliable CLI path to create code-signing certificates:
+# `security` creates key pairs (not certificates), and `certtool c` is
+# interactive-only, takes a destination keychain via k= (not a config
+# file), and its self-signed certs don't satisfy the codesigning policy.
+# The only reliable method is the Certificate Assistant built into
+# Keychain Access, so we guide the user through it.
 
 echo "Creating self-signed code-signing certificate: \"$CERT_NAME\""
 echo ""
-echo "This uses macOS Certificate Assistant — you may see a brief Keychain"
-echo "Access window. No manual steps required."
+echo "A Keychain Access window will open — follow the 5 steps below."
 echo ""
 
-# The Certificate Assistant can be driven via its command-line interface
-# embedded in the Security framework. We use a signing identity that
-# macOS will recognize for the codesigning policy.
-#
-# Fallback: if the command-line approach doesn't work, we guide the user
-# through the Keychain Access GUI.
-
-# Try the command-line certificate creation first
-CREATED=false
-
-# Method: Use certtool (ships with macOS) to create a self-signed cert
-# certtool is Apple's tool and creates certs that macOS trusts for codesigning
-if command -v certtool >/dev/null 2>&1; then
-    # Create a temporary certificate request config
-    CERT_CONFIG="/tmp/switchfix-cert-config"
-    cat > "$CERT_CONFIG" <<CERTEOF
-## cert/key parameters
-certType       = 00
-serial         = 01
-hashType       = sha256
-p              = ~/Library/Keychains/login.keychain-db
-
-## Subject
-commonName     = $CERT_NAME
-
-## Extensions
-keyUsage       = digitalSignature
-extendedKeyUsage = codeSigning
-CERTEOF
-
-    # Try creating with certtool
-    if certtool c k="$CERT_CONFIG" 2>/dev/null; then
-        CREATED=true
-    fi
-    rm -f "$CERT_CONFIG"
-fi
-
-# Note: security create-keypair only creates key pairs, not certificates.
-# If certtool didn't work, fall through to manual instructions below.
-
-# If automated methods failed, guide the user through manual creation
-if [ "$CREATED" = false ] || ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$CERT_NAME"; then
-    echo "Automated certificate creation didn't work on this macOS version."
-    echo ""
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$CERT_NAME"; then
     echo "Creating via Keychain Access (this takes 10 seconds)..."
     echo ""
 

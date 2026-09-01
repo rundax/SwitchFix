@@ -1,43 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-# Purge stale TCC (Privacy & Security) entries for apps that are no longer
-# installed. These orphan entries can trigger a crash in Apple's
-# SecurityPrivacyExtension when it tries to resolve app metadata for
-# entries that point to deleted bundles.
+# Keep SwitchFix's own LaunchServices registration consistent.
 #
-# This is safe to run — it only removes entries for apps that don't exist
-# on disk. Your SwitchFix permissions are not affected.
+# When both dist/SwitchFix.app (a local build) and /Applications/SwitchFix.app
+# exist, LaunchServices may resolve com.switchfix.app to the dist copy, which
+# confuses TCC and can crash Apple's SecurityPrivacyExtension when the
+# Privacy & Security pane loads. This script unregisters the dist copy so
+# only the installed app remains registered.
+#
+# Only com.switchfix.app is touched. We deliberately do NOT reset TCC entries
+# for other applications: `tccutil reset` would revoke live permissions for
+# apps that are still installed, and macOS cleans up orphaned TCC records for
+# apps you uninstalled automatically (or they remain inert).
 
-echo "Cleaning stale TCC entries from Privacy & Security..."
+echo "Cleaning stale LaunchServices registrations..."
 echo ""
 
 CLEANED=0
-
-# ── Stale bundle IDs (apps no longer installed) ──────────────────────────────
-
-STALE_APPS=(
-    "com.blizzard.WarcraftIII"
-    "com.logi.cp-dev-mgr"
-    "com.audiowhisper.app"
-)
-
-SERVICES=("Accessibility" "ListenEvent")
-
-for svc in "${SERVICES[@]}"; do
-    for app in "${STALE_APPS[@]}"; do
-        if tccutil reset "$svc" "$app" 2>/dev/null; then
-            echo "  ✓ Removed $app from $svc"
-            CLEANED=$((CLEANED + 1))
-        fi
-    done
-done
-
-# input-leap (keyboard/mouse sharing tool, often uninstalled)
-if tccutil reset Accessibility input-leap 2>/dev/null; then
-    echo "  ✓ Removed input-leap from Accessibility"
-    CLEANED=$((CLEANED + 1))
-fi
 
 # ── Unregister dist/SwitchFix.app if /Applications copy exists ───────────────
 
@@ -56,11 +36,7 @@ fi
 
 echo ""
 if [ "$CLEANED" -gt 0 ]; then
-    echo "✅ Cleaned $CLEANED stale entries."
-    echo ""
-    echo "Note: Some path-based entries (e.g. deleted LogiMgrDaemon) cannot be"
-    echo "cleared via tccutil — they'll be cleaned up by macOS automatically"
-    echo "or remain inert."
+    echo "✅ Cleaned $CLEANED stale registration(s)."
 else
-    echo "✅ No stale entries found — your TCC database is clean."
+    echo "✅ No stale registrations found — LaunchServices is clean."
 fi

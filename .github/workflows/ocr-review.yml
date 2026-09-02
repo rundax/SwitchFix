@@ -37,7 +37,7 @@ permissions:
 jobs:
   code-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     # Run only on human-authored comments from contributors/maintainers on a PR
     # starting with trigger keywords (/open-code-review, @open-code-review, /ocr, /review).
     # Automatic runs on PR open/synchronize are intentionally disabled.

@@ -1,6 +1,6 @@
 # Feature Plan: Per-App Default Language / Layout Switching
 
-> **Status**: ✅ Approved / Ready for Implementation (Council Reviewed)  
+> **Status**: ✅ Implementation-ready after council amendments
 > **Priority**: High  
 > **Date created**: 2026-09-01 (Amended: 2026-09-01)  
 > **Target Module**: `Core`, `UI`, `SwitchFixApp`, `TestRunner`  
@@ -24,7 +24,7 @@ Currently, when users switch between Telegram and Arc, they must manually press 
 ## 2. Goals & Non-Goals
 
 ### Goals
-1. **Per-App Language Rules**: Allow users to assign a default keyboard layout (e.g., *English*, *Ukrainian*, *Russian*) to any installed application by its Bundle Identifier.
+1. **Per-App Language Rules**: Allow users to assign a default keyboard layout (e.g., *English*, *Ukrainian*, *Russian*) to any supported installed application by its Bundle Identifier. Supported targets are applications that activate with `NSApplication.ActivationPolicy.regular`.
 2. **Proactive Layout Switching**: When an application with a configured rule becomes frontmost, automatically switch macOS to that layout via `InputSourceManager`.
 3. **Settings UI**: Add a clean, native SwiftUI configuration section in the Settings window with:
    - List of configured apps showing App Icon, App Name, Bundle ID, and a Language Picker dropdown.
@@ -33,7 +33,7 @@ Currently, when users switch between Telegram and Arc, they must manually press 
    - Full scrollability to prevent clipping alongside the Excluded Apps section.
 4. **Status Bar Menu Integration**: Provide a fast contextual submenu in the Menu Bar item to view or change the default language for the currently active app without opening Settings.
 5. **Zero-Lag & Pipeline Safety**: Ensure automatic layout switching on app activation does not interfere with the zero-lag event tap, does not corrupt detector state, and does not trigger spurious text corrections.
-6. **Persistence & Thread-Safety**: Persist all rules in `UserDefaults` with atomic, lock-protected in-memory caching (`OSAllocatedUnfairLock`).
+6. **Persistence & Thread-Safety**: Persist all rules in `UserDefaults` with one lock covering the in-memory mutation and snapshot write (`OSAllocatedUnfairLock`); expose an injectable defaults store for isolated tests.
 
 ### Non-Goals (for this phase)
 1. Window-specific or tab-specific rules within the same application (macOS accessibility limits make per-app bundle ID the standard and robust scope).
@@ -61,16 +61,18 @@ Currently, when users switch between Telegram and Arc, they must manually press 
 +------------------------------------+------------------------------------+
 |                           AppDelegate                                   |
 |   - NSWorkspace.didActivateApplicationNotification                      |
-|   - Checks: activationPolicy == .regular && bundleID != ownBundleID     |
-|   - Checks: newBundleID != previousBundleID (prevents intra-app reset)  |
+|   - Main-thread coordinator + (bundleID, PID) activation identity       |
+|   - Context invalidation for every activation; rules only for .regular |
 |   - Checks: PerAppLanguageManager.shared.defaultLayout(for: bundleID)   |
+|   - Correlated selection token rejects stale TIS notifications          |
 +------------------------------------+------------------------------------+
                                      |
-                                     v (If target layout != current layout)
+                                     v (If configured layout has no matching current source)
 +------------------------------------+------------------------------------+
 |                       InputSourceManager                                |
 |   - TISSelectInputSource(preferredSources[targetLayout])                |
-|   - Sets pendingSelectionID to prevent false autocorrection             |
+|   - Coalesced, tokenized pending selection                              |
+|   - Mismatched/stale notifications do not consume current expectation   |
 +-------------------------------------------------------------------------+
 ```
 
@@ -79,15 +81,23 @@ Currently, when users switch between Telegram and Arc, they must manually press 
 **Location:** `Sources/Core/PerAppLanguageManager.swift`  
 *(Note: Placed in `Core` because `Layout` is defined in `Core`, preserving `Utils` as a zero-dependency foundational module).*
 
+The manager is the only owner of rule mutation. Production uses the singleton; tests use the public initializer with an isolated `UserDefaults(suiteName:)` store.
+
+Required behavior:
+
+- Parse `UserDefaults.dictionary(forKey:)` as `[String: Any]`; preserve valid string/layout entries even when other entries have invalid types or raw values.
+- Ignore empty bundle identifiers and no-op when a write would not change the current rule.
+- Mutate state and write the complete `[String: String]` snapshot under the same lock. Post notifications after releasing the lock, on the main thread.
+- Keep rules for uninstalled apps so reinstalling the same bundle can recover the rule. A missing layout is retained but treated as unavailable by the UI and activation path.
+
 ```swift
 import Foundation
 import os
-import Utils
 
 public final class PerAppLanguageManager {
-    public static let shared = PerAppLanguageManager()
+    public static let shared = PerAppLanguageManager(defaults: .standard)
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private static let storageKey = "SwitchFix_perAppDefaultLanguages"
 
     private struct State {
@@ -97,9 +107,12 @@ public final class PerAppLanguageManager {
 
     private let state: OSAllocatedUnfairLock<State>
 
-    private init() {
-        let rawDict = defaults.dictionary(forKey: Self.storageKey) as? [String: String] ?? [:]
-        let initialRules = rawDict.compactMapValues { Layout(rawValue: $0) }
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let rawDict = defaults.dictionary(forKey: Self.storageKey) ?? [:]
+        let initialRules = rawDict.compactMapValues { value in
+            (value as? String).flatMap(Layout.init(rawValue:))
+        }
         self.state = OSAllocatedUnfairLock(initialState: State(rules: initialRules))
     }
 
@@ -108,16 +121,28 @@ public final class PerAppLanguageManager {
     }
 
     public func setDefaultLayout(_ layout: Layout?, for bundleID: String) {
-        let snapshot = state.withLock { state -> [String: Layout] in
+        guard !bundleID.isEmpty else { return }
+        let changed = state.withLock { state -> Bool in
+            let oldLayout = state.rules[bundleID]
             if let layout = layout {
                 state.rules[bundleID] = layout
             } else {
                 state.rules.removeValue(forKey: bundleID)
             }
-            return state.rules
+            let newLayout = state.rules[bundleID]
+            guard oldLayout != newLayout else { return false }
+            defaults.set(state.rules.mapValues(\.rawValue), forKey: Self.storageKey)
+            return true
         }
-        save(snapshot)
-        NotificationCenter.default.post(name: .perAppLanguageDidChange, object: nil)
+        guard changed else { return }
+        let post = {
+            NotificationCenter.default.post(name: .perAppLanguageDidChange, object: nil)
+        }
+        if Thread.isMainThread {
+            post()
+        } else {
+            DispatchQueue.main.async(execute: post)
+        }
     }
 
     public func removeDefaultLayout(for bundleID: String) {
@@ -131,10 +156,6 @@ public final class PerAppLanguageManager {
         }
     }
 
-    private func save(_ rules: [String: Layout]) {
-        let rawDict = rules.mapValues { $0.rawValue }
-        defaults.set(rawDict, forKey: Self.storageKey)
-    }
 }
 
 public extension Notification.Name {
@@ -144,20 +165,21 @@ public extension Notification.Name {
 
 ### 3.2 App Activation Flow (`AppDelegate.swift`)
 
-When an application is activated (`NSWorkspace.didActivateApplicationNotification`):
-1. Receive `NSRunningApplication` and extract its `bundleIdentifier`.
-2. **Pre-Conditions & Guards**:
-   - Guard `application.activationPolicy == .regular` (ignore background helpers, ScreenSaver, LoginWindow, Spotlight overlays).
-   - Guard `bundleID != Bundle.main.bundleIdentifier` (never apply rules to SwitchFix itself).
-   - Guard `bundleID != previousBundleID` (**Intra-app protection**: if the user switches windows within Telegram or clicks Telegram again after a brief system event, do *not* clobber the user's manual in-session layout changes).
-3. **Rule Lookup & Switching**:
-   - Update `previousBundleID = bundleID`.
-   - Check if a rule exists: `guard let targetLayout = PerAppLanguageManager.shared.defaultLayout(for: bundleID)`.
-   - Check current layout: `let currentLayout = inputSourceManager.currentLayout()`.
-   - If `currentLayout != targetLayout`:
-     - Call `inputSourceManager.switchTo(targetLayout)`.
-     - `switchTo` sets `pendingSelectionID` so that the asynchronous `kTISNotifySelectedKeyboardInputSourceChanged` notification treats it as expected programmatic selection rather than manual user switching.
-4. Update `CaptureStateStore` and `InputEngine` context with the updated layout and clear any pending keystroke buffer for the new application.
+All activation handling and TIS selection requests run on the main thread. Add a small, testable activation coordinator (in `Core`) that accepts an `ActivationIdentity` (`bundleID`, PID, and `isRegular`) and returns whether to apply a rule. It tracks the last observed identity, not only a bundle ID: a relaunch with a new PID is a new activation, while same-process window changes do not reset the user's layout. This is app-level retention; the plan does not claim to identify individual windows.
+
+Use this exact sequence for both startup and `NSWorkspace.didActivateApplicationNotification`:
+
+1. Read the application identity and increment an activation generation. Update the last observed identity even for non-regular apps, overlays, and SwitchFix itself.
+2. Refresh the current input source and immediately replace `CaptureStateStore` context with the new PID, current layout, current source ID, and unknown focus. This invalidates stale detector/correction state for every activation; skipping a default rule must never skip context invalidation.
+3. Queue `InputEngine.updateContext` before any selection request. Events captured against the old epoch are rejected by the existing stale-context guard.
+4. For a regular, non-SwitchFix app with a rule, compare the actual current source ID against `InputSourceManager`'s layout match/preferred-source contract. Do not compare only `Layout`, because unsupported sources currently fall back to `.english`.
+5. If a switch is needed, call a new tokenized `InputSourceManager.requestSwitch(to: activationGeneration:)` API on the main thread. The manager coalesces to the newest request and invokes callbacks with the token, target source ID, and result.
+6. `willSelect` may publish a generated-layout transition only if its token still matches the current activation generation and PID. A delayed selection from an earlier app is ignored/reconciled, never applied to the new app.
+7. On a matching TIS notification, update the context to the confirmed source and call `handleGeneratedLayoutContext`. On failure or a stale/mismatched notification, refresh the actual source, update context, clear the pending expectation, and do not invoke layout-switch autocorrection.
+
+`InputSourceManager` must return an explicit `.matched`, `.superseded`, or `.manual` result when observing a source notification. A mismatched source must never silently consume the expectation and then be reported as manual: it either remains pending until the matching source arrives or is atomically cancelled as superseded, with its token returned so the app delegate can reconcile without correction. The API must make it impossible for two rapid requests to overwrite a token without the observer being able to distinguish the stale notification.
+
+At launch, initialize the identity and process the already-frontmost application through the same routine after the initial context is created. This covers a configured app that was frontmost before SwitchFix launched.
 
 ---
 
@@ -199,22 +221,28 @@ A new dedicated section **"App Default Languages"** will be added to `SettingsVi
    - **`+` Button (Menu)**:
      - `Choose from Running Apps…`: Opens reusable `AppPickerView` sheet.
      - `Choose from Applications Folder…`: Opens `NSOpenPanel` defaulting to `/Applications`.
-     - **Default Heuristic**: When an app is added, default to the user's primary secondary layout (e.g. `.ukrainian` if available, or currently active layout).
+   - **Default Heuristic**: Use the current active layout when it is non-English and installed; otherwise prefer installed Ukrainian, then Russian, then English. This is deterministic and does not invent a new preference.
+   - **Duplicate apps**: Existing rules are preserved; configured bundle IDs are excluded from both pickers and duplicate filesystem selections are ignored.
    - **`-` Button**: Enabled when a row is selected; removes the rule for that app.
 3. **Window Size & Scrolling**:
-   - Wrap `SettingsView` root in a `ScrollView` and configure `SettingsWindowController` dimensions (e.g. `width: 480, height: 720`, `minHeight: 600`) to guarantee no vertical clipping when both App Default Languages and Excluded Apps lists are populated.
+   - Configure `SettingsWindowController` to `width: 480, height: 720`, with a `minSize` height of 600.
+   - Wrap the settings content in one outer `ScrollView`; replace the fixed-height nested `List` controls with bounded `ScrollView`/`LazyVStack` sections so the window has one predictable scroll owner and never clips populated sections.
 4. **Reusable `AppPickerView` Sheet**:
-   - Refactor the existing running app picker into a shared `AppPickerView` that accepts `excludedBundleIDs: Set<String>` and an `onSelect: (Set<String>) -> Void` callback, eliminating code duplication between `ExcludedAppsView` and `AppDefaultLanguagesView`.
+   - Refactor the existing running app picker into a shared `AppPickerView` that receives app records, `excludedBundleIDs: Set<String>`, a title/empty-state string, and an `onSelect: (Set<String>) -> Void` callback. It owns selection and dismissal; the parent owns persistence.
+
+Rules with an uninstalled app remain visible using the bundle ID as the name and a placeholder icon. Rules whose layout is no longer installed remain visible as `Unavailable`, do not trigger a switch, and become active automatically if that layout is later installed. The row picker lists only `InputSourceManager.availableLayouts()`.
 
 ### 4.2 Status Bar Menu Quick Toggle
 
-In `StatusBarController.swift`, add a contextual item for the active frontmost app:
+In `StatusBarController.swift`, add a contextual item for the last regular frontmost app:
 - Menu Item: `Default Language (Telegram)` -> Submenu:
   - `None (Keep Active Layout)` (checked if no rule)
   - `✓ Ukrainian`
   - `English`
   - `Russian`
-- Selecting an item immediately updates `PerAppLanguageManager` and switches the current layout immediately via `InputSourceManager.shared.switchTo(...)` if the frontmost app is the one being modified.
+- `menuWillOpen` snapshots bundle ID, PID, and display name before the status menu can make SwitchFix frontmost. Menu actions use that snapshot, never a fresh unvalidated `frontmostApplication` lookup.
+- Selecting an item immediately updates `PerAppLanguageManager`. `None` only removes the rule and never changes the current layout. A language selection switches immediately only if the snapshot app is still frontmost; if the app changed while the menu was open, persist the rule but skip the immediate switch.
+- Show only installed layouts and disable the submenu with a clear message when there is no eligible frontmost app.
 
 ---
 
@@ -222,64 +250,77 @@ In `StatusBarController.swift`, add a contextual item for the active frontmost a
 
 | Edge Case | Impact | Mitigation / Solution |
 |---|---|---|
-| **Intra-App Window Switch (`⌘ + \`` / Chat switch)** | User in Telegram manually switches to EN to type code, then clicks another Telegram window | Track `previousBundleID` in `AppDelegate`. Only apply default rule if `newBundleID != previousBundleID`. Manual layout stays intact within app session. |
-| **System Overlays & Daemons (Spotlight, Lock Screen)** | Spotlight or background helpers activate and change frontmost status | Guard `application.activationPolicy == .regular`. Skip language switching for system overlays and background agents. |
-| **SwitchFix Self-Activation** | User opens SwitchFix Settings or clicks menu bar | Guard `bundleID != Bundle.main.bundleIdentifier`. SwitchFix never triggers per-app layout switching on itself. |
-| **Rapid App Switching (`⌘ + Tab` cycling)** | Multiple rapid layout switches could queue excessive TIS calls | Only call `switchTo(layout)` if `currentLayout != targetLayout` and `pendingSelectionID != targetSourceID`. |
-| **macOS Native "Switch to document source"** | macOS fires `kTISNotifySelectedKeyboardInputSourceChanged` after app activation | Handled cleanly via `consumeExpectedSelection(sourceID:)` marking programmatic switches. |
+| **Intra-App Window Switch (`⌘ + \`` / Chat switch)** | User in Telegram manually switches to EN to type code, then clicks another Telegram window | Track `(bundleID, PID)` identity. Same-process activation does not reapply the rule; individual windows are intentionally out of scope. |
+| **System Overlays & Daemons (Spotlight, Lock Screen)** | An ineligible app activates while the old app has buffered state | Always replace/invalidate capture context; skip only the default-layout action for non-regular apps. Update the observed identity so returning to the configured app is not suppressed. |
+| **SwitchFix Self-Activation** | User opens SwitchFix Settings or clicks the menu bar | Invalidate context as usual, but never apply a rule to SwitchFix. The status menu uses its saved last-regular-app snapshot. |
+| **Rapid App Switching (`⌘ + Tab` cycling)** | Multiple layout switches produce delayed/out-of-order TIS notifications | Serialize activation on main, coalesce to the latest tokenized request, return explicit mismatch/superseded results, and ignore/reconcile stale notifications. |
+| **macOS Native "Switch to document source"** | macOS fires `kTISNotifySelectedKeyboardInputSourceChanged` after app activation | Match notifications by selection token and target source ID. Only a matching notification is generated; manual or stale notifications update actual state without correction. |
+| **Unsupported current input source** | Current source is not in `Layout.allCases` but fallback mapping reports English | Compare `currentInputSourceID` against `Layout.matches(sourceID:)`; select the configured layout's preferred source when the source is unsupported. |
 | **Excluded App with Default Language** | App is blacklisted from autocorrection (e.g. Terminal) but user wants English by default | Supported seamlessly. App filtering (correction disabled) and language switching are orthogonal. |
-| **Corrupted / Invalid Layout in Storage** | Unknown string in `UserDefaults` | `compactMapValues { Layout(rawValue: $0) }` safely drops unknown entries without throwing or crashing. |
-| **Uninstalled / Missing Layout** | User configures Ukrainian, but later uninstalls the Ukrainian layout from macOS Settings | `InputSourceManager.switchTo()` already verifies cached sources; if missing, it logs a notice and fails gracefully without crashing. |
-| **Accidental Correction on App Switch** | Switching layout triggers `kTISNotifySelectedKeyboardInputSourceChanged` | Mark the switch via `pendingSelectionID` so `InputEngine` recognizes it as programmatic, resetting detector buffer without triggering false text corrections. |
+| **Corrupted / Invalid Layout in Storage** | Unknown string or non-string value in `UserDefaults` | Parse each value independently; preserve valid entries and drop only invalid values without throwing or crashing. |
+| **Uninstalled / Missing Layout** | User configures Ukrainian, but later uninstalls the Ukrainian layout from macOS Settings | Retain the rule, show `Unavailable`, skip selection, and log a notice. Refresh installed sources at the normal readiness/startup boundary. |
+| **Accidental Correction on App Switch** | Switching layout triggers a TIS notification while a word/correction is pending | New app context increments the epoch and resets detector state; stale queued correction requests are cancelled. A generated transition never enters layout-switch autocorrection. |
+| **Persistence race** | Settings and status menu write different rules concurrently | Mutate and persist one complete snapshot inside the same lock; test concurrent writers with an isolated defaults suite. |
+| **Menu target changes** | User opens the menu for Telegram, then activates another app before selecting a language | Persist the Telegram rule, but only switch immediately if the captured Telegram PID/bundle is still frontmost. |
 
 ---
 
 ## 6. Implementation Steps (Phased)
 
+Each phase must leave the repository buildable. Keep TIS calls and all activation state transitions on the main thread; keep rule reads lock-bounded and free of AppKit dependencies.
+
 ### Phase 1: Data Model & Persistence
-- [ ] Create `Sources/Core/PerAppLanguageManager.swift`.
-- [ ] Implement `UserDefaults` serialization under key `SwitchFix_perAppDefaultLanguages` (`[String: String]`).
-- [ ] Add thread-safe accessors (`defaultLayout(for:)`, `setDefaultLayout(_:for:)`, `removeDefaultLayout(for:)`, `allRules`).
-- [ ] Add `.perAppLanguageDidChange` notification.
+- [ ] Create `Sources/Core/PerAppLanguageManager.swift` with `public init(defaults:)` and the production singleton.
+- [ ] Implement `[String: String]` serialization under `SwitchFix_perAppDefaultLanguages`; parse mixed/invalid stored values individually.
+- [ ] Add CRUD accessors and sorted `allRules`; ignore empty bundle IDs and suppress no-op notifications.
+- [ ] Perform the state mutation and complete snapshot write under one `OSAllocatedUnfairLock` critical section to prevent lost updates.
+- [ ] Deliver `.perAppLanguageDidChange` on the main thread after unlocking.
 
-### Phase 2: App Activation Integration
-- [ ] Update `activeApplicationChanged(_ notification:)` in `Sources/SwitchFixApp/AppDelegate.swift`.
-- [ ] Add `previousBundleID` state tracking to prevent intra-app layout clobbering.
-- [ ] Guard `activationPolicy == .regular` and `bundleID != Bundle.main.bundleIdentifier`.
-- [ ] Invoke `inputSourceManager.switchTo(targetLayout)` if different from `previousLayout`.
-- [ ] Ensure `CaptureStateStore` context and `InputEngine` state are synchronized.
+### Phase 2: Testable Activation and Selection Contracts
+- [ ] Add a pure `ActivationIdentity`/activation coordinator in `Sources/Core` that tracks `(bundleID, PID, isRegular)` and an activation generation. Same PID/bundle does not reapply a rule; every observed activation still invalidates context.
+- [ ] Add a selection port/protocol or equivalent seam so tests can model success, failure, delayed notifications, mismatches, and coalescing without calling Carbon/TIS.
+- [ ] Extend `InputSourceManager` with an atomic tokenized/coalesced request API. A mismatched notification must not clear the current expectation; stale tokens must be distinguishable from manual changes.
+- [ ] Add an explicit `isCurrentSource(_:)`/preferred-source contract based on source IDs and `Layout.matches(sourceID:)`.
 
-### Phase 3: Settings UI & Component Refactoring
-- [ ] Refactor `RunningAppPickerView` into a reusable `AppPickerView` in `Sources/UI/SettingsView.swift`.
-- [ ] Create `AppDefaultLanguagesView` and `AppLanguageRow` in `Sources/UI/SettingsView.swift`.
-- [ ] Create `AppLanguageSettingsViewModel` (or integrate into `SettingsViewModel`).
-- [ ] Support adding apps via `AppPickerView` and `NSOpenPanel` with smart default layout heuristic.
-- [ ] Support in-place language picker dropdown per row.
-- [ ] Add rule deletion via selection and minus (`-`) button.
-- [ ] Wrap `SettingsView` in `ScrollView` and adjust `SettingsWindowController` height.
+### Phase 3: App Activation Integration
+- [ ] Refactor `activeApplicationChanged(_:)` into the sequence defined in section 3.2: observe identity, replace context, queue engine reset, then request a guarded selection.
+- [ ] Reuse the same activation routine for the initial frontmost app during launch.
+- [ ] Apply rules only to non-SwitchFix regular applications; context invalidation must still occur for all activation notifications.
+- [ ] Gate `willSelect`, confirmation, and failure callbacks by activation generation/PID; stale callbacks only reconcile actual input state and never trigger correction.
+- [ ] Verify failed/missing source selection leaves `CaptureStateStore` and `InputEngine` synchronized with the actual source.
 
-### Phase 4: Menu Bar Quick-Access
-- [ ] Update `StatusBarController.swift` to include "Default Language for [Active App]" submenu.
-- [ ] Sync menu bar state with `PerAppLanguageManager.shared.defaultLayout(for:)`.
-- [ ] Apply layout immediately on menu selection if frontmost.
+### Phase 4: Settings UI & Component Refactoring
+- [ ] Introduce a shared app-record type and refactor `RunningAppPickerView` into `AppPickerView` with parent-owned persistence and callback-based selection.
+- [ ] Create `AppDefaultLanguagesView` and `AppLanguageRow`; show icon/name/bundle ID, installed-layout picker, unavailable-layout state, and duplicate suppression.
+- [ ] Filter running and filesystem choices to supported regular applications, excluding SwitchFix; reject or explain unsupported bundles.
+- [ ] Implement the deterministic default heuristic from section 4.1 and immediate persistence for add/change/remove.
+- [ ] Replace nested fixed-height `List`s with bounded `LazyVStack` sections inside one outer settings `ScrollView`; set the window size/minimum from section 4.1.
 
-### Phase 5: Testing & Verification
-- [ ] Add unit test suite in `Sources/TestRunner/main.swift` for `PerAppLanguageManager` (CRUD operations, serialization, corrupted entry filtering, thread safety).
-- [ ] Run `swift run TestRunner` and `swift run InputPipelineTestRunner`.
-- [ ] Test switching between Telegram (Ukrainian) and Arc / Browser (English).
-- [ ] Test manual layout switching persistence across intra-app window focus changes.
-- [ ] Test interaction between Excluded Apps and Per-App Language rules.
+### Phase 5: Menu Bar Quick-Access
+- [ ] Add the contextual default-language submenu and rebuild it from the last regular frontmost `(bundleID, PID, name)` snapshot.
+- [ ] Capture the snapshot when the menu opens; use it as the action target and validate that the same app is still frontmost before switching.
+- [ ] Persist `None` as rule removal without changing the current layout; persist a language selection even if the app changed, but skip immediate switching in that case.
+- [ ] Observe `.perAppLanguageDidChange` or rebuild on open so Settings/menu changes are reflected without stale checkmarks.
+
+### Phase 6: Automated and Manual Verification
+- [ ] Extend `Sources/TestRunner/main.swift` with isolated-defaults tests for CRUD, reload, mixed corruption, empty IDs, no-op writes, and concurrent writers.
+- [ ] Test the pure activation coordinator with startup, regular/unconfigured, non-regular, self-activation, same-PID repeat, and relaunch/new-PID cases.
+- [ ] Test the fake selection port with rapid A→B→A, delayed/out-of-order notifications, mismatches, failures, and stale callback rejection.
+- [ ] Run `swift build`, `swift run TestRunner`, and `swift run InputPipelineTestRunner`.
+- [ ] Manually test Telegram/Arc or equivalent regular apps, immediate typing around activation, manual in-app layout retention, missing layouts, menu target changes, and Excluded Apps coexistence.
 
 ---
 
 ## 7. Verification & Acceptance Criteria
 
-1. **Telegram -> Ukrainian**: Activating Telegram automatically sets keyboard layout to Ukrainian.
-2. **Arc / Chrome -> English**: Activating Arc automatically sets keyboard layout to English.
-3. **Intra-App Retention**: Manually changing layout within Telegram and clicking across Telegram windows retains the manually selected layout.
-4. **Unconfigured Apps**: Activating an app without a rule retains whatever layout was previously active.
-5. **System Overlays**: Opening Spotlight or Notification Center does not reset or alter the layout.
-6. **Settings Persistence**: Rules added in Settings persist across SwitchFix restarts; corrupted entries are cleanly ignored.
-7. **No Typing Interruption**: Keystrokes typed immediately after switching apps are captured cleanly with zero lag or duplicate characters.
-8. **No Spurious Correction**: Switching apps does not trigger layout-switch autocorrection on stale buffers.
-9. **TestRunner Suite**: All automated test suites in `TestRunner` pass with 0 failures.
+1. **Configured regular app**: Activating a configured app selects the preferred installed source for its configured layout once, and the confirmed source/layout is reflected in `CaptureStateStore` and `InputEngine`.
+2. **Startup**: Launching SwitchFix while a configured app is already frontmost applies that rule through the same activation path.
+3. **Intra-app retention**: Same-process window changes do not reapply the rule; a relaunch with a new PID does.
+4. **Unconfigured/ineligible apps**: Context is invalidated on every activation, but an app without a rule or with a non-regular policy does not cause a default-layout selection.
+5. **Selection races**: Delayed, mismatched, or stale TIS notifications cannot update the wrong app, consume the latest expectation, or trigger layout-switch autocorrection.
+6. **Source identity**: An unsupported current input source is not mistaken for a matching English source; equivalent supported variants are not switched unnecessarily.
+7. **Settings persistence**: Rules added/changed/removed in Settings persist across restarts; valid entries survive mixed corrupted defaults; concurrent writes lose no rules.
+8. **UI behavior**: Installed layouts, unavailable rules, duplicate app selection, one-owner scrolling, and missing app icons/names behave as specified.
+9. **Status menu safety**: The menu edits the app captured at open time; it does not switch a different app if focus changes while the menu is open; `None` leaves the current layout unchanged.
+10. **Pipeline safety**: Keystrokes around app activation are not delayed, duplicated, or corrected from a stale buffer.
+11. **Automated verification**: `swift build`, `swift run TestRunner`, and `swift run InputPipelineTestRunner` pass with 0 failures.

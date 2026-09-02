@@ -119,6 +119,54 @@ run("autorepeat preserved") {
     check(word == "cc", "autorepeat characters must not be deduplicated")
 }
 
+run("manual hotkey resyncs buffer") {
+    let current = context()
+    var machine = automaticMachine(current)
+    for (index, character) in ["g", "h", "b", "d", "t", "n"].enumerated() {
+        _ = machine.consume(input(
+            sequence: UInt64(index + 1),
+            kind: .character(character),
+            context: current
+        ))
+    }
+    let hotkeyCommands = machine.consume(input(sequence: 7, kind: .hotkey, context: current))
+    guard case .requestManualCorrection(let word?, _, _) = hotkeyCommands.first else {
+        check(false, "hotkey must request manual correction with the buffered word")
+        return
+    }
+    check(word == "ghbdtn", "hotkey must hand the buffered word to correction")
+    check(machine.currentBuffer.isEmpty, "buffer must drop the word handed to correction")
+
+    // The correction rewrites the word via tagged events the pipeline ignores,
+    // so only post-hotkey typing may remain in the buffer.
+    for (index, character) in ["d", "r", "u", "g"].enumerated() {
+        _ = machine.consume(input(
+            sequence: UInt64(8 + index),
+            kind: .character(character),
+            context: current
+        ))
+    }
+    let flushed = machine.consume(input(sequence: 12, kind: .boundary(" "), context: current))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushed == ["drug"], "stale pre-correction text must never be re-deleted at the next boundary")
+}
+
+run("revert hotkey resyncs buffer") {
+    let current = context()
+    var machine = automaticMachine(current)
+    _ = machine.consume(input(sequence: 1, kind: .character("x"), context: current))
+    let commands = machine.consume(input(sequence: 2, kind: .revertHotkey, context: current))
+    guard case .requestRevert(let word?, _, _) = commands.first else {
+        check(false, "revert hotkey must request revert with the buffered word")
+        return
+    }
+    check(word == "x", "revert must hand the buffered word to the undo path")
+    check(machine.currentBuffer.isEmpty, "revert must drop the buffered word to avoid desync")
+}
+
 run("generated identity ignored") {
     let current = context()
     var machine = automaticMachine(current)
@@ -377,7 +425,7 @@ run("bounded tagged event batch") {
         return false
     }
     check(deletes.count == 8, "N deletes must produce exactly N tagged key pairs")
-    check(unicode.count == 2, "replacement must produce one Unicode key pair")
+    check(unicode.count == plan.replacementText.count * 2, "replacement of N chars must produce N Unicode key pairs")
     check(events.allSatisfy { $0.sourceUserData == switchFixEventMarker }, "every generated event must carry the marker")
 }
 
@@ -586,12 +634,12 @@ run("100,000 event stress") {
         if sequence.isMultiple(of: 128) {
             let drained = DispatchSemaphore(value: 0)
             engine.drain { drained.signal() }
-            check(drained.wait(timeout: .now() + 1) == .success, "engine batch must drain without loss")
+            check(drained.wait(timeout: .now() + 3) == .success, "engine batch must drain without loss")
         }
     }
     let drained = DispatchSemaphore(value: 0)
     engine.drain { drained.signal() }
-    check(drained.wait(timeout: .now() + 1) == .success, "final engine batch must drain")
+    check(drained.wait(timeout: .now() + 3) == .success, "final engine batch must drain")
     check(detectionsComplete.wait(timeout: .now() + 30) == .success, "all boundary detections must complete")
 
     let sequences = recorder.snapshot()

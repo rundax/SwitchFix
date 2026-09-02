@@ -8,6 +8,7 @@ DerivedData/
 .vscode/
 .claude/settings.local.json
 .grepai/
+.codesign-identity
 
 # Generated dictionary artifacts
 .build/dictionary-bin/
@@ -15,3 +16,8 @@ plan/artifacts/*.json
 plan/artifacts/*.txt
 scripts/__pycache__/
 Sources/Dictionary/Resources/uk_full.txt
+
+# Local / temporary files and tooling
+.pi/
+temp.txt
+*.key

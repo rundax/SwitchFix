@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import os
+import Utils
 
 public struct CorrectionPlan: Equatable {
     public let boundarySequence: UInt64
@@ -113,19 +114,22 @@ public final class TextCorrector {
             return []
         }
         var events: [CorrectionEventDescriptor] = []
-        events.reserveCapacity(plan.deleteCount * 2 + 2)
+        events.reserveCapacity(plan.deleteCount * 2 + plan.replacementText.count * 2)
         for _ in 0..<plan.deleteCount {
             events.append(CorrectionEventDescriptor(kind: .deleteKeyDown, sourceUserData: switchFixEventMarker))
             events.append(CorrectionEventDescriptor(kind: .deleteKeyUp, sourceUserData: switchFixEventMarker))
         }
-        events.append(CorrectionEventDescriptor(
-            kind: .unicodeKeyDown(plan.replacementText),
-            sourceUserData: switchFixEventMarker
-        ))
-        events.append(CorrectionEventDescriptor(
-            kind: .unicodeKeyUp(plan.replacementText),
-            sourceUserData: switchFixEventMarker
-        ))
+        for char in plan.replacementText {
+            let str = String(char)
+            events.append(CorrectionEventDescriptor(
+                kind: .unicodeKeyDown(str),
+                sourceUserData: switchFixEventMarker
+            ))
+            events.append(CorrectionEventDescriptor(
+                kind: .unicodeKeyUp(str),
+                sourceUserData: switchFixEventMarker
+            ))
+        }
         return events
     }
 
@@ -138,7 +142,7 @@ public final class TextCorrector {
               plan.deleteCount <= 128,
               let events = makeCorrectionEvents(plan: plan),
               plan.isEligible(using: latestCaptureState()) else {
-            logger.debug("correction cancelled")
+            logger.debug("apply rejected '\(plan.originalText)' (oversized/no events/state changed)")
             return false
         }
         post(events, targetPID: plan.targetPID)
@@ -151,7 +155,9 @@ public final class TextCorrector {
                 inputSourceManager.switchTo(layout)
             }
         }
-        logger.debug("correction applied delete_count=\(plan.deleteCount, privacy: .public)")
+        logger.notice(
+            "correction APPLIED '\(plan.correctedText)' <- '\(plan.originalText)' deletes=\(plan.deleteCount) pid=\(plan.targetPID) layoutSwitch=\(plan.targetLayout?.rawValue ?? "none")"
+        )
         return true
     }
 
@@ -199,7 +205,10 @@ public final class TextCorrector {
         context: InputContextSnapshot,
         latestCaptureState: () -> CaptureStateSnapshot
     ) -> Bool {
-        guard let undo = undoState.withLock({ $0 }) else { return false }
+        guard let undo = undoState.withLock({ $0 }) else {
+            logger.info("undo skipped: no recorded correction")
+            return false
+        }
         let latest = latestCaptureState()
         guard Self.isUndoEligible(
             recordedPlan: undo.plan,
@@ -207,6 +216,7 @@ public final class TextCorrector {
             context: context,
             latest: latest
         ) else {
+            logger.info("undo skipped: state stale since correction '\(undo.plan.correctedText)'")
             undoState.withLock { $0 = nil }
             return false
         }
@@ -228,15 +238,19 @@ public final class TextCorrector {
         )
         guard let events = makeCorrectionEvents(plan: inverse),
               inverse.isEligible(using: latestCaptureState()) else {
+            logger.debug("undo rejected: could not build inverse events or state changed")
             return false
         }
         post(events, targetPID: inverse.targetPID)
         undoState.withLock { $0 = nil }
+        logger.notice(
+            "revert APPLIED '\(inverse.correctedText)' <- '\(inverse.originalText)' deletes=\(inverse.deleteCount) pid=\(inverse.targetPID)"
+        )
         if inverse.isEligible(using: latestCaptureState()) {
-            let layout = undo.plan.originalLayout
+            let undoLayout = undo.plan.originalLayout
             // TIS APIs are main-thread-only; undo() runs on the correction queue.
             DispatchQueue.main.async { [inputSourceManager] in
-                inputSourceManager.switchTo(layout)
+                inputSourceManager.switchTo(undoLayout)
             }
         }
         return true
@@ -265,9 +279,13 @@ public final class TextCorrector {
                   latest.context.secureFocus == .notSecure,
                   latest.context.appAllowed,
                   latest.correctionAllowed else {
+                logger.debug("selection correction skipped: state changed before paste")
                 return
             }
 
+            logger.notice(
+                "selection paste '\(convertedText)' <- '\(selectedText)' pid=\(context.frontmostPID) layoutSwitch=\(shouldSwitchLayout ? targetLayout.rawValue : "none")"
+            )
             let pasteboard = NSPasteboard.general
             // Snapshot item data into fresh items: items read from a pasteboard are
             // invalidated by clearContents() and cannot be written back.
@@ -328,7 +346,7 @@ public final class TextCorrector {
     private func makeCorrectionEvents(plan: CorrectionPlan) -> [CGEvent]? {
         guard eventSource != nil, !plan.replacementText.isEmpty else { return nil }
         var events: [CGEvent] = []
-        events.reserveCapacity(plan.deleteCount * 2 + 2)
+        events.reserveCapacity(plan.deleteCount * 2 + plan.replacementText.count * 2)
         for _ in 0..<plan.deleteCount {
             guard let keyDown = makeKeyEvent(keyCode: 51, keyDown: true),
                   let keyUp = makeKeyEvent(keyCode: 51, keyDown: false) else {
@@ -338,12 +356,15 @@ public final class TextCorrector {
             events.append(keyUp)
         }
 
-        guard let keyDown = makeUnicodeEvent(text: plan.replacementText, keyDown: true),
-              let keyUp = makeUnicodeEvent(text: plan.replacementText, keyDown: false) else {
-            return nil
+        for char in plan.replacementText {
+            let str = String(char)
+            guard let keyDown = makeUnicodeEvent(text: str, keyDown: true),
+                  let keyUp = makeUnicodeEvent(text: str, keyDown: false) else {
+                return nil
+            }
+            events.append(keyDown)
+            events.append(keyUp)
         }
-        events.append(keyDown)
-        events.append(keyUp)
         return events
     }
 

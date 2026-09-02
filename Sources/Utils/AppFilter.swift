@@ -74,24 +74,26 @@ public class AppFilter {
     }
 
     public func addToBlacklist(_ bundleID: String) {
-        state.withLock { value in
+        let snapshot = state.withLock { value -> State in
             value.userRemoved.remove(bundleID)
             if !AppFilter.defaultBlacklist.contains(bundleID) {
                 value.userAdded.insert(bundleID)
             }
-            save(value)
+            return value
         }
+        save(snapshot)
         NotificationCenter.default.post(name: .appFilterDidChange, object: nil)
     }
 
     public func removeFromBlacklist(_ bundleID: String) {
-        state.withLock { value in
+        let snapshot = state.withLock { value -> State in
             value.userAdded.remove(bundleID)
             if AppFilter.defaultBlacklist.contains(bundleID) {
                 value.userRemoved.insert(bundleID)
             }
-            save(value)
+            return value
         }
+        save(snapshot)
         NotificationCenter.default.post(name: .appFilterDidChange, object: nil)
     }
 

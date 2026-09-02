@@ -22,28 +22,47 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 
 - macOS 13.0 or later
 
-## Installation (Recommended)
+## Installation
 
-The easiest way to install and set up SwitchFix is using the automated install script. It builds the app, installs it to your Applications folder, sets it to run at startup, and guides you through the necessary macOS privacy permissions.
-
-1. Download or clone this repository to your Mac.
-2. Open your Terminal and navigate to the SwitchFix folder.
-3. Run the setup script:
+### From source
 
 ```bash
+git clone https://github.com/rundax/SwitchFix.git
+cd SwitchFix
 ./install.sh
 ```
 
-4. Follow the interactive prompts to grant the required **Accessibility** and **Input Monitoring** permissions.
+The script builds the app, installs it to `/Applications`, sets it to run at startup, and guides you through the required **Accessibility** and **Input Monitoring** permissions.
 
-> **Note:** If you don't have Apple's Command Line Tools installed, the script will prompt you to install them first. Just follow the macOS prompts and re-run `./install.sh` when it finishes.
+> **Note:** Requires Xcode Command Line Tools. The script will prompt you to install them if missing.
 
-### Easy Installation (Pre-built Releases)
+### From DMG
 
-You can also download a pre-compiled `.dmg` version from the [Releases page](https://github.com/rundax/SwitchFix/releases). 
-1. Open the downloaded `.dmg` file.
-2. Double-click the **`Install SwitchFix`** script inside.
-3. A terminal will open to securely copy the app to your Applications folder, bypass Apple's "App is damaged" quarantine warning for unsigned apps, and interactively guide you through granting the necessary macOS privacy permissions.
+Download a pre-built `.dmg` from the [Releases page](https://github.com/rundax/SwitchFix/releases), open it, and double-click **Install SwitchFix**.
+
+## Development
+
+### Stable code signing (recommended)
+
+Ad-hoc signing (the default) changes the binary hash on every build, which forces you to re-grant Accessibility and Input Monitoring permissions each time. To avoid this, create a local code-signing certificate once:
+
+```bash
+./scripts/setup-codesign.sh
+```
+
+This creates a self-signed certificate in your Keychain and saves it to `.codesign-identity`. All subsequent builds via `build-app.sh` and `install.sh` will use it automatically — permissions survive rebuilds.
+
+### Build without installing
+
+```bash
+./scripts/build-app.sh          # → dist/SwitchFix.app
+```
+
+### Create a DMG
+
+```bash
+./scripts/create-dmg.sh         # → dist/SwitchFix.dmg
+```
 
 ## Menu Bar Options
 
@@ -56,14 +75,14 @@ SwitchFix lives in your menu bar with an **Ab** icon. The menu provides:
 
 ## Advanced Configuration
 
-SwitchFix stores hotkeys in `UserDefaults`. You can customize them via Terminal if you prefer advanced bindings:
+SwitchFix stores hotkeys in `UserDefaults`. Customize via Terminal:
 
 ```bash
-# Set revert hotkey to CapsLock (no modifiers)
+# Revert hotkey: CapsLock (no modifiers)
 defaults write com.switchfix.app SwitchFix_revertHotkeyKeyCode -int 57
 defaults write com.switchfix.app SwitchFix_revertHotkeyModifiers -int 0
 
-# Set correction hotkey to Ctrl+Shift+Space
+# Correction hotkey: Ctrl+Shift+Space
 defaults write com.switchfix.app SwitchFix_hotkeyKeyCode -int 49
 defaults write com.switchfix.app SwitchFix_hotkeyModifiers -int $((262144+131072))
 ```

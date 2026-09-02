@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Utils
 
 public struct DetectionRequest: Equatable {
     public let word: String
@@ -255,6 +256,7 @@ public final class InputEngine {
 
     private func process(_ input: CapturedInput) {
         latestProcessedSequence = input.sequence
+        logger.debug("input seq=\(input.sequence) kind=\(String(describing: input.kind)) keyCode=\(input.keyCode) autorepeat=\(input.isAutorepeat) srcPid=\(input.sourcePID)")
 
         if input.kind.recordsUserEdit {
             correctionQueue.async { [weak self] in
@@ -269,7 +271,7 @@ public final class InputEngine {
             // word buffer up and get "corrected" with a wrong delete count.
             stateMachine.invalidateUntilBoundary()
             resetDetectorState()
-            logger.debug("buffer invalidated reason=stale-capture-context")
+            logger.debug("buffer invalidated reason=stale-capture-context captured=\(String(describing: input.context)) live=\(String(describing: liveContext))")
             return
         }
 
@@ -286,12 +288,15 @@ public final class InputEngine {
 
     private func handle(_ command: InputStateCommand) {
         switch command {
-        case .append, .deleteLast:
-            break
+        case .append(let text):
+            logger.debug("buffer '\(self.stateMachine.currentBuffer)' (+ '\(text)')")
+        case .deleteLast:
+            logger.debug("buffer '\(self.stateMachine.currentBuffer)' (backspace)")
         case .invalidate(let reason):
             resetDetectorState()
-            logger.debug("buffer invalidated reason=\(String(describing: reason), privacy: .public)")
+            logger.debug("buffer invalidated reason=\(String(describing: reason))")
         case .flush(let word, let boundary, let sequence, let context):
+            logger.notice("word flushed '\(word)' boundary='\(boundary)' seq=\(sequence) layout=\(context.layout.rawValue)")
             let latest = captureState.snapshot()
             runDetection(DetectionRequest(
                 word: word,
@@ -302,8 +307,10 @@ public final class InputEngine {
                 context: context
             ))
         case .requestManualCorrection(let word, let sequence, let context):
+            logger.notice("hotkey correction requested word='\(word ?? "nil")' seq=\(sequence)")
             requestManualCorrection(word: word, sequence: sequence, context: context)
         case .requestRevert(let word, let sequence, let context):
+            logger.notice("revert hotkey pressed word='\(word ?? "nil")' seq=\(sequence)")
             correctionQueue.async { [weak self] in
                 guard let self else { return }
                 if !self.corrector.undo(
@@ -343,7 +350,15 @@ public final class InputEngine {
                 )
             }
             let duration = DispatchTime.now().uptimeNanoseconds &- startedAt
-            self.logger.debug("dictionary lookup ns=\(duration, privacy: .public)")
+            if let result {
+                SwitchFixLog.detector.notice(
+                    "detect '\(result.originalWord)' -> '\(result.convertedWord)' source=\(result.sourceLayout.rawValue) target=\(result.targetLayout.rawValue) switch=\(result.shouldSwitchLayout) ms=\(Double(duration) / 1_000_000.0)"
+                )
+            } else {
+                SwitchFixLog.detector.info(
+                    "detect '\(request.word)' -> keep (no correction, ms=\(Double(duration) / 1_000_000.0))"
+                )
+            }
             guard let result else { return }
             self.inputQueue.async {
                 self.prepareCorrection(result: result, request: request)
@@ -353,18 +368,33 @@ public final class InputEngine {
 
     private func prepareCorrection(result: DetectionResult, request: DetectionRequest) {
         let latest = captureState.snapshot()
-        guard latest.latestPhysicalSequence == request.sequence,
-              latest.editGeneration == request.editGeneration,
-              latest.correctionEpoch == request.correctionEpoch,
-              latest.context == request.context,
-              latest.context.secureFocus == .notSecure,
-              latest.correctionAllowed,
-              result.originalWord.count <= 64 else {
-            logger.debug("correction cancelled before emission")
+        var cancelReason: String?
+        if latest.latestPhysicalSequence != request.sequence {
+            cancelReason = "stale-sequence"
+        } else if latest.editGeneration != request.editGeneration {
+            cancelReason = "edit-generation-changed"
+        } else if latest.correctionEpoch != request.correctionEpoch {
+            cancelReason = "correction-epoch-changed"
+        } else if latest.context != request.context {
+            cancelReason = "context-changed"
+        } else if latest.context.secureFocus != .notSecure {
+            cancelReason = "secure-focus"
+        } else if !latest.context.appAllowed {
+            cancelReason = "app-not-allowed"
+        } else if !latest.correctionAllowed {
+            cancelReason = "correction-disallowed"
+        } else if result.originalWord.count > 64 {
+            cancelReason = "word-too-long"
+        }
+        guard cancelReason == nil else {
+            logger.debug("correction cancelled reason=\(cancelReason!) word='\(result.originalWord)'")
             return
         }
 
         let boundary = request.boundary
+        logger.notice(
+            "correction planned '\(result.originalWord)' -> '\(result.convertedWord)' deletes=\(result.originalWord.count + boundary.count) pid=\(request.context.frontmostPID)"
+        )
         let plan = CorrectionPlan(
             boundarySequence: request.sequence,
             contextEpoch: request.context.epoch,
@@ -382,7 +412,10 @@ public final class InputEngine {
 
         correctionQueue.async { [weak self] in
             guard let self else { return }
-            guard plan.isEligible(using: self.captureState.snapshot()) else { return }
+            guard plan.isEligible(using: self.captureState.snapshot()) else {
+                SwitchFixLog.corrector.debug("emission skipped: state changed before apply '\(plan.originalText)'")
+                return
+            }
             if let customEmission = self.customEmission {
                 _ = customEmission(plan)
             } else {

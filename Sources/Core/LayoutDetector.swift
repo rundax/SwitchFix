@@ -1,5 +1,6 @@
 import Foundation
 import Dictionary
+import Utils
 
 /// Represents a detection result — the target layout and converted word.
 public struct DetectionResult {
@@ -95,9 +96,6 @@ public class LayoutDetector {
     private static let latinLowercaseRange: ClosedRange<UInt32> = 0x0061...0x007A
     private static let latinUppercaseRange: ClosedRange<UInt32> = 0x0041...0x005A
     private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
-    private static let ukrainianTypoOverrides: [String: String] = [
-        "дуе": "дує"
-    ]
 
     /// The currently active keyboard layout (set externally by InputSourceManager).
     public var currentLayout: Layout = .english
@@ -204,6 +202,7 @@ public class LayoutDetector {
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
         if containsMixedScripts(word) {
+            SwitchFixLog.detector.debug("mixed scripts, skipping '\(word)'")
             state = .buffering
             return nil
         }
@@ -211,9 +210,10 @@ public class LayoutDetector {
         // Check if the word is valid in the current layout's language
         let currentWordParts = splitTokenForValidation(word)
         let currentValidationInput = currentWordParts.core.isEmpty ? word : currentWordParts.core
-        
+
         let currentLanguage = languageForLayout(sourceLayout)
         if validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid {
+            SwitchFixLog.detector.debug("valid in \(currentLanguage.rawValue): '\(word)' — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
@@ -231,25 +231,6 @@ public class LayoutDetector {
             recordOutcome(.validCurrent)
             state = .buffering
             return nil
-        }
-
-        if sourceLayout == .ukrainian,
-           let override = ukrainianTypoOverride(for: word) {
-                let correctedWord = applyCase(from: word, to: override)
-                let result = DetectionResult(
-                    sourceLayout: sourceLayout,
-                    targetLayout: sourceLayout,
-                    convertedWord: correctedWord,
-                    originalWord: word,
-                    shouldSwitchLayout: false
-                )
-                lastDetectionResult = result
-                pendingSwitchLayout = nil
-                pendingSwitchCount = 0
-                consecutiveWrongCount = 0
-                recordOutcome(.corrected)
-                state = .buffering
-                return result
         }
 
         // Try converting to alternative layouts
@@ -310,6 +291,7 @@ public class LayoutDetector {
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
                     ) {
+                        SwitchFixLog.detector.info("suppressed short word '\(word)' -> '\(finalWord)' (weak evidence, deferring)")
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
                         if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
@@ -400,6 +382,7 @@ public class LayoutDetector {
         }
 
         // No valid alternative found — unknown word, do nothing
+        SwitchFixLog.detector.debug("unknown word '\(word)' — no valid alternative in any layout")
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
         recordOutcome(.unknown)
@@ -700,11 +683,6 @@ public class LayoutDetector {
         let core = start < end ? String(chars[start..<end]) : ""
         let suffix = end < chars.count ? String(chars[end..<chars.count]) : ""
         return (prefix, core, suffix)
-    }
-
-    private func ukrainianTypoOverride(for word: String) -> String? {
-        let normalized = word.lowercased()
-        return LayoutDetector.ukrainianTypoOverrides[normalized]
     }
 
     /// Split trailing punctuation/symbols from a word.

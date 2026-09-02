@@ -64,12 +64,78 @@ echo "✅ SwitchFix has been added to your startup items."
 
 # 5. Handle Permissions
 echo ""
-echo "🛡️ Step 4: Setting up macOS Permissions..."
-echo "Because SwitchFix intercepts keyboard input to fix layouts, macOS requires you to grant it explicit permissions."
-echo ""
-read -p "Press [Enter] to begin the permission setup..."
 
-./scripts/regrant-permissions.sh "/Applications/SwitchFix.app"
+# Decide whether to walk through permission setup:
+#  - ad-hoc signed builds (no stable certificate) always need a fresh grant,
+#  - stable-signed builds keep their grants across rebuilds, except on a
+#    first install when no grant exists yet.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NEEDS_PERMISSION_SETUP=false
+if [ ! -f "$SCRIPT_DIR/.codesign-identity" ]; then
+    NEEDS_PERMISSION_SETUP=true
+else
+    read -p "   Is this the first time SwitchFix is installed on this Mac? (y/N) " FIRST_INSTALL || FIRST_INSTALL="N"
+    if [[ "$FIRST_INSTALL" =~ ^[Yy]$ ]]; then
+        NEEDS_PERMISSION_SETUP=true
+    fi
+fi
+
+if [ "$NEEDS_PERMISSION_SETUP" = true ]; then
+    echo "🛡️ Step 4: Setting up macOS Permissions..."
+    echo "SwitchFix intercepts keyboard input to fix layouts, so macOS requires you to grant it explicit permissions."
+    echo ""
+
+    # Reset stale TCC cache for SwitchFix to avoid stale signature mismatches
+    tccutil reset Accessibility com.switchfix.app >/dev/null 2>&1 || true
+    tccutil reset ListenEvent com.switchfix.app >/dev/null 2>&1 || true
+
+    # Open Accessibility settings & Finder
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" || true
+    open -R "/Applications/SwitchFix.app"
+
+    cat <<EOF
+══════════════════════════════════════════════════════════════════
+  Action Required (Step 1/2: Accessibility):
+  1. In the "Accessibility" settings window that just opened:
+     - Enable the toggle for "SwitchFix".
+     - If SwitchFix is not in the list, drag "SwitchFix.app"
+       from the opened Finder window into the list.
+══════════════════════════════════════════════════════════════════
+EOF
+
+    read -p "Press [Enter] after enabling Accessibility to continue to Input Monitoring... "
+
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent" || true
+
+    cat <<EOF
+
+══════════════════════════════════════════════════════════════════
+  Action Required (Step 2/2: Input Monitoring):
+  2. In the "Input Monitoring" settings window:
+     - Enable the toggle for "SwitchFix" (or drag SwitchFix.app in).
+══════════════════════════════════════════════════════════════════
+EOF
+
+    read -p "Press [Enter] when done to launch SwitchFix... "
+
+    echo ""
+    echo "🚀 Launching SwitchFix..."
+    open "/Applications/SwitchFix.app"
+else
+    echo "✅ Signed with stable certificate — permissions survive rebuilds."
+    echo "   Your existing Accessibility and Input Monitoring grants are kept."
+    echo ""
+    echo "🚀 Launching SwitchFix..."
+    open "/Applications/SwitchFix.app"
+fi
 
 echo ""
 echo "🎉 Setup Complete! SwitchFix is now installed and running."
+echo ""
+echo "💡 Quick Test:"
+echo "   Switch your keyboard layout to English and type 'ghbdtn ' (with Space)."
+echo "   SwitchFix will automatically convert it to 'привіт ' / 'привет ' and switch your layout."
+echo ""
+echo "📋 To watch live debug logs, run:"
+echo "   log stream --level debug --style compact --predicate 'subsystem == \"com.switchfix\"'"
+echo ""

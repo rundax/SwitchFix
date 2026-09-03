@@ -55,7 +55,7 @@ public final class InputEngine {
     private var correctionEpoch: UInt64
     private var latestProcessedSequence: UInt64 = 0
     private var maximumQueueDepth = 0
-    private let logger = Logger(subsystem: "com.switchfix", category: "input-engine")
+    private let logger = SwitchFixLog.engine
 
     public init(
         captureState: CaptureStateStore,

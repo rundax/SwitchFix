@@ -78,7 +78,7 @@ public final class TextCorrector {
     private let inputSourceManager: InputSourceManager
     private let eventSource: CGEventSource?
     private let undoState = OSAllocatedUnfairLock<UndoState?>(initialState: nil)
-    private let logger = Logger(subsystem: "com.switchfix", category: "correction")
+    private let logger = SwitchFixLog.corrector
 
     public init(inputSourceManager: InputSourceManager = .shared) {
         self.inputSourceManager = inputSourceManager
@@ -369,8 +369,18 @@ public final class TextCorrector {
     }
 
     private func post(_ events: [CGEvent], targetPID: pid_t) {
+        let isOwnProcess = targetPID == getpid()
         for event in events {
-            event.postToPid(targetPID)
+            if isOwnProcess {
+                event.postToPid(targetPID)
+            } else {
+                event.post(tap: .cgAnnotatedSessionEventTap)
+                // Small pacing interval between keystrokes to ensure
+                // multi-process applications (Chromium, Electron, WebKit)
+                // and rich-text web editors (ProseMirror, Slate, Lexical)
+                // process backspace and text input events reliably.
+                usleep(2_000)
+            }
         }
     }
 
@@ -401,7 +411,12 @@ public final class TextCorrector {
         }
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
-        keyDown.postToPid(targetPID)
-        keyUp.postToPid(targetPID)
+        if targetPID == getpid() {
+            keyDown.postToPid(targetPID)
+            keyUp.postToPid(targetPID)
+        } else {
+            keyDown.post(tap: .cgAnnotatedSessionEventTap)
+            keyUp.post(tap: .cgAnnotatedSessionEventTap)
+        }
     }
 }

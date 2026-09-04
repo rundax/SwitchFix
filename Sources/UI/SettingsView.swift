@@ -1,8 +1,11 @@
 import SwiftUI
 import AppKit
 import Carbon
+import Core
 import UniformTypeIdentifiers
 import Utils
+
+typealias KeyboardLayout = Core.Layout
 
 // Helpers
 func getModifierString(for modifiers: UInt64) -> String {
@@ -60,7 +63,11 @@ class SettingsViewModel: ObservableObject {
         didSet { PreferencesManager.shared.revertHotkeyModifiers = revertHotkeyModifiers }
     }
 
+    @Published var sourcesByLayout: [KeyboardLayout: [DiscoveredInputSourceDescriptor]] = [:]
+    @Published var preferredSourceIDs: [KeyboardLayout: String] = [:]
+
     init() {
+        reloadLayouts()
         NotificationCenter.default.addObserver(self, selector: #selector(syncFromPreferences), name: .preferencesDidChange, object: nil)
     }
     
@@ -73,7 +80,32 @@ class SettingsViewModel: ObservableObject {
         if self.correctionMode != PreferencesManager.shared.correctionMode {
             self.correctionMode = PreferencesManager.shared.correctionMode
         }
-        // ... extend for others if needed, but mainly Mode is likely to change externally via Menu
+        reloadLayouts()
+    }
+
+    func reloadLayouts() {
+        sourcesByLayout = InputSourceManager.shared.availableInputSourcesByLayout()
+        var preferred: [KeyboardLayout: String] = [:]
+        for layout in KeyboardLayout.allCases {
+            if let id = InputSourceManager.shared.sourceID(for: layout) {
+                preferred[layout] = id
+            }
+        }
+        preferredSourceIDs = preferred
+    }
+
+    func setPreferredSource(id: String, for layout: KeyboardLayout) {
+        InputSourceManager.shared.setPreferredSource(id: id, for: layout)
+        preferredSourceIDs[layout] = id
+    }
+
+    func refreshInstalledSources() {
+        InputSourceManager.shared.refreshInstalledSources()
+        reloadLayouts()
+    }
+
+    var availableLayouts: [KeyboardLayout] {
+        KeyboardLayout.allCases.filter { !(sourcesByLayout[$0]?.isEmpty ?? true) }
     }
 }
 
@@ -370,6 +402,93 @@ struct ExcludedAppsView: View {
     }
 }
 
+private func sourceDisplayName(_ source: DiscoveredInputSourceDescriptor) -> String {
+    if source.supportedLayouts.count > 1 {
+        return "\(source.name) (Hybrid)"
+    } else if source.isCustom {
+        return "\(source.name) (Custom)"
+    }
+    return source.name
+}
+
+struct KeyboardLayoutRow: View {
+    let layout: KeyboardLayout
+    @ObservedObject var model: SettingsViewModel
+
+    private var sources: [DiscoveredInputSourceDescriptor] {
+        model.sourcesByLayout[layout] ?? []
+    }
+
+    private var selectedID: Binding<String> {
+        Binding(
+            get: { model.preferredSourceIDs[layout] ?? sources.first?.id ?? "" },
+            set: { newID in model.setPreferredSource(id: newID, for: layout) }
+        )
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(layout.displayName)
+                .frame(width: 85, alignment: .leading)
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            if sources.count > 1 {
+                Picker("", selection: selectedID) {
+                    ForEach(sources) { source in
+                        Text(sourceDisplayName(source)).tag(source.id)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+            } else if let source = sources.first {
+                Text(sourceDisplayName(source))
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                Spacer()
+            }
+        }
+    }
+}
+
+struct KeyboardLayoutsView: View {
+    @ObservedObject var model: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Keyboards & Layouts").font(.headline)
+                Spacer()
+                Button("Refresh Layouts") {
+                    model.refreshInstalledSources()
+                }
+                .font(.caption)
+            }
+            Text("SwitchFix automatically discovers native and custom keyboard layouts. Select your preferred layout for each language.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if model.availableLayouts.isEmpty {
+                Text("No supported keyboard layouts detected.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(model.availableLayouts, id: \.self) { layout in
+                        KeyboardLayoutRow(layout: layout, model: model)
+                    }
+                }
+                .padding(10)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+            }
+        }
+    }
+}
+
 struct SettingsView: View {
     @StateObject private var model = SettingsViewModel()
 
@@ -385,70 +504,77 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            
-            // GENERAL
-            VStack(alignment: .leading, spacing: 8) {
-                Text("General").font(.headline)
-                Toggle("Launch at Login", isOn: $model.launchAtLogin)
-            }
-            
-            Divider()
-            
-            // CORRECTION MODE
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Correction Mode").font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
                 
-                Picker("", selection: $model.correctionMode) {
-                    Text("Automatic (Space / Enter)").tag(CorrectionMode.automatic)
-                    Text("Hotkey Only").tag(CorrectionMode.hotkey)
-                    Text("On Layout Switch").tag(CorrectionMode.layoutSwitch)
+                // GENERAL
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("General").font(.headline)
+                    Toggle("Launch at Login", isOn: $model.launchAtLogin)
                 }
-                .pickerStyle(RadioGroupPickerStyle())
                 
-                Text(correctionModeDescription)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Divider()
-            
-            // SHORTCUTS
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Shortcuts").font(.headline)
+                Divider()
                 
-                Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
-                    GridRow {
-                        Text("Trigger Correction:")
-                            .gridColumnAlignment(.trailing)
-                        HotkeyRecorder(
-                            keyCode: $model.hotkeyKeyCode,
-                            modifiers: $model.hotkeyModifiers
-                        )
+                // CORRECTION MODE
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Correction Mode").font(.headline)
+                    
+                    Picker("", selection: $model.correctionMode) {
+                        Text("Automatic (Space / Enter)").tag(CorrectionMode.automatic)
+                        Text("Hotkey Only").tag(CorrectionMode.hotkey)
+                        Text("On Layout Switch").tag(CorrectionMode.layoutSwitch)
+                    }
+                    .pickerStyle(RadioGroupPickerStyle())
+                    
+                    Text(correctionModeDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Divider()
+                
+                // SHORTCUTS
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Shortcuts").font(.headline)
+                    
+                    Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Trigger Correction:")
+                                .gridColumnAlignment(.trailing)
+                            HotkeyRecorder(
+                                keyCode: $model.hotkeyKeyCode,
+                                modifiers: $model.hotkeyModifiers
+                            )
+                        }
+                        
+                        GridRow {
+                            Text("Revert Last:")
+                            HotkeyRecorder(
+                                keyCode: $model.revertHotkeyKeyCode,
+                                modifiers: $model.revertHotkeyModifiers
+                            )
+                        }
                     }
                     
-                    GridRow {
-                        Text("Revert Last:")
-                        HotkeyRecorder(
-                            keyCode: $model.revertHotkeyKeyCode,
-                            modifiers: $model.revertHotkeyModifiers
-                        )
-                    }
+                    Text("Recommended: Set 'Revert Last' to Caps Lock to avoid conflicts.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                
-                Text("Recommended: Set 'Revert Last' to Caps Lock to avoid conflicts.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
+                Divider()
+
+                // KEYBOARDS & LAYOUTS
+                KeyboardLayoutsView(model: model)
+
+                Divider()
+
+                // EXCLUDED APPS
+                ExcludedAppsView()
+
+                Spacer()
             }
-
-            Divider()
-
-            // EXCLUDED APPS
-            ExcludedAppsView()
-
-            Spacer()
+            .padding(30)
         }
-        .padding(30)
-        .frame(width: 480, height: 700)
+        .frame(width: 480, height: 750)
     }
 }

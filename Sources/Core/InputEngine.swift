@@ -36,6 +36,7 @@ public final class InputEngine {
 
     private struct DetectionConfiguration {
         var allowedLayouts = Set(Layout.allCases)
+        var activeSourceSupportedLayouts: Set<Layout> = [.english]
         var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
         var ukrainianToVariant: UkrainianKeyboardVariant = .standard
     }
@@ -227,11 +228,13 @@ public final class InputEngine {
 
     public func updateDetectionConfiguration(
         allowedLayouts: Set<Layout>,
+        activeSourceSupportedLayouts: Set<Layout> = [.english],
         ukrainianFromVariant: UkrainianKeyboardVariant,
         ukrainianToVariant: UkrainianKeyboardVariant
     ) {
         detectionConfiguration.withLock { value in
             value.allowedLayouts = allowedLayouts
+            value.activeSourceSupportedLayouts = activeSourceSupportedLayouts
             value.ukrainianFromVariant = ukrainianFromVariant
             value.ukrainianToVariant = ukrainianToVariant
         }
@@ -327,6 +330,7 @@ public final class InputEngine {
             correctionQueue.async { [weak self] in
                 self?.corrector.clearUndo()
             }
+            resetDetectorState()
         }
     }
 
@@ -340,6 +344,8 @@ public final class InputEngine {
             } else {
                 let configuration = self.detectionConfiguration.withLock { $0 }
                 self.detector.currentLayout = request.context.layout
+                self.detector.currentInputSourceID = request.context.inputSourceID
+                self.detector.activeSourceSupportedLayouts = configuration.activeSourceSupportedLayouts
                 self.detector.allowedLayouts = configuration.allowedLayouts
                 self.detector.ukrainianFromVariant = configuration.ukrainianFromVariant
                 self.detector.ukrainianToVariant = configuration.ukrainianToVariant
@@ -368,9 +374,11 @@ public final class InputEngine {
 
     private func prepareCorrection(result: DetectionResult, request: DetectionRequest) {
         let latest = captureState.snapshot()
-        var cancelReason: String?
+        let cancelReason: String?
+        let isTextIdentical = result.originalWord == result.convertedWord
+
         if latest.latestPhysicalSequence != request.sequence {
-            cancelReason = "stale-sequence"
+            cancelReason = "sequence-drift"
         } else if latest.editGeneration != request.editGeneration {
             cancelReason = "edit-generation-changed"
         } else if latest.correctionEpoch != request.correctionEpoch {
@@ -385,6 +393,10 @@ public final class InputEngine {
             cancelReason = "correction-disallowed"
         } else if result.originalWord.count > 64 {
             cancelReason = "word-too-long"
+        } else if isTextIdentical && !result.shouldSwitchLayout {
+            cancelReason = "text-identical-no-switch"
+        } else {
+            cancelReason = nil
         }
         guard cancelReason == nil else {
             logger.debug("correction cancelled reason=\(cancelReason!) word='\(result.originalWord)'")
@@ -392,8 +404,10 @@ public final class InputEngine {
         }
 
         let boundary = request.boundary
+        let deleteCount = isTextIdentical ? 0 : result.originalWord.count + boundary.count
+        let replacementText = isTextIdentical ? "" : result.convertedWord + boundary
         logger.notice(
-            "correction planned '\(result.originalWord)' -> '\(result.convertedWord)' deletes=\(result.originalWord.count + boundary.count) pid=\(request.context.frontmostPID)"
+            "correction planned '\(result.originalWord)' -> '\(result.convertedWord)' deletes=\(deleteCount) pid=\(request.context.frontmostPID) layoutSwitch=\(result.shouldSwitchLayout ? result.targetLayout.rawValue : "none")"
         )
         let plan = CorrectionPlan(
             boundarySequence: request.sequence,
@@ -401,8 +415,8 @@ public final class InputEngine {
             targetPID: request.context.frontmostPID,
             editGeneration: request.editGeneration,
             correctionEpoch: request.correctionEpoch,
-            deleteCount: result.originalWord.count + boundary.count,
-            replacementText: result.convertedWord + boundary,
+            deleteCount: deleteCount,
+            replacementText: replacementText,
             originalText: result.originalWord,
             correctedText: result.convertedWord,
             boundaryText: boundary,

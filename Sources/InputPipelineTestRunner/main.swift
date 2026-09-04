@@ -270,6 +270,106 @@ run("correction sequence and context gates") {
     check(!plan.isEligible(using: reset), "tap reset or overload must disable correction eligibility")
 }
 
+run("identical original and converted text avoids text deletion") {
+    let current = context(focus: .notSecure)
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    var emittedPlan: CorrectionPlan?
+    let correctionCalled = DispatchSemaphore(value: 0)
+
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: request.word,
+                originalWord: request.word,
+                shouldSwitchLayout: true
+            )
+        },
+        correctionEmission: { plan in
+            emittedPlan = plan
+            correctionCalled.signal()
+            return true
+        }
+    )
+
+    engine.enqueue(store.capture(
+        timestamp: 1,
+        kind: .character("де"),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+    engine.enqueue(store.capture(
+        timestamp: 2,
+        kind: .boundary(" "),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+
+    check(correctionCalled.wait(timeout: .now() + 1) == .success, "identical text with switch must emit plan")
+    check(emittedPlan?.deleteCount == 0, "identical text must have deleteCount 0 to avoid erasing on-screen message")
+    check(emittedPlan?.replacementText.isEmpty == true, "identical text must have empty replacementText")
+    check(emittedPlan?.targetLayout == .ukrainian, "identical text must preserve target layout switch")
+
+    // Verify TextCorrector handles layout-only plan without errors
+    let corrector = TextCorrector()
+    if let emittedPlan {
+        let applied = corrector.apply(emittedPlan, latestCaptureState: store.snapshot)
+        check(applied, "TextCorrector must apply layout-only plan without deleting text")
+    }
+
+    // Now test that identical text WITHOUT layout switch is completely cancelled
+    let noSwitchCalled = DispatchSemaphore(value: 0)
+    let noSwitchEngine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: request.word,
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { _ in
+            noSwitchCalled.signal()
+            return true
+        }
+    )
+
+    noSwitchEngine.enqueue(store.capture(
+        timestamp: 3,
+        kind: .character("тест"),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+    noSwitchEngine.enqueue(store.capture(
+        timestamp: 4,
+        kind: .boundary(" "),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+
+    check(noSwitchCalled.wait(timeout: .now() + 0.05) == .timedOut, "identical text without layout switch must be cancelled")
+}
+
 run("secure focus fails closed") {
     check(AccessibilityFocusCoordinator.classifyFocus(
         role: "AXTextField",

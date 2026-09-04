@@ -731,6 +731,172 @@ runSuite("LayoutDetector: Reset drops suppressed cross-context history") {
 }
 
 // =============================================================================
+// Custom Keyboard Layout & Hybrid Discovery Tests (Plan 005)
+// =============================================================================
+
+runSuite("InputSourceDiscoveryEngine: Tier 1 language metadata") {
+    let ukProvider = MockInputSourcePropertyReader(
+        id: "custom.keylayout.ukrainian",
+        localizedName: "Custom Ukrainian",
+        languages: ["uk-UA"]
+    )
+    let ukDesc = InputSourceDiscoveryEngine.classify(provider: ukProvider)
+    assert(ukDesc != nil, "should classify provider with 'uk-UA' language")
+    assertEqual(ukDesc?.supportedLayouts, Set([.ukrainian]), "should map to .ukrainian")
+    assert(ukDesc?.isCustom == true, "should mark as custom")
+
+    let ruProvider = MockInputSourcePropertyReader(
+        id: "custom.keylayout.russian",
+        localizedName: "Custom Russian",
+        languages: ["ru-RU"]
+    )
+    let ruDesc = InputSourceDiscoveryEngine.classify(provider: ruProvider)
+    assert(ruDesc != nil, "should classify provider with 'ru-RU' language")
+    assertEqual(ruDesc?.supportedLayouts, Set([.russian]), "should map to .russian")
+
+    let enProvider = MockInputSourcePropertyReader(
+        id: "custom.keylayout.english",
+        localizedName: "Custom English",
+        languages: ["en-US"]
+    )
+    let enDesc = InputSourceDiscoveryEngine.classify(provider: enProvider)
+    assertEqual(enDesc?.supportedLayouts, Set([.english]), "should map to .english")
+}
+
+runSuite("InputSourceDiscoveryEngine: Tier 2 token & name heuristics") {
+    let birmanProvider = MockInputSourcePropertyReader(
+        id: "org.sil.ukelele.keyboardlayout.ru-ua-birman",
+        localizedName: "Russian - Ilya Birman Typography",
+        languages: []
+    )
+    let birmanDesc = InputSourceDiscoveryEngine.classify(provider: birmanProvider)
+    assert(birmanDesc != nil, "should classify Birman layout from tokens")
+    assertEqual(birmanDesc?.supportedLayouts, Set([.russian, .ukrainian]), "Birman layout should support both Russian and Ukrainian")
+    assert(birmanDesc?.isCustom == true, "Birman layout should be marked as custom")
+
+    let colemakProvider = MockInputSourcePropertyReader(
+        id: "com.custom.colemak",
+        localizedName: "Colemak Mod-DH",
+        languages: nil
+    )
+    let colemakDesc = InputSourceDiscoveryEngine.classify(provider: colemakProvider)
+    assertEqual(colemakDesc?.supportedLayouts, Set([.english]), "Colemak should map to .english")
+
+    let dvorakProvider = MockInputSourcePropertyReader(
+        id: "org.unknown.keylayout.DvorakSpecial",
+        localizedName: "Custom Dvorak",
+        languages: nil
+    )
+    let dvorakDesc = InputSourceDiscoveryEngine.classify(provider: dvorakProvider)
+    assertEqual(dvorakDesc?.supportedLayouts, Set([.english]), "Dvorak should map to .english")
+}
+
+runSuite("InputSourceDiscoveryEngine: Tier 3 UCKeyTranslate probing") {
+    let unshifted: [UInt16: Character] = [
+        0: "ф",
+        1: "ы",
+        12: "й",
+        30: "ъ",
+        39: "э"
+    ]
+    let option: [UInt16: Character] = [
+        1: "і",
+        5: "ґ",
+        30: "ї",
+        39: "є"
+    ]
+    let probedBirman = MockInputSourcePropertyReader(
+        id: "com.unknown.layout.custom",
+        localizedName: "Typographic Layout",
+        languages: nil,
+        unshiftedKeys: unshifted,
+        optionKeys: option
+    )
+    let probedDesc = InputSourceDiscoveryEngine.classify(provider: probedBirman)
+    assert(probedDesc != nil, "should classify layout with Cyrillic unshifted + Ukrainian Option keys")
+    assertEqual(probedDesc?.supportedLayouts, Set([.russian, .ukrainian]), "should detect hybrid Russian + Ukrainian from probing")
+}
+
+runSuite("InputSourceDiscoveryEngine: Ukrainian variant detection") {
+    let standardProvider = MockInputSourcePropertyReader(
+        id: "custom.ukrainian.standard",
+        localizedName: "Ukrainian Custom",
+        languages: ["uk"],
+        unshiftedKeys: [1: "і", 11: "и"]
+    )
+    let standardDesc = InputSourceDiscoveryEngine.classify(provider: standardProvider)
+    assertEqual(standardDesc?.ukrainianVariant, .standard, "should detect standard variant")
+
+    let legacyProvider = MockInputSourcePropertyReader(
+        id: "custom.ukrainian.legacy",
+        localizedName: "Ukrainian Legacy Custom",
+        languages: ["uk"],
+        unshiftedKeys: [1: "и", 11: "і"]
+    )
+    let legacyDesc = InputSourceDiscoveryEngine.classify(provider: legacyProvider)
+    assertEqual(legacyDesc?.ukrainianVariant, .legacy, "should detect legacy variant")
+}
+
+runSuite("Hybrid Layout: Multi-language validation without correction (No Death Spiral)") {
+    let detector = LayoutDetector()
+    detector.activeSourceSupportedLayouts = [.russian, .ukrainian]
+    detector.currentLayout = .russian
+    detector.currentInputSourceID = "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    detector.preferredSourceIDProvider = { layout in
+        layout == .english ? "com.apple.keylayout.ABC" : "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    }
+
+    let ukrainianWords = ["привіт", "єдина", "справи", "сьогодні", "перевірка"]
+    for word in ukrainianWords {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        let result = detector.flushBuffer(boundaryCharacter: " ")
+        assert(result == nil, "Ukrainian word '\(word)' on hybrid Birman layout must NOT be corrected or flickered")
+    }
+
+    let russianWords = ["привет", "хорошо", "погода", "сегодня", "проверка"]
+    for word in russianWords {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        let result = detector.flushBuffer(boundaryCharacter: " ")
+        assert(result == nil, "Russian word '\(word)' on hybrid Birman layout must NOT be corrected")
+    }
+}
+
+runSuite("Hybrid Layout: Mistype on Birman switches to ABC") {
+    let detector = LayoutDetector()
+    detector.activeSourceSupportedLayouts = [.russian, .ukrainian]
+    detector.currentLayout = .russian
+    detector.currentInputSourceID = "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    detector.preferredSourceIDProvider = { layout in
+        layout == .english ? "com.apple.keylayout.ABC" : "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    }
+
+    for char in "руддщ" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assert(result != nil, "'руддщ' should be detected as wrong layout")
+    assertEqual(result?.targetLayout, .english)
+    assertEqual(result?.convertedWord, "hello")
+    assert(result?.shouldSwitchLayout == true, "should switch to English")
+}
+
+runSuite("Hybrid Layout: Self-switch suppression") {
+    let detector = LayoutDetector()
+    detector.activeSourceSupportedLayouts = [.russian, .ukrainian]
+    detector.currentLayout = .russian
+    detector.currentInputSourceID = "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    detector.preferredSourceIDProvider = { _ in
+        "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    }
+
+    assertEqual(detector.currentInputSourceID, detector.preferredSourceIDProvider?(.ukrainian))
+}
+
+// =============================================================================
 // Synthetic Coverage Tests (EN ↔︎ UK)
 // =============================================================================
 

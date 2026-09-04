@@ -232,7 +232,15 @@ public class StatusBarController: NSObject, NSMenuDelegate {
             let layoutItem = NSMenuItem(title: layout.displayName, action: nil, keyEquivalent: "")
             let layoutMenu = NSMenu()
             for source in sources {
-                let item = NSMenuItem(title: source.name, action: nil, keyEquivalent: "")
+                var title = source.name
+                if source.supportedLayouts.count > 1 {
+                    title += " (Hybrid)"
+                } else if source.isCustom {
+                    title += " (Custom)"
+                }
+                let item = NSMenuItem(title: title, action: #selector(selectInstalledSource(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = source.id
                 item.toolTip = source.id
                 if source.id == currentID {
                     item.state = .on
@@ -253,7 +261,13 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         return sub
     }
 
-    private func refreshInstalledLayoutsMenu() {
+    @objc private func selectInstalledSource(_ sender: NSMenuItem) {
+        guard let sourceID = sender.representedObject as? String else { return }
+        InputSourceManager.shared.switchToSource(id: sourceID)
+        refreshInstalledLayoutsMenu()
+    }
+
+    public func refreshInstalledLayoutsMenu() {
         installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
     }
 

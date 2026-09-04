@@ -1,11 +1,11 @@
 import Foundation
 
-public enum UkrainianKeyboardVariant: String {
+public enum UkrainianKeyboardVariant: String, Sendable {
     case standard
     case legacy
 }
 
-public enum Layout: String, CaseIterable, Equatable {
+public enum Layout: String, CaseIterable, Equatable, Sendable {
     case english
     case ukrainian
     case russian

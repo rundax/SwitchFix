@@ -100,6 +100,17 @@ public class LayoutDetector {
     /// The currently active keyboard layout (set externally by InputSourceManager).
     public var currentLayout: Layout = .english
 
+    /// The set of languages supported by the currently active physical input source.
+    public var activeSourceSupportedLayouts: Set<Layout> = [.english]
+
+    /// The ID of the currently active input source.
+    public var currentInputSourceID: String = "unknown"
+
+    /// Provider to look up the preferred physical input source ID for a target layout.
+    public var preferredSourceIDProvider: ((Layout) -> String?)? = { layout in
+        InputSourceManager.shared.sourceID(for: layout)
+    }
+
     public init() {}
 
     /// Add a character to the word buffer.
@@ -207,13 +218,23 @@ public class LayoutDetector {
             return nil
         }
 
-        // Check if the word is valid in the current layout's language
+        // Check if the word is valid in the current layout's language or ANY language supported by active hybrid source
         let currentWordParts = splitTokenForValidation(word)
         let currentValidationInput = currentWordParts.core.isEmpty ? word : currentWordParts.core
 
         let currentLanguage = languageForLayout(sourceLayout)
-        if validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid {
-            SwitchFixLog.detector.debug("valid in \(currentLanguage.rawValue): '\(word)' — no correction")
+        let isLocallyValid: Bool
+        if activeSourceSupportedLayouts.count > 1 {
+            isLocallyValid = activeSourceSupportedLayouts.contains { layout in
+                let lang = languageForLayout(layout)
+                return validator.validate(currentValidationInput, language: lang, allowSuggestion: false).isValid
+            }
+        } else {
+            isLocallyValid = validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid
+        }
+
+        if isLocallyValid {
+            SwitchFixLog.detector.debug("valid in active layout set (\(self.activeSourceSupportedLayouts.map(\.rawValue).joined(separator: ", "))): '\(word)' — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
@@ -242,6 +263,15 @@ public class LayoutDetector {
         )
             .filter { allowedLayouts.contains($0.0) }
         for (targetLayout, converted) in alternatives {
+            // Self-switch suppression: if target layout uses the exact same physical input source already active
+            let currentSourceID = currentInputSourceID
+            let targetPreferred = preferredSourceIDProvider?(targetLayout)
+            if (currentSourceID != "unknown" && targetPreferred != nil && currentSourceID == targetPreferred)
+                || (activeSourceSupportedLayouts.contains(targetLayout) && (targetPreferred == nil || targetPreferred == currentSourceID)) {
+                SwitchFixLog.detector.debug("self-switch suppressed: target \(targetLayout.rawValue) shares active source \(currentSourceID)")
+                continue
+            }
+
             let targetLanguage = languageForLayout(targetLayout)
             var candidateConversions: [String] = [converted]
             if sourceLayout == .ukrainian && targetLayout == .english {
@@ -603,6 +633,20 @@ public class LayoutDetector {
         case .cyrillic:
             if currentLayout == .ukrainian || currentLayout == .russian {
                 return currentLayout
+            }
+            if activeSourceSupportedLayouts.contains(.ukrainian) || activeSourceSupportedLayouts.contains(.russian) {
+                if let inferred = inferCyrillicLayout(for: word), activeSourceSupportedLayouts.contains(inferred) {
+                    return inferred
+                }
+                if activeSourceSupportedLayouts.contains(currentLayout) {
+                    return currentLayout
+                }
+                if activeSourceSupportedLayouts.contains(.ukrainian) {
+                    return .ukrainian
+                }
+                if activeSourceSupportedLayouts.contains(.russian) {
+                    return .russian
+                }
             }
             return inferCyrillicLayout(for: word) ?? currentLayout
         case .mixed, .unknown:

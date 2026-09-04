@@ -126,6 +126,3 @@ public class PreferencesManager {
     private init() {}
 }
 
-public extension Notification.Name {
-    static let preferencesDidChange = Notification.Name("SwitchFix_PreferencesDidChange")
-}

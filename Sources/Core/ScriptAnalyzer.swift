@@ -96,7 +96,12 @@ public struct ScriptAnalyzer {
         return nil
     }
 
-    public static func resolvedSourceLayout(for word: String, currentLayout: Layout, allowedLayouts: Set<Layout>) -> Layout {
+    public static func resolvedSourceLayout(
+        for word: String,
+        currentLayout: Layout,
+        allowedLayouts: Set<Layout>,
+        activeSourceSupportedLayouts: Set<Layout> = []
+    ) -> Layout {
         let script = scriptKind(for: word)
         switch script {
         case .latin:
@@ -107,6 +112,21 @@ public struct ScriptAnalyzer {
         case .cyrillic:
             if currentLayout == .ukrainian || currentLayout == .russian {
                 return currentLayout
+            }
+            if activeSourceSupportedLayouts.contains(.ukrainian) || activeSourceSupportedLayouts.contains(.russian) {
+                if let inferred = inferCyrillicLayout(for: word, allowedLayouts: allowedLayouts),
+                   activeSourceSupportedLayouts.contains(inferred) {
+                    return inferred
+                }
+                if activeSourceSupportedLayouts.contains(currentLayout) {
+                    return currentLayout
+                }
+                if activeSourceSupportedLayouts.contains(.ukrainian) {
+                    return .ukrainian
+                }
+                if activeSourceSupportedLayouts.contains(.russian) {
+                    return .russian
+                }
             }
             return inferCyrillicLayout(for: word, allowedLayouts: allowedLayouts) ?? currentLayout
         case .mixed, .unknown:

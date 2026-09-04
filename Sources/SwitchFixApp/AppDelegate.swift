@@ -169,6 +169,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             suspensionBehavior: .deliverImmediately
         )
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(installedInputSourcesChanged),
+            name: NSNotification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String),
+            object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
+    }
+
+    @objc private func installedInputSourcesChanged() {
+        SwitchFixLog.app.notice("installed input sources changed notification received")
+        inputSourceManager.refreshInstalledSources()
+        statusBarController?.refreshInstalledLayoutsMenu()
+        prepareDictionaries { [weak self] allowedLayouts in
+            guard let self else { return }
+            self.readyLayouts = allowedLayouts
+            self.updateDetectionConfiguration(allowedLayouts: allowedLayouts)
+        }
     }
 
     @objc private func activeApplicationChanged(_ notification: Notification) {
@@ -359,6 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : preferredVariant
         inputEngine?.updateDetectionConfiguration(
             allowedLayouts: allowedLayouts,
+            activeSourceSupportedLayouts: inputSourceManager.activeSourceSupportedLayouts(),
             ukrainianFromVariant: currentVariant,
             ukrainianToVariant: preferredVariant
         )

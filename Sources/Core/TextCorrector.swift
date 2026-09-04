@@ -138,6 +138,20 @@ public final class TextCorrector {
         _ plan: CorrectionPlan,
         latestCaptureState: () -> CaptureStateSnapshot
     ) -> Bool {
+        if plan.deleteCount == 0 && plan.replacementText.isEmpty {
+            guard plan.isEligible(using: latestCaptureState()) else { return false }
+            undoState.withLock { $0 = UndoState(plan: plan) }
+            if let layout = plan.targetLayout {
+                DispatchQueue.main.async { [inputSourceManager] in
+                    inputSourceManager.switchTo(layout)
+                }
+            }
+            logger.notice(
+                "correction APPLIED (layout-only) '\(plan.correctedText)' deletes=0 pid=\(plan.targetPID) layoutSwitch=\(plan.targetLayout?.rawValue ?? "none")"
+            )
+            return true
+        }
+
         guard plan.originalText.count <= 64,
               plan.deleteCount <= 128,
               let events = makeCorrectionEvents(plan: plan),
@@ -145,7 +159,7 @@ public final class TextCorrector {
             logger.debug("apply rejected '\(plan.originalText)' (oversized/no events/state changed)")
             return false
         }
-        post(events, targetPID: plan.targetPID)
+        post(deletions: events.deletions, insertions: events.insertions, targetPID: plan.targetPID)
 
         undoState.withLock { $0 = UndoState(plan: plan) }
         if let layout = plan.targetLayout,
@@ -241,7 +255,7 @@ public final class TextCorrector {
             logger.debug("undo rejected: could not build inverse events or state changed")
             return false
         }
-        post(events, targetPID: inverse.targetPID)
+        post(deletions: events.deletions, insertions: events.insertions, targetPID: inverse.targetPID)
         undoState.withLock { $0 = nil }
         logger.notice(
             "revert APPLIED '\(inverse.correctedText)' <- '\(inverse.originalText)' deletes=\(inverse.deleteCount) pid=\(inverse.targetPID)"
@@ -343,34 +357,36 @@ public final class TextCorrector {
         }
     }
 
-    private func makeCorrectionEvents(plan: CorrectionPlan) -> [CGEvent]? {
+    private func makeCorrectionEvents(plan: CorrectionPlan) -> (deletions: [CGEvent], insertions: [CGEvent])? {
         guard eventSource != nil, !plan.replacementText.isEmpty else { return nil }
-        var events: [CGEvent] = []
-        events.reserveCapacity(plan.deleteCount * 2 + plan.replacementText.count * 2)
+        var deletions: [CGEvent] = []
+        deletions.reserveCapacity(plan.deleteCount * 2)
         for _ in 0..<plan.deleteCount {
             guard let keyDown = makeKeyEvent(keyCode: 51, keyDown: true),
                   let keyUp = makeKeyEvent(keyCode: 51, keyDown: false) else {
                 return nil
             }
-            events.append(keyDown)
-            events.append(keyUp)
+            deletions.append(keyDown)
+            deletions.append(keyUp)
         }
 
+        var insertions: [CGEvent] = []
+        insertions.reserveCapacity(plan.replacementText.count * 2)
         for char in plan.replacementText {
             let str = String(char)
             guard let keyDown = makeUnicodeEvent(text: str, keyDown: true),
-                  let keyUp = makeUnicodeEvent(text: str, keyDown: false) else {
+                  let keyUp = makeKeyEvent(keyCode: 0, keyDown: false) else {
                 return nil
             }
-            events.append(keyDown)
-            events.append(keyUp)
+            insertions.append(keyDown)
+            insertions.append(keyUp)
         }
-        return events
+        return (deletions, insertions)
     }
 
-    private func post(_ events: [CGEvent], targetPID: pid_t) {
+    private func post(deletions: [CGEvent], insertions: [CGEvent], targetPID: pid_t) {
         let isOwnProcess = targetPID == getpid()
-        for event in events {
+        for event in deletions {
             if isOwnProcess {
                 event.postToPid(targetPID)
             } else {
@@ -378,8 +394,23 @@ public final class TextCorrector {
                 // Small pacing interval between keystrokes to ensure
                 // multi-process applications (Chromium, Electron, WebKit)
                 // and rich-text web editors (ProseMirror, Slate, Lexical)
-                // process backspace and text input events reliably.
-                usleep(2_000)
+                // process backspaces reliably.
+                usleep(3_000)
+            }
+        }
+        if !deletions.isEmpty && !insertions.isEmpty && !isOwnProcess {
+            // Settle interval between backspacing and typing replacement text to allow
+            // multi-process applications (Chromium, Electron, WebKit) and rich-text web
+            // editors (ProseMirror, Slate, Lexical) to complete DOM mutations and
+            // selection reconciliation before receiving new text keystrokes.
+            usleep(15_000)
+        }
+        for event in insertions {
+            if isOwnProcess {
+                event.postToPid(targetPID)
+            } else {
+                event.post(tap: .cgAnnotatedSessionEventTap)
+                usleep(3_000)
             }
         }
     }

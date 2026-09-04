@@ -6,20 +6,14 @@ import Utils
 public final class InputSourceManager {
     public static let shared = InputSourceManager()
 
-    public struct InputSourceDescriptor: Equatable {
-        public let id: String
-        public let name: String
-
-        public init(id: String, name: String) {
-            self.id = id
-            self.name = name
-        }
-    }
+    public typealias InputSourceDescriptor = DiscoveredInputSourceDescriptor
 
     private struct State {
+        var rawSources: [String: TISInputSource] = [:]
         var preferredSources: [Layout: TISInputSource] = [:]
         var sourceIDs: [Layout: String] = [:]
-        var descriptors: [Layout: [InputSourceDescriptor]] = [:]
+        var descriptors: [Layout: [DiscoveredInputSourceDescriptor]] = [:]
+        var allDiscoveredDescriptors: [DiscoveredInputSourceDescriptor] = []
         var ukrainianVariants: [String: UkrainianKeyboardVariant] = [:]
         var currentLayout: Layout?
         var currentInputSourceID: String?
@@ -33,8 +27,6 @@ public final class InputSourceManager {
 
     private let state = OSAllocatedUnfairLock(initialState: State())
     private let selectionCallbacks = OSAllocatedUnfairLock(initialState: SelectionCallbacks())
-    private static let sKeyCode: UInt16 = 1
-    private static let bKeyCode: UInt16 = 11
 
     private init() {
         refreshInstalledSources()
@@ -46,29 +38,23 @@ public final class InputSourceManager {
             return
         }
 
-        var preferred: [Layout: TISInputSource] = [:]
-        var ids: [Layout: String] = [:]
-        var descriptors: [Layout: [InputSourceDescriptor]] = [:]
+        var raw: [String: TISInputSource] = [:]
+        var descriptors: [Layout: [DiscoveredInputSourceDescriptor]] = [:]
+        var allDescriptors: [DiscoveredInputSourceDescriptor] = []
         var variants: [String: UkrainianKeyboardVariant] = [:]
 
         for source in sources {
-            guard let sourceID = Self.stringProperty(source, kTISPropertyInputSourceID),
-                  let layout = Layout.allCases.first(where: { $0.matches(sourceID: sourceID) }) else {
+            let adapter = CarbonTISPropertyAdapter(source: source)
+            guard let descriptor = InputSourceDiscoveryEngine.classify(provider: adapter) else {
                 continue
             }
-            let sourceName = Self.stringProperty(source, kTISPropertyLocalizedName) ?? sourceID
-            if let type = Self.stringProperty(source, kTISPropertyInputSourceType),
-               type != (kTISTypeKeyboardLayout as String) {
-                continue
+            raw[descriptor.id] = source
+            allDescriptors.append(descriptor)
+            if let variant = descriptor.ukrainianVariant {
+                variants[descriptor.id] = variant
             }
-
-            if preferred[layout] == nil {
-                preferred[layout] = source
-                ids[layout] = sourceID
-            }
-            descriptors[layout, default: []].append(InputSourceDescriptor(id: sourceID, name: sourceName))
-            if layout == .ukrainian {
-                variants[sourceID] = Self.detectUkrainianVariant(for: source, sourceName: sourceName)
+            for layout in descriptor.supportedLayouts {
+                descriptors[layout, default: []].append(descriptor)
             }
         }
 
@@ -78,24 +64,66 @@ public final class InputSourceManager {
             }
         }
 
+        let savedPrefs = UserDefaults.standard.dictionary(forKey: "SwitchFix_preferredInputSources") as? [String: String] ?? [:]
+        var preferred: [Layout: TISInputSource] = [:]
+        var ids: [Layout: String] = [:]
+
+        for layout in Layout.allCases {
+            guard let list = descriptors[layout], !list.isEmpty else { continue }
+            let chosenID: String
+            if let saved = savedPrefs[layout.rawValue], list.contains(where: { $0.id == saved }) {
+                chosenID = saved
+            } else if let native = list.first(where: { !$0.isCustom }) {
+                chosenID = native.id
+            } else {
+                chosenID = list[0].id
+            }
+            ids[layout] = chosenID
+            preferred[layout] = raw[chosenID]
+        }
+
+        let discoveredRaw = raw
         let discoveredPreferred = preferred
         let discoveredIDs = ids
         let discoveredDescriptors = descriptors
+        let discoveredAllDescriptors = allDescriptors
         let discoveredVariants = variants
+
         state.withLock { value in
+            value.rawSources = discoveredRaw
             value.preferredSources = discoveredPreferred
             value.sourceIDs = discoveredIDs
             value.descriptors = discoveredDescriptors
+            value.allDiscoveredDescriptors = discoveredAllDescriptors
             value.ukrainianVariants = discoveredVariants
         }
     }
 
     public func refreshCurrentInputSource() {
         let sourceID = Self.fetchCurrentInputSourceID()
-        let layout = Self.layout(for: sourceID)
+        guard sourceID != "unknown" else { return }
         state.withLock { value in
             value.currentInputSourceID = sourceID
-            value.currentLayout = layout
+            let supported = value.allDiscoveredDescriptors.first(where: { $0.id == sourceID })?.supportedLayouts
+                ?? Self.fallbackSupportedLayouts(for: sourceID)
+            if let existing = value.currentLayout, supported.contains(existing) {
+                return
+            }
+            for layout in Layout.allCases {
+                if value.sourceIDs[layout] == sourceID {
+                    value.currentLayout = layout
+                    return
+                }
+            }
+            if supported.contains(.ukrainian) {
+                value.currentLayout = .ukrainian
+            } else if supported.contains(.russian) {
+                value.currentLayout = .russian
+            } else if supported.contains(.english) {
+                value.currentLayout = .english
+            } else {
+                value.currentLayout = .english
+            }
         }
     }
 
@@ -118,19 +146,51 @@ public final class InputSourceManager {
     }
 
     public func currentLayout() -> Layout {
-        if let cached = state.withLock({ $0.currentLayout }) {
-            return cached
-        }
         refreshCurrentInputSource()
         return state.withLock { $0.currentLayout ?? .english }
     }
 
     public func currentInputSourceID() -> String {
-        if let cached = state.withLock({ $0.currentInputSourceID }) {
-            return cached
-        }
         refreshCurrentInputSource()
         return state.withLock { $0.currentInputSourceID ?? "unknown" }
+    }
+
+    public func sourceID(for layout: Layout) -> String? {
+        state.withLock { $0.sourceIDs[layout] }
+    }
+
+    public func setPreferredSource(id: String, for layout: Layout) {
+        state.withLock { value in
+            guard let source = value.rawSources[id] else { return }
+            value.preferredSources[layout] = source
+            value.sourceIDs[layout] = id
+            var savedPrefs = UserDefaults.standard.dictionary(forKey: "SwitchFix_preferredInputSources") as? [String: String] ?? [:]
+            savedPrefs[layout.rawValue] = id
+            UserDefaults.standard.set(savedPrefs, forKey: "SwitchFix_preferredInputSources")
+        }
+        NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+    }
+
+    public func activeSourceSupportedLayouts() -> Set<Layout> {
+        let currentID = currentInputSourceID()
+        return supportedLayouts(for: currentID)
+    }
+
+    public func supportedLayouts(for sourceID: String) -> Set<Layout> {
+        state.withLock { value in
+            if let desc = value.allDiscoveredDescriptors.first(where: { $0.id == sourceID }) {
+                return desc.supportedLayouts
+            }
+            return Self.fallbackSupportedLayouts(for: sourceID)
+        }
+    }
+
+    public func matches(sourceID: String, layout: Layout) -> Bool {
+        supportedLayouts(for: sourceID).contains(layout)
+    }
+
+    public func discoveredDescriptors() -> [DiscoveredInputSourceDescriptor] {
+        state.withLock { $0.allDiscoveredDescriptors }
     }
 
     /// Select a cached source with one TIS call and no source enumeration.
@@ -141,22 +201,27 @@ public final class InputSourceManager {
                   let sourceID = value.sourceIDs[layout] else {
                 return nil
             }
-            if value.currentInputSourceID == sourceID {
-                return (source, sourceID)
-            }
             value.pendingSelectionID = sourceID
             return (source, sourceID)
         }) else {
             SwitchFixLog.source.error("switchTo(\(layout.rawValue)): no cached input source")
             return false
         }
-        if currentInputSourceID() == target.1 {
-            state.withLock { $0.pendingSelectionID = nil }
+
+        let liveSourceID = Self.fetchCurrentInputSourceID()
+        let callbacks = selectionCallbacks.withLock { $0 }
+
+        if liveSourceID == target.1 {
+            state.withLock {
+                $0.pendingSelectionID = nil
+                $0.currentInputSourceID = target.1
+                $0.currentLayout = layout
+            }
+            callbacks.willSelect?(layout, target.1)
             SwitchFixLog.source.debug("switchTo(\(layout.rawValue)): already active")
             return true
         }
 
-        let callbacks = selectionCallbacks.withLock { $0 }
         callbacks.willSelect?(layout, target.1)
         let status = TISSelectInputSource(target.0)
         if status != noErr {
@@ -168,7 +233,57 @@ public final class InputSourceManager {
             callbacks.selectionFailed?()
             SwitchFixLog.source.error("switchTo(\(layout.rawValue)): TISSelectInputSource failed (\(status))")
         } else {
+            state.withLock {
+                $0.currentInputSourceID = target.1
+                $0.currentLayout = layout
+            }
             SwitchFixLog.source.notice("layout switched to \(layout.rawValue) (\(target.1))")
+        }
+        return status == noErr
+    }
+
+    @discardableResult
+    public func switchToSource(id: String) -> Bool {
+        guard let target = state.withLock({ value -> (TISInputSource, Layout)? in
+            guard let source = value.rawSources[id] else { return nil }
+            let layout = value.allDiscoveredDescriptors.first(where: { $0.id == id })?.supportedLayouts.first ?? .english
+            value.pendingSelectionID = id
+            return (source, layout)
+        }) else {
+            SwitchFixLog.source.error("switchToSource(\(id)): no cached input source")
+            return false
+        }
+
+        let liveSourceID = Self.fetchCurrentInputSourceID()
+        let callbacks = selectionCallbacks.withLock { $0 }
+
+        if liveSourceID == id {
+            state.withLock {
+                $0.pendingSelectionID = nil
+                $0.currentInputSourceID = id
+                $0.currentLayout = target.1
+            }
+            callbacks.willSelect?(target.1, id)
+            SwitchFixLog.source.debug("switchToSource(\(id)): already active")
+            return true
+        }
+
+        callbacks.willSelect?(target.1, id)
+        let status = TISSelectInputSource(target.0)
+        if status != noErr {
+            state.withLock { value in
+                if value.pendingSelectionID == id {
+                    value.pendingSelectionID = nil
+                }
+            }
+            callbacks.selectionFailed?()
+            SwitchFixLog.source.error("switchToSource(\(id)): TISSelectInputSource failed (\(status))")
+        } else {
+            state.withLock {
+                $0.currentInputSourceID = id
+                $0.currentLayout = target.1
+            }
+            SwitchFixLog.source.notice("layout switched to source \(id)")
         }
         return status == noErr
     }
@@ -178,13 +293,13 @@ public final class InputSourceManager {
         return Layout.allCases.filter { available.contains($0) }
     }
 
-    public func availableInputSourcesByLayout() -> [Layout: [InputSourceDescriptor]] {
+    public func availableInputSourcesByLayout() -> [Layout: [DiscoveredInputSourceDescriptor]] {
         state.withLock { $0.descriptors }
     }
 
     public func currentUkrainianVariant() -> UkrainianKeyboardVariant? {
         let sourceID = currentInputSourceID()
-        guard Layout.ukrainian.matches(sourceID: sourceID) else { return nil }
+        guard matches(sourceID: sourceID, layout: .ukrainian) else { return nil }
         return ukrainianVariant(forInputSourceID: sourceID)
     }
 
@@ -207,61 +322,26 @@ public final class InputSourceManager {
         return id
     }
 
-    private static func layout(for sourceID: String) -> Layout {
-        if let layout = Layout.allCases.first(where: { $0.matches(sourceID: sourceID) }) {
-            return layout
+    private static func fallbackSupportedLayouts(for sourceID: String) -> Set<Layout> {
+        var matched = Set<Layout>()
+        for layout in Layout.allCases {
+            if layout.matches(sourceID: sourceID) {
+                matched.insert(layout)
+            }
         }
+        if !matched.isEmpty { return matched }
         let lowered = sourceID.lowercased()
-        if lowered.contains("russian") { return .russian }
-        if lowered.contains("ukrainian") { return .ukrainian }
-        return .english
+        if lowered.contains("russian") { matched.insert(.russian) }
+        if lowered.contains("ukrainian") { matched.insert(.ukrainian) }
+        if lowered.contains("birman") {
+            matched.insert(.russian)
+            matched.insert(.ukrainian)
+        }
+        return matched.isEmpty ? [.english] : matched
     }
 
-    private static func stringProperty(_ source: TISInputSource, _ key: CFString) -> String? {
+    static func stringProperty(_ source: TISInputSource, _ key: CFString) -> String? {
         guard let pointer = TISGetInputSourceProperty(source, key) else { return nil }
         return Unmanaged<CFString>.fromOpaque(pointer).takeUnretainedValue() as String
-    }
-
-    private static func detectUkrainianVariant(
-        for source: TISInputSource,
-        sourceName: String?
-    ) -> UkrainianKeyboardVariant {
-        if let sCharacter = translatedCharacter(for: source, keyCode: sKeyCode),
-           let bCharacter = translatedCharacter(for: source, keyCode: bKeyCode) {
-            if sCharacter == "и", bCharacter == "і" { return .legacy }
-            if sCharacter == "і", bCharacter == "и" { return .standard }
-        }
-        if sourceName?.lowercased().contains("legacy") == true {
-            return .legacy
-        }
-        return .standard
-    }
-
-    private static func translatedCharacter(for source: TISInputSource, keyCode: UInt16) -> Character? {
-        guard let layoutDataReference = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
-            return nil
-        }
-        let layoutData = unsafeBitCast(layoutDataReference, to: CFData.self) as Data
-        var deadKeyState: UInt32 = 0
-        var characters = [UniChar](repeating: 0, count: 4)
-        var actualLength = 0
-        // The layout pointer is only valid inside withUnsafeBytes.
-        let status = layoutData.withUnsafeBytes { pointer -> OSStatus in
-            guard let baseAddress = pointer.baseAddress else { return OSStatus(paramErr) }
-            return UCKeyTranslate(
-                baseAddress.assumingMemoryBound(to: UCKeyboardLayout.self),
-                keyCode,
-                UInt16(kUCKeyActionDown),
-                0,
-                UInt32(LMGetKbdType()),
-                UInt32(kUCKeyTranslateNoDeadKeysBit),
-                &deadKeyState,
-                characters.count,
-                &actualLength,
-                &characters
-            )
-        }
-        guard status == noErr, actualLength > 0 else { return nil }
-        return String(utf16CodeUnits: characters, count: actualLength).first
     }
 }

@@ -115,4 +115,5 @@ public class AppFilter {
 
 public extension Notification.Name {
     static let appFilterDidChange = Notification.Name("SwitchFix_AppFilterDidChange")
+    static let preferencesDidChange = Notification.Name("SwitchFix_PreferencesDidChange")
 }

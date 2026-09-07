@@ -286,6 +286,18 @@ public class LayoutDetector {
                 if fallbackConverted != converted && !candidateConversions.contains(fallbackConverted) {
                     candidateConversions.append(fallbackConverted)
                 }
+            } else if sourceLayout == .english && targetLayout == .ukrainian {
+                let fallbackVariant: UkrainianKeyboardVariant = (ukrainianToVariant == .legacy) ? .standard : .legacy
+                let fallbackConverted = LayoutMapper.convert(
+                    word,
+                    from: .english,
+                    to: .ukrainian,
+                    ukrainianFromVariant: ukrainianFromVariant,
+                    ukrainianToVariant: fallbackVariant
+                )
+                if fallbackConverted != converted && !candidateConversions.contains(fallbackConverted) {
+                    candidateConversions.append(fallbackConverted)
+                }
             }
 
             for candidate in candidateConversions {

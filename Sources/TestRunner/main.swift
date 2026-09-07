@@ -204,7 +204,10 @@ runSuite("WordValidator: Short words whitelist") {
     let wv = WordValidator.shared
     assert(!wv.isValidWord("ab", language: .english), "unknown 2-char words should be rejected")
     assert(wv.isValidWord("я", language: .russian), "common 1-char words should be allowed")
+    assert(wv.isValidWord("бы", language: .russian), "common 2-char words should be allowed")
     assert(wv.isValidWord("як", language: .ukrainian), "common 2-char words should be allowed")
+    assert(wv.isValidWord("би", language: .ukrainian), "'би' should be allowed in Ukrainian")
+    assert(wv.isValidWord("б", language: .ukrainian), "'б' should be allowed in Ukrainian")
 }
 
 runSuite("WordValidator: URL patterns skipped") {
@@ -236,6 +239,20 @@ runSuite("WordValidator: Valid English words") {
     assert(wv.isValidWord("seems", language: .english), "'seems' should be valid in English")
     assert(wv.isValidWord("after", language: .english), "'after' should be valid in English")
     assert(wv.isValidWord("expected", language: .english), "'expected' should be valid in English")
+    assert(wv.isValidWord("keys", language: .english), "'keys' should be valid in English")
+    assert(wv.isValidWord("remove", language: .english), "'remove' should be valid in English")
+    assert(wv.isValidWord("removes", language: .english), "'removes' should be valid in English")
+    assert(wv.isValidWord("removing", language: .english), "'removing' should be valid in English")
+    assert(wv.isValidWord("removed", language: .english), "'removed' should be valid in English")
+    assert(wv.isValidWord("changes", language: .english), "'changes' should be valid in English")
+    assert(wv.isValidWord("changing", language: .english), "'changing' should be valid in English")
+    assert(wv.isValidWord("wholes", language: .english), "'wholes' should be valid in English")
+    assert(wv.isValidWord("files", language: .english), "'files' should be valid in English")
+    assert(wv.isValidWord("users", language: .english), "'users' should be valid in English")
+    assert(wv.isValidWord("lines", language: .english), "'lines' should be valid in English")
+    assert(wv.isValidWord("checks", language: .english), "'checks' should be valid in English")
+    assert(wv.isValidWord("checking", language: .english), "'checking' should be valid in English")
+    assert(wv.isValidWord("typed", language: .english), "'typed' should be valid in English")
 }
 
 runSuite("WordValidator: English contractions") {
@@ -519,6 +536,66 @@ runSuite("LayoutDetector: Ukrainian variant fallback converts legacy word to Eng
     if let result = mockDelegate.results.first {
         assertEqual(result.targetLayout, .english, "target should be English")
         assertEqual(result.convertedWord, "Seems", "should convert to 'Seems'")
+    }
+}
+
+runSuite("LayoutDetector: Convert English ',s' to Ukrainian 'би'") {
+    // 1. With ukrainianToVariant = .legacy (direct mapping)
+    do {
+        let detector = LayoutDetector()
+        let mockDelegate = MockDetectorDelegate()
+        detector.delegate = mockDelegate
+        detector.currentLayout = .english
+        detector.ukrainianToVariant = .legacy
+
+        for char in ",s" {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+
+        assertEqual(mockDelegate.results.count, 1, "should detect and convert ',s' to 'би'")
+        if let result = mockDelegate.results.first {
+            assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+            assertEqual(result.convertedWord, "би", "should convert ',s' to 'би'")
+        }
+    }
+
+    // 2. With ukrainianToVariant = .standard (fallback mapping)
+    do {
+        let detector = LayoutDetector()
+        let mockDelegate = MockDetectorDelegate()
+        detector.delegate = mockDelegate
+        detector.currentLayout = .english
+        detector.ukrainianToVariant = .standard
+
+        for char in ",s" {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+
+        assertEqual(mockDelegate.results.count, 1, "should detect and convert ',s' to 'би' via variant fallback")
+        if let result = mockDelegate.results.first {
+            assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+            assertEqual(result.convertedWord, "би", "should convert ',s' to 'би'")
+        }
+    }
+}
+
+runSuite("LayoutDetector: English words with inflections are never converted to Ukrainian") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .legacy
+
+    let testWords = ["keys", "remove", "removes", "removing", "removed", "changes", "wholes", "files", "users", "lines", "checks", "typed"]
+    for word in testWords {
+        mockDelegate.results.removeAll()
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+        assertEqual(mockDelegate.results.count, 0, "'\(word)' in English layout should NOT be corrected or converted")
     }
 }
 

@@ -24,7 +24,7 @@ public class WordValidator {
 
     private static let whitelistedWords: [Language: Set<String>] = [
         .english: [
-            "ccs", "cmd", "opt", "ctrl", "mac", "ios", "api", "url", "app", "dev", "bot", "txt", "csv", "xml", "json", "tas", "task", "tasks"
+            "ccs", "cmd", "opt", "ctrl", "mac", "ios", "api", "url", "app", "dev", "bot", "txt", "csv", "xml", "json", "tas", "task", "tasks", "key", "keys", "word", "words", "change", "changes", "whole", "wholes", "remove"
         ]
     ]
 
@@ -72,6 +72,10 @@ public class WordValidator {
             return ValidationResult(isValid: true, correctedWord: nil)
         }
 
+        if language == .english, isEnglishInflectionValid(normalized) {
+            return ValidationResult(isValid: true, correctedWord: nil)
+        }
+
         return ValidationResult(isValid: false, correctedWord: nil)
     }
 
@@ -92,7 +96,18 @@ public class WordValidator {
         guard matchesExpectedScript(normalized, language: language) else {
             return false
         }
-        return isExactDictionaryWord(normalized, language: language)
+        if isExactDictionaryWord(normalized, language: language) {
+            return true
+        }
+        if language == .english {
+            if isEnglishContractionValid(normalized) {
+                return true
+            }
+            if isEnglishInflectionValid(normalized) {
+                return true
+            }
+        }
+        return false
     }
 
     private func shouldSkip(_ word: String) -> Bool {
@@ -143,6 +158,143 @@ public class WordValidator {
             }
         }
         return false
+    }
+
+    /// Validate regular English inflections (plurals, verb tenses, participles, adverbs, comparatives)
+    /// whose base exists in the dictionary or whitelist.
+    private func isEnglishInflectionValid(_ word: String) -> Bool {
+        guard word.count > 2 else { return false }
+
+        // 1. Plural and 3rd-person singular present tense (-s, -es, -ies, -ves)
+        if word.hasSuffix("s"), !word.hasSuffix("ss") {
+            if word.hasSuffix("ies"), word.count >= 5 {
+                // e.g. cities -> city, queries -> query, companies -> company
+                let base = String(word.dropLast(3)) + "y"
+                if isCandidateEnglishBaseValid(base) { return true }
+                // e.g. series -> serie (or pies -> pie)
+                if isCandidateEnglishBaseValid(String(word.dropLast(1))) { return true }
+            }
+            if word.hasSuffix("ves"), word.count >= 5 {
+                // e.g. knives -> knife, lives -> life, halves -> half, wolves -> wolf
+                if isCandidateEnglishBaseValid(String(word.dropLast(3)) + "fe") { return true }
+                if isCandidateEnglishBaseValid(String(word.dropLast(3)) + "f") { return true }
+            }
+            if word.hasSuffix("es"), word.count >= 4 {
+                // e.g. changes -> change, types -> type, places -> place
+                if isCandidateEnglishBaseValid(String(word.dropLast(1))) { return true }
+                // e.g. boxes -> box, watches -> watch, fixes -> fix, wishes -> wish, heroes -> hero
+                if isCandidateEnglishBaseValid(String(word.dropLast(2))) { return true }
+            }
+            // Regular -s: keys -> key, words -> word, tasks -> task, files -> file, users -> user
+            if isCandidateEnglishBaseValid(String(word.dropLast(1))) {
+                return true
+            }
+        }
+
+        // 2. Past tense and past participle (-ed, -ied)
+        if word.hasSuffix("ed"), word.count >= 4 {
+            if word.hasSuffix("ied"), word.count >= 5 {
+                // e.g. copied -> copy, tried -> try, modified -> modify
+                if isCandidateEnglishBaseValid(String(word.dropLast(3)) + "y") { return true }
+                if isCandidateEnglishBaseValid(String(word.dropLast(1))) { return true }
+            }
+            // e.g. removed -> remove, changed -> change, typed -> type, used -> use
+            if isCandidateEnglishBaseValid(String(word.dropLast(1))) { return true }
+            // e.g. worked -> work, checked -> check, started -> start, asked -> ask
+            if isCandidateEnglishBaseValid(String(word.dropLast(2))) { return true }
+            // Double consonant + ed: e.g. stopped -> stop, planned -> plan, dropped -> drop
+            let stem = String(word.dropLast(2))
+            if stem.count >= 3, hasDoubleConsonantSuffix(stem) {
+                if isCandidateEnglishBaseValid(String(stem.dropLast(1))) { return true }
+            }
+        }
+
+        // 3. Present participle and gerund (-ing, -ying)
+        if word.hasSuffix("ing"), word.count >= 5 {
+            if word.hasSuffix("ying"), word.count == 5 {
+                // e.g. dying -> die, lying -> lie, tying -> tie
+                if isCandidateEnglishBaseValid(String(word.dropLast(4)) + "ie") { return true }
+            }
+            // e.g. working -> work, checking -> check, starting -> start
+            if isCandidateEnglishBaseValid(String(word.dropLast(3))) { return true }
+            // e.g. removing -> remove, changing -> change, typing -> type, using -> use
+            if isCandidateEnglishBaseValid(String(word.dropLast(3)) + "e") { return true }
+            // Double consonant + ing: e.g. stopping -> stop, running -> run, getting -> get, setting -> set
+            let stem = String(word.dropLast(3))
+            if stem.count >= 3, hasDoubleConsonantSuffix(stem) {
+                if isCandidateEnglishBaseValid(String(stem.dropLast(1))) { return true }
+            }
+        }
+
+        // 4. Adverbs (-ly, -ily, -ally)
+        if word.hasSuffix("ly"), word.count >= 4 {
+            if word.hasSuffix("ily"), word.count >= 5 {
+                // e.g. easily -> easy, happily -> happy
+                if isCandidateEnglishBaseValid(String(word.dropLast(3)) + "y") { return true }
+            }
+            if word.hasSuffix("ally"), word.count >= 6 {
+                // e.g. basically -> basic, automatically -> automatic
+                if isCandidateEnglishBaseValid(String(word.dropLast(4))) { return true }
+            }
+            // e.g. slowly -> slow, quickly -> quick, properly -> proper, clearly -> clear
+            if isCandidateEnglishBaseValid(String(word.dropLast(2))) { return true }
+            // e.g. truly -> true
+            if isCandidateEnglishBaseValid(String(word.dropLast(2)) + "e") { return true }
+        }
+
+        // 5. Comparatives and superlatives (-er, -est)
+        if word.hasSuffix("er"), word.count >= 4, !word.hasSuffix("eer") {
+            if word.hasSuffix("ier"), word.count >= 5 {
+                // e.g. easier -> easy, happier -> happy
+                if isCandidateEnglishBaseValid(String(word.dropLast(3)) + "y") { return true }
+            }
+            // e.g. faster -> fast, longer -> long, harder -> hard
+            if isCandidateEnglishBaseValid(String(word.dropLast(2))) { return true }
+            // e.g. larger -> large, closer -> close, simpler -> simple
+            if isCandidateEnglishBaseValid(String(word.dropLast(1))) { return true }
+            // Double consonant + er: e.g. bigger -> big, hotter -> hot
+            let stem = String(word.dropLast(2))
+            if stem.count >= 3, hasDoubleConsonantSuffix(stem) {
+                if isCandidateEnglishBaseValid(String(stem.dropLast(1))) { return true }
+            }
+        }
+
+        if word.hasSuffix("est"), word.count >= 5 {
+            if word.hasSuffix("iest"), word.count >= 6 {
+                // e.g. easiest -> easy, happiest -> happy
+                if isCandidateEnglishBaseValid(String(word.dropLast(4)) + "y") { return true }
+            }
+            // e.g. fastest -> fast, longest -> long
+            if isCandidateEnglishBaseValid(String(word.dropLast(3))) { return true }
+            // e.g. largest -> large, closest -> close
+            if isCandidateEnglishBaseValid(String(word.dropLast(2))) { return true }
+            // Double consonant + est: e.g. biggest -> big
+            let stem = String(word.dropLast(3))
+            if stem.count >= 3, hasDoubleConsonantSuffix(stem) {
+                if isCandidateEnglishBaseValid(String(stem.dropLast(1))) { return true }
+            }
+        }
+
+        return false
+    }
+
+    private func isCandidateEnglishBaseValid(_ base: String) -> Bool {
+        guard base.count >= 2 else { return false }
+        if SuggestionEngine.shortWords[.english]?.contains(base) == true {
+            return true
+        }
+        if WordValidator.whitelistedWords[.english]?.contains(base) == true {
+            return true
+        }
+        return loader.containsExact(base, language: .english)
+    }
+
+    private func hasDoubleConsonantSuffix(_ text: String) -> Bool {
+        guard text.count >= 2 else { return false }
+        let last = text.suffix(1)
+        let secondLast = text.dropLast(1).suffix(1)
+        guard last == secondLast, let char = last.first else { return false }
+        return "bdfglmnprstz".contains(char)
     }
 
 

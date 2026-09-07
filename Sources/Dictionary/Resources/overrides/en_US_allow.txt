@@ -13,3 +13,9 @@ api
 app
 mac
 sudo
+remove
+keys
+tasks
+words
+changes
+wholes

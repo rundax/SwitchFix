@@ -4,7 +4,7 @@ public struct SuggestionEngine {
     public static let shortWords: [Language: Set<String>] = [
         .english: [
             "a", "i", "an", "am", "is", "it", "to", "of", "in", "on", "at", "as", "by",
-            "we", "he", "me", "my", "do", "if", "or", "no", "so", "us", "be", "go", "up"
+            "we", "he", "me", "my", "do", "if", "or", "no", "so", "us", "be", "go", "up", "vs"
         ],
         .ukrainian: [
             "в", "у", "і", "й", "та", "не", "на", "до", "за", "з", "із", "це", "я", "ми", "ти", "ви",

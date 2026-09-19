@@ -82,7 +82,7 @@ public final class TextCorrector {
 
     public init(inputSourceManager: InputSourceManager = .shared) {
         self.inputSourceManager = inputSourceManager
-        let source = CGEventSource(stateID: .privateState)
+        let source = CGEventSource(stateID: .hidSystemState)
         source?.userData = switchFixEventMarker
         source?.localEventsSuppressionInterval = 0
         eventSource = source
@@ -114,19 +114,19 @@ public final class TextCorrector {
             return []
         }
         var events: [CorrectionEventDescriptor] = []
-        events.reserveCapacity(plan.deleteCount * 2 + plan.replacementText.count * 2)
+        let chunks = plan.replacementText.utf16Chunks(maxUnits: 20)
+        events.reserveCapacity(plan.deleteCount * 2 + chunks.count * 2)
         for _ in 0..<plan.deleteCount {
             events.append(CorrectionEventDescriptor(kind: .deleteKeyDown, sourceUserData: switchFixEventMarker))
             events.append(CorrectionEventDescriptor(kind: .deleteKeyUp, sourceUserData: switchFixEventMarker))
         }
-        for char in plan.replacementText {
-            let str = String(char)
+        for chunk in chunks {
             events.append(CorrectionEventDescriptor(
-                kind: .unicodeKeyDown(str),
+                kind: .unicodeKeyDown(chunk),
                 sourceUserData: switchFixEventMarker
             ))
             events.append(CorrectionEventDescriptor(
-                kind: .unicodeKeyUp(str),
+                kind: .unicodeKeyUp(chunk),
                 sourceUserData: switchFixEventMarker
             ))
         }
@@ -370,12 +370,12 @@ public final class TextCorrector {
             deletions.append(keyUp)
         }
 
+        let chunks = plan.replacementText.utf16Chunks(maxUnits: 20)
         var insertions: [CGEvent] = []
-        insertions.reserveCapacity(plan.replacementText.count * 2)
-        for char in plan.replacementText {
-            let str = String(char)
-            guard let keyDown = makeUnicodeEvent(text: str, keyDown: true),
-                  let keyUp = makeKeyEvent(keyCode: 0, keyDown: false) else {
+        insertions.reserveCapacity(chunks.count * 2)
+        for chunk in chunks {
+            guard let keyDown = makeUnicodeEvent(text: chunk, keyDown: true),
+                  let keyUp = makeUnicodeEvent(text: chunk, keyDown: false) else {
                 return nil
             }
             insertions.append(keyDown)
@@ -390,7 +390,7 @@ public final class TextCorrector {
             if isOwnProcess {
                 event.postToPid(targetPID)
             } else {
-                event.post(tap: .cgAnnotatedSessionEventTap)
+                event.post(tap: .cghidEventTap)
                 // Small pacing interval between keystrokes to ensure
                 // multi-process applications (Chromium, Electron, WebKit)
                 // and rich-text web editors (ProseMirror, Slate, Lexical)
@@ -409,9 +409,16 @@ public final class TextCorrector {
             if isOwnProcess {
                 event.postToPid(targetPID)
             } else {
-                event.post(tap: .cgAnnotatedSessionEventTap)
+                event.post(tap: .cghidEventTap)
                 usleep(3_000)
             }
+        }
+        if !insertions.isEmpty && !isOwnProcess {
+            // Settle interval after replacement insertion to ensure the target
+            // application's event loop (Qt in Telegram Desktop, Chromium/Electron, AppKit)
+            // fully commits the inserted text before any subsequent layout switch
+            // (TISSelectInputSource) resets the input context.
+            usleep(20_000)
         }
     }
 
@@ -446,8 +453,31 @@ public final class TextCorrector {
             keyDown.postToPid(targetPID)
             keyUp.postToPid(targetPID)
         } else {
-            keyDown.post(tap: .cgAnnotatedSessionEventTap)
-            keyUp.post(tap: .cgAnnotatedSessionEventTap)
+            keyDown.post(tap: .cghidEventTap)
+            keyUp.post(tap: .cghidEventTap)
         }
+    }
+}
+
+extension String {
+    func utf16Chunks(maxUnits: Int = 20) -> [String] {
+        guard !isEmpty else { return [] }
+        var chunks: [String] = []
+        var currentChunk = ""
+        var currentCount = 0
+        for char in self {
+            let charCount = char.utf16.count
+            if currentCount + charCount > maxUnits && currentCount > 0 {
+                chunks.append(currentChunk)
+                currentChunk = ""
+                currentCount = 0
+            }
+            currentChunk.append(char)
+            currentCount += charCount
+        }
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
+        return chunks
     }
 }

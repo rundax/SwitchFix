@@ -253,6 +253,17 @@ runSuite("WordValidator: Valid English words") {
     assert(wv.isValidWord("checks", language: .english), "'checks' should be valid in English")
     assert(wv.isValidWord("checking", language: .english), "'checking' should be valid in English")
     assert(wv.isValidWord("typed", language: .english), "'typed' should be valid in English")
+    assert(wv.isValidWord("llm", language: .english), "'llm' should be valid in English")
+    assert(wv.isValidWord("llms", language: .english), "'llms' should be valid in English")
+    assert(wv.isValidWord("LLM", language: .english), "'LLM' should be valid in English")
+    assert(wv.isValidWord("replace", language: .english), "'replace' should be valid in English")
+    assert(wv.isValidWord("replaces", language: .english), "'replaces' should be valid in English")
+    assert(wv.isValidWord("replaced", language: .english), "'replaced' should be valid in English")
+    assert(wv.isValidWord("replacing", language: .english), "'replacing' should be valid in English")
+    assert(wv.isValidWord("gsd", language: .english), "'gsd' should be valid in English")
+    assert(wv.isValidWord("GSD", language: .english), "'GSD' should be valid in English")
+    assert(wv.isValidWord("vs", language: .english), "'vs' should be valid in English")
+    assert(wv.isValidWord("VS", language: .english), "'VS' should be valid in English")
 }
 
 runSuite("WordValidator: English contractions") {
@@ -778,6 +789,33 @@ runSuite("LayoutDetector: Merge suppressed short word when next word confirms la
     }
 }
 
+runSuite("LayoutDetector: Convert Ukrainian 'Ш' followed by 'цфте' to English 'I want'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "Ш" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "цфте" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for Ш / цфте")
+    if mockDelegate.results.count == 1 {
+        let result = mockDelegate.results[0]
+        assertEqual(result.originalWord, "Ш цфте")
+        assertEqual(result.convertedWord, "I want")
+    } else if mockDelegate.results.count == 2 {
+        assertEqual(mockDelegate.results[0].convertedWord, "I")
+        assertEqual(mockDelegate.results[1].convertedWord, "want")
+    }
+}
+
 runSuite("LayoutDetector: Reset drops suppressed cross-context history") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
@@ -805,6 +843,145 @@ runSuite("LayoutDetector: Reset drops suppressed cross-context history") {
         assertEqual(result.originalWord, "цщкли", "reset must not merge text from an earlier context")
         assertEqual(result.convertedWord, "works", "current-context conversion should remain intact")
     }
+}
+
+runSuite("LayoutDetector: Standalone ':' is never converted to 'Ж' without context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter(":")
+    detector.flushBuffer(boundaryCharacter: "\n")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ':' without context must not be converted to 'Ж'")
+}
+
+runSuite("LayoutDetector: Standalone ':' in English context is not converted to 'Ж'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("The")
+    typeWord("goal")
+    typeWord("is")
+
+    detector.addCharacter(":")
+    detector.flushBuffer(boundaryCharacter: "\n")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ':' after English words must not be converted to 'Ж'")
+}
+
+runSuite("LayoutDetector: Standalone ':' in Ukrainian context can be converted to 'Ж'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Type "Wt" (wrong layout for "Це" in Ukrainian)
+    for char in "Wt" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "'Wt' should be corrected to 'Це'")
+
+    // Now type ":" in the resulting Ukrainian context
+    detector.addCharacter(":")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 2, "standalone ':' in Ukrainian context should be detected")
+    if mockDelegate.results.count == 2 {
+        assertEqual(mockDelegate.results[1].convertedWord, "Ж", "should convert to 'Ж'")
+        assertEqual(mockDelegate.results[1].targetLayout, .ukrainian)
+    }
+}
+
+runSuite("LayoutDetector: Standalone ';' is not converted to 'ж' without context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter(";")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ';' without context must not be converted to 'ж'")
+}
+
+runSuite("LayoutDetector: Standalone ',' is not converted to 'б' without context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter(",")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ',' without context must not be converted to 'б'")
+}
+
+runSuite("LayoutDetector: Convert English 'futynf' to Ukrainian 'агента'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian]
+
+    for char in "futynf" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assert(result != nil, "should detect 'futynf' as wrong layout")
+    assertEqual(result?.targetLayout, .ukrainian)
+    assertEqual(result?.convertedWord, "агента")
+    assertEqual(result?.originalWord, "futynf")
+    assert(result?.shouldSwitchLayout == true, "should switch layout to Ukrainian")
+}
+
+runSuite("LayoutDetector: Desynchronized layout-only switch for Ukrainian 'агента' in English layout") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian]
+
+    for char in "агента" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assert(result != nil, "should detect desynchronized Ukrainian word 'агента' in English layout")
+    assertEqual(result?.sourceLayout, .english)
+    assertEqual(result?.targetLayout, .ukrainian)
+    assertEqual(result?.convertedWord, "агента")
+    assertEqual(result?.originalWord, "агента")
+    assert(result?.shouldSwitchLayout == true, "should switch layout to Ukrainian")
+}
+
+runSuite("LayoutDetector: English 'vs' is not converted to Ukrainian 'ми'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian]
+
+    for char in "vs" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assertEqual(mockDelegate.results.count, 0, "English 'vs' must not be converted to 'ми'")
+    assert(result == nil, "'vs' should be kept as valid English")
 }
 
 // =============================================================================

@@ -24,7 +24,7 @@ public class WordValidator {
 
     private static let whitelistedWords: [Language: Set<String>] = [
         .english: [
-            "ccs", "cmd", "opt", "ctrl", "mac", "ios", "api", "url", "app", "dev", "bot", "txt", "csv", "xml", "json", "tas", "task", "tasks", "key", "keys", "word", "words", "change", "changes", "whole", "wholes", "remove"
+            "ccs", "cmd", "opt", "ctrl", "mac", "ios", "api", "url", "app", "dev", "bot", "txt", "csv", "xml", "json", "tas", "task", "tasks", "key", "keys", "word", "words", "change", "changes", "whole", "wholes", "remove", "llm", "llms", "replace", "replaces", "replaced", "replacing", "gsd", "vs"
         ]
     ]
 

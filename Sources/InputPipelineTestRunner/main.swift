@@ -119,6 +119,63 @@ run("autorepeat preserved") {
     check(word == "cc", "autorepeat characters must not be deduplicated")
 }
 
+run("delete on empty buffer preserves subsequent characters") {
+    let current = context()
+    var machine = automaticMachine(current)
+    let deleteCommands = machine.consume(input(sequence: 1, kind: .delete, context: current))
+    check(!machine.isInvalidUntilBoundary, "delete on empty buffer must not invalidate until boundary")
+    check(deleteCommands == [.invalidate(.navigation)], "delete on empty buffer emits navigation invalidation")
+    _ = machine.consume(input(sequence: 2, kind: .character("I"), context: current))
+    let flushes = machine.consume(input(sequence: 3, kind: .boundary(" "), context: current))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushes == ["I"], "word typed after delete on empty buffer must flush")
+}
+
+run("delete across boundary restores previous word and re-buffers edits") {
+    let current = context()
+    var machine = automaticMachine(current)
+    _ = machine.consume(input(sequence: 1, kind: .character("c"), context: current))
+    _ = machine.consume(input(sequence: 2, kind: .character("a"), context: current))
+    _ = machine.consume(input(sequence: 3, kind: .character("t"), context: current))
+    _ = machine.consume(input(sequence: 4, kind: .boundary(" "), context: current))
+    let delSpace = machine.consume(input(sequence: 5, kind: .delete, context: current))
+    check(delSpace == [.deleteLast], "deleting boundary emits deleteLast")
+    check(machine.currentBuffer == "cat", "deleting boundary restores committed word to buffer")
+    _ = machine.consume(input(sequence: 6, kind: .delete, context: current))
+    check(machine.currentBuffer == "ca", "deleting character removes last character")
+    _ = machine.consume(input(sequence: 7, kind: .character("r"), context: current))
+    check(machine.currentBuffer == "car", "typing character appends to restored word")
+    let flushes = machine.consume(input(sequence: 8, kind: .boundary(" "), context: current))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushes == ["car"], "edited word must flush full revised word")
+}
+
+run("deleting previous word completely and typing new word") {
+    let ukContext = context(layout: .ukrainian, sourceID: "com.apple.keylayout.Ukrainian")
+    var machine = automaticMachine(ukContext)
+    _ = machine.consume(input(sequence: 1, kind: .character("Я"), context: ukContext))
+    _ = machine.consume(input(sequence: 2, kind: .boundary(" "), context: ukContext))
+    _ = machine.consume(input(sequence: 3, kind: .delete, context: ukContext))
+    check(machine.currentBuffer == "Я", "deleting boundary restores Я")
+    _ = machine.consume(input(sequence: 4, kind: .delete, context: ukContext))
+    check(machine.currentBuffer.isEmpty, "deleting character empties buffer")
+    check(!machine.isInvalidUntilBoundary, "buffer must not be invalid")
+    _ = machine.consume(input(sequence: 5, kind: .character("Ш"), context: ukContext))
+    check(machine.currentBuffer == "Ш", "Ш must be buffered")
+    let flushes = machine.consume(input(sequence: 6, kind: .boundary(" "), context: ukContext))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushes == ["Ш"], "Ш must flush cleanly after previous word deletion")
+}
+
 run("manual hotkey resyncs buffer") {
     let current = context()
     var machine = automaticMachine(current)
@@ -525,8 +582,30 @@ run("bounded tagged event batch") {
         return false
     }
     check(deletes.count == 8, "N deletes must produce exactly N tagged key pairs")
-    check(unicode.count == plan.replacementText.count * 2, "replacement of N chars must produce N Unicode key pairs")
+    check(unicode.count == 2, "single chunk <= 20 chars produces 1 Unicode key pair")
     check(events.allSatisfy { $0.sourceUserData == switchFixEventMarker }, "every generated event must carry the marker")
+
+    let longPlan = CorrectionPlan(
+        boundarySequence: 1,
+        contextEpoch: 1,
+        targetPID: 100,
+        editGeneration: 1,
+        correctionEpoch: 0,
+        deleteCount: 0,
+        replacementText: "12345678901234567890EXTRA",
+        originalText: "x",
+        correctedText: "x",
+        boundaryText: "",
+        originalLayout: .english,
+        targetLayout: nil
+    )
+    let longEvents = TextCorrector.eventDescriptors(for: longPlan)
+    let longUnicode = longEvents.filter {
+        if case .unicodeKeyDown = $0.kind { return true }
+        if case .unicodeKeyUp = $0.kind { return true }
+        return false
+    }
+    check(longUnicode.count == 4, "25 chars across 2 chunks must produce 2 Unicode key pairs")
 }
 
 run("undo generation") {

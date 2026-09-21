@@ -929,6 +929,101 @@ runSuite("LayoutDetector: Standalone ',' is not converted to 'б' without contex
     assertEqual(mockDelegate.results.count, 0, "standalone ',' without context must not be converted to 'б'")
 }
 
+runSuite("LayoutDetector: Do not replace isolated single char '-r' to '-к'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "-r" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "isolated '-r' without context must not be converted to '-к'")
+}
+
+runSuite("LayoutDetector: Do not replace isolated single char 'r' to 'к'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter("r")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "isolated 'r' without context must not be converted to 'к'")
+}
+
+runSuite("LayoutDetector: Do not replace '-r' after English words (chars from -r)") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("chars")
+    typeWord("from")
+    typeWord("-r")
+
+    assertEqual(mockDelegate.results.count, 0, "'-r' after English words must not be converted to '-к'")
+}
+
+runSuite("LayoutDetector: Convert 'r' followed by Russian word 'dhfx' to 'к врач'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "r" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "dhfx" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for r / dhfx")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "r dhfx")
+        assertEqual(result.convertedWord, "к врач")
+        assertEqual(result.targetLayout, .russian)
+    }
+}
+
+runSuite("LayoutDetector: Convert 'r' to 'к' when target Russian context exists") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Type "gjitk" (wrong layout for "пошел" in Russian)
+    for char in "gjitk" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "'gjitk' should be corrected to 'пошел'")
+
+    // Now type "r" in the resulting Russian context
+    detector.addCharacter("r")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 2, "'r' in Russian context should be detected as 'к'")
+    if mockDelegate.results.count == 2 {
+        assertEqual(mockDelegate.results[1].convertedWord, "к")
+        assertEqual(mockDelegate.results[1].targetLayout, .russian)
+    }
+}
+
 runSuite("LayoutDetector: Convert English 'futynf' to Ukrainian 'агента'") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()

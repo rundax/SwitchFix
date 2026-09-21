@@ -377,6 +377,13 @@ public class LayoutDetector {
                     continue
                 }
 
+                // Tokens with a hyphen prefix (e.g. flags like '-r', '--r', '-rf')
+                // must never be converted to letters in another layout.
+                if originalParts.prefix.contains("-") && tokenParts.prefix.contains("-") && originalParts.core.count <= shortWordSuppressionLength {
+                    SwitchFixLog.detector.debug("suppressed prefixed flag conversion '\(word)' -> '\(candidate)'")
+                    continue
+                }
+
                 let validationInput = tokenParts.core.isEmpty ? candidate : tokenParts.core
 
                 let validation = validator.validate(
@@ -533,11 +540,21 @@ public class LayoutDetector {
         shouldSwitch: Bool
     ) -> Bool {
         guard isLowConfidence else { return false }
-        guard original.count <= shortWordSuppressionLength else { return false }
+        let originalCoreCount = splitTokenForValidation(original).core.count
+        let convertedCoreCount = splitTokenForValidation(converted).core.count
+        guard originalCoreCount <= shortWordSuppressionLength else { return false }
         guard !shouldSwitch else { return false }
         guard targetLayout != sourceLayout else { return false }
         guard !converted.isEmpty else { return false }
-        return hasStrongCurrentContext(for: sourceLayout)
+        if hasStrongCurrentContext(for: sourceLayout) {
+            return true
+        }
+        // An isolated single-character conversion (e.g. 'r' -> 'к') without target-layout context
+        // must always be suppressed rather than converted immediately.
+        if convertedCoreCount <= 1 && !hasTargetContext(targetLayout) {
+            return true
+        }
+        return false
     }
 
     private func shouldSuppressAcronymFallback(

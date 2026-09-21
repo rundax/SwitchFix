@@ -149,6 +149,7 @@ public struct InputStateMachine {
                     currentBuffer = committedWord ?? ""
                     committedWord = nil
                     committedBoundary = nil
+                    isInvalidUntilBoundary = false
                 }
                 return [.deleteLast]
             }

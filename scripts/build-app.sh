@@ -129,7 +129,7 @@ IDENTITY_FILE="$PROJECT_DIR/.codesign-identity"
 if [ -z "$IDENTITY" ] && [ -f "$IDENTITY_FILE" ]; then
     IDENTITY="$(cat "$IDENTITY_FILE")"
     # Verify the identity still exists in the keychain
-    if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY"; then
+    if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$IDENTITY\""; then
         echo "WARNING: Certificate \"$IDENTITY\" from .codesign-identity not found in keychain."
         echo "         Run scripts/setup-codesign.sh to recreate it."
         IDENTITY=""

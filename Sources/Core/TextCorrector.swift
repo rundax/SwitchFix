@@ -358,7 +358,7 @@ public final class TextCorrector {
     }
 
     private func makeCorrectionEvents(plan: CorrectionPlan) -> (deletions: [CGEvent], insertions: [CGEvent])? {
-        guard eventSource != nil, !plan.replacementText.isEmpty else { return nil }
+        guard eventSource != nil, (!plan.replacementText.isEmpty || plan.deleteCount > 0) else { return nil }
         var deletions: [CGEvent] = []
         deletions.reserveCapacity(plan.deleteCount * 2)
         for _ in 0..<plan.deleteCount {

@@ -134,6 +134,32 @@ run("delete on empty buffer preserves subsequent characters") {
     check(flushes == ["I"], "word typed after delete on empty buffer must flush")
 }
 
+run("navigation and repeated untracked deletes suppress in-word correction") {
+    let current = context()
+    var machine = automaticMachine(current)
+
+    for (index, character) in ["w", "o", "r"] .enumerated() {
+        _ = machine.consume(input(
+            sequence: UInt64(index + 1),
+            kind: .character(character),
+            context: current
+        ))
+    }
+    _ = machine.consume(input(sequence: 4, kind: .navigation, context: current))
+    check(machine.isInvalidUntilBoundary, "navigation must invalidate the tracked word")
+    _ = machine.consume(input(sequence: 5, kind: .character("d"), context: current))
+    _ = machine.consume(input(sequence: 6, kind: .character("s"), context: current))
+    check(machine.currentBuffer.isEmpty, "characters typed after navigation must stay untracked")
+    check(
+        machine.consume(input(sequence: 7, kind: .boundary(" "), context: current)).isEmpty,
+        "boundary after navigation must not flush an in-word fragment"
+    )
+
+    _ = machine.consume(input(sequence: 8, kind: .delete, context: current))
+    _ = machine.consume(input(sequence: 9, kind: .delete, context: current))
+    check(machine.isInvalidUntilBoundary, "repeated deletes beyond the buffer must invalidate until boundary")
+}
+
 run("delete across boundary restores previous word and re-buffers edits") {
     let current = context()
     var machine = automaticMachine(current)

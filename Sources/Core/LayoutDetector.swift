@@ -78,6 +78,7 @@ public class LayoutDetector {
     private struct SuppressedShort {
         let originalWord: String
         let convertedWord: String
+        let sourceLayout: Layout
         let targetLayout: Layout
         let boundaryAfterWord: String
     }
@@ -237,6 +238,46 @@ public class LayoutDetector {
         }
 
         if isLocallyValid {
+            if let merged = mergeSuppressedShort(
+                suppressedShort,
+                currentOriginal: word,
+                currentConverted: word,
+                targetLayout: sourceLayout,
+                isLowConfidence: word.count <= lowConfidenceMaxLength,
+                shouldSwitch: false
+            ), let suppressed = suppressedShort {
+                let result = DetectionResult(
+                    sourceLayout: suppressed.sourceLayout,
+                    targetLayout: sourceLayout,
+                    convertedWord: merged.converted,
+                    originalWord: merged.original,
+                    shouldSwitchLayout: false
+                )
+                consecutiveWrongCount = 0
+                lastDetectionResult = nil
+                recordOutcome(.corrected(from: suppressed.sourceLayout, to: sourceLayout))
+                state = .buffering
+                return result
+            }
+
+            // A short word valid in both layouts is undecidable in isolation.
+            // Keep it pending and only merge it when the next word confirms the
+            // alternative layout.
+            if let ambiguous = validAlternative(for: word, sourceLayout: sourceLayout, activeLayouts: activeLayouts),
+               let boundary = pendingBoundaryCharacter,
+               !boundary.isEmpty {
+                pendingSuppressedShort = SuppressedShort(
+                    originalWord: word,
+                    convertedWord: ambiguous.convertedWord,
+                    sourceLayout: sourceLayout,
+                    targetLayout: ambiguous.targetLayout,
+                    boundaryAfterWord: boundary
+                )
+                SwitchFixLog.detector.info(
+                    "deferred ambiguous valid word '\(word)' -> '\(ambiguous.convertedWord)' until neighboring layout evidence"
+                )
+            }
+
             SwitchFixLog.detector.debug("valid in active layout set (\(activeLayouts.map(\.rawValue).joined(separator: ", "))): '\(word)' — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
@@ -255,6 +296,28 @@ public class LayoutDetector {
                 let isLowConfidence = word.count <= lowConfidenceMaxLength
                 let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: sourceLayout)
 
+                if let merged = mergeSuppressedShort(
+                    suppressedShort,
+                    currentOriginal: word,
+                    currentConverted: word,
+                    targetLayout: sourceLayout,
+                    isLowConfidence: isLowConfidence,
+                    shouldSwitch: shouldSwitch
+                ), let suppressed = suppressedShort {
+                    let result = DetectionResult(
+                        sourceLayout: suppressed.sourceLayout,
+                        targetLayout: sourceLayout,
+                        convertedWord: merged.converted,
+                        originalWord: merged.original,
+                        shouldSwitchLayout: shouldSwitch
+                    )
+                    consecutiveWrongCount = 0
+                    lastDetectionResult = nil
+                    recordOutcome(.corrected(from: suppressed.sourceLayout, to: sourceLayout))
+                    state = .buffering
+                    return result
+                }
+
                 if shouldSuppressLowConfidenceCorrection(
                     original: word,
                     converted: word,
@@ -270,6 +333,7 @@ public class LayoutDetector {
                         pendingSuppressedShort = SuppressedShort(
                             originalWord: word,
                             convertedWord: word,
+                            sourceLayout: sourceLayout,
                             targetLayout: sourceLayout,
                             boundaryAfterWord: boundary
                         )
@@ -324,10 +388,8 @@ public class LayoutDetector {
             .filter { allowedLayouts.contains($0.0) }
         for (targetLayout, converted) in alternatives {
             // Self-switch suppression: if target layout uses the exact same physical input source already active
-            let currentSourceID = currentInputSourceID
-            let targetPreferred = preferredSourceIDProvider?(targetLayout)
-            if (currentSourceID != "unknown" && targetPreferred != nil && currentSourceID == targetPreferred)
-                || (activeSourceSupportedLayouts.contains(targetLayout) && (targetPreferred == nil || targetPreferred == currentSourceID)) {
+            if isSelfSwitch(targetLayout) {
+                let currentSourceID = currentInputSourceID
                 SwitchFixLog.detector.debug("self-switch suppressed: target \(targetLayout.rawValue) shares active source \(currentSourceID)")
                 continue
             }
@@ -414,6 +476,7 @@ public class LayoutDetector {
                             pendingSuppressedShort = SuppressedShort(
                                 originalWord: word,
                                 convertedWord: finalWord,
+                                sourceLayout: sourceLayout,
                                 targetLayout: targetLayout,
                                 boundaryAfterWord: boundary
                             )
@@ -423,6 +486,7 @@ public class LayoutDetector {
                         return nil
                     }
 
+                    var correctionSourceLayout = sourceLayout
                     if let merged = mergeSuppressedShort(
                         suppressedShort,
                         currentOriginal: word,
@@ -433,11 +497,12 @@ public class LayoutDetector {
                     ) {
                         originalForCorrection = merged.original
                         finalWord = merged.converted
+                        correctionSourceLayout = suppressedShort?.sourceLayout ?? sourceLayout
                     }
 
                     consecutiveWrongCount += 1
                     lastDetectionResult = DetectionResult(
-                        sourceLayout: sourceLayout,
+                        sourceLayout: correctionSourceLayout,
                         targetLayout: targetLayout,
                         convertedWord: finalWord,
                         originalWord: originalForCorrection,
@@ -447,12 +512,12 @@ public class LayoutDetector {
                     if consecutiveWrongCount >= consecutiveThreshold {
                         let result = lastDetectionResult
                         consecutiveWrongCount = 0
-                        recordOutcome(.corrected(from: sourceLayout, to: targetLayout))
+                        recordOutcome(.corrected(from: correctionSourceLayout, to: targetLayout))
                         state = .buffering
                         return result
                     }
 
-                    recordOutcome(.corrected(from: sourceLayout, to: targetLayout))
+                    recordOutcome(.corrected(from: correctionSourceLayout, to: targetLayout))
                     state = .buffering
                     return nil
                 }
@@ -529,6 +594,51 @@ public class LayoutDetector {
         }
 
         return false
+    }
+
+    private func validAlternative(
+        for word: String,
+        sourceLayout: Layout,
+        activeLayouts: Set<Layout>
+    ) -> (targetLayout: Layout, convertedWord: String)? {
+        guard word.count <= lowConfidenceMaxLength else { return nil }
+
+        let alternatives = LayoutMapper.convertToAlternatives(
+            word,
+            from: sourceLayout,
+            ukrainianFromVariant: ukrainianFromVariant,
+            ukrainianToVariant: ukrainianToVariant
+        )
+
+        for (targetLayout, converted) in alternatives where allowedLayouts.contains(targetLayout) {
+            guard targetLayout != sourceLayout,
+                  !activeLayouts.contains(targetLayout),
+                  !isSelfSwitch(targetLayout) else {
+                continue
+            }
+
+            let parts = splitTokenForValidation(converted)
+            let validationInput = parts.core.isEmpty ? converted : parts.core
+            guard validator.validate(
+                validationInput,
+                language: languageForLayout(targetLayout),
+                allowSuggestion: false
+            ).isValid else {
+                continue
+            }
+
+            let recomposed = parts.prefix + validationInput + parts.suffix
+            return (targetLayout, applyCase(from: word, to: recomposed))
+        }
+
+        return nil
+    }
+
+    private func isSelfSwitch(_ targetLayout: Layout) -> Bool {
+        let currentSourceID = currentInputSourceID
+        let targetPreferred = preferredSourceIDProvider?(targetLayout)
+        return (currentSourceID != "unknown" && targetPreferred != nil && currentSourceID == targetPreferred)
+            || (activeSourceSupportedLayouts.contains(targetLayout) && (targetPreferred == nil || targetPreferred == currentSourceID))
     }
 
     private func shouldSuppressLowConfidenceCorrection(

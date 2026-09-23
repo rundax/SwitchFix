@@ -677,6 +677,31 @@ runSuite("LayoutDetector: Valid word does not trigger") {
     assertEqual(mockDelegate.results.count, 0, "valid word should not trigger detection")
 }
 
+runSuite("LayoutDetector: Ambiguous valid word waits for neighboring layout evidence") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("еру")
+    assertEqual(mockDelegate.results.count, 0, "valid Ukrainian 'еру' must not be rewritten in isolation")
+
+    typeWord("middle")
+    assertEqual(mockDelegate.results.count, 1, "neighboring English evidence should confirm the deferred word")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "еру middle")
+        assertEqual(result.convertedWord, "the middle")
+        assertEqual(result.targetLayout, .english)
+    }
+}
+
 runSuite("LayoutDetector: Mixed scripts ignored") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()

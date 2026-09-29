@@ -402,16 +402,15 @@ public final class TextCorrector {
 
     private func post(deletions: [CGEvent], insertions: [CGEvent], targetPID: pid_t) {
         let isOwnProcess = targetPID == getpid()
-        for event in deletions {
+        for (eventIndex, event) in deletions.enumerated() {
             if isOwnProcess {
                 event.postToPid(targetPID)
             } else {
                 event.post(tap: .cghidEventTap)
-                // Small pacing interval between keystrokes to ensure
-                // multi-process applications (Chromium, Electron, WebKit)
-                // and rich-text web editors (ProseMirror, Slate, Lexical)
-                // process backspaces reliably.
-                usleep(3_000)
+                // Pace between backspace key pairs; down/up events stay adjacent.
+                if !eventIndex.isMultiple(of: 2) {
+                    usleep(3_000)
+                }
             }
         }
         if !deletions.isEmpty && !insertions.isEmpty && !isOwnProcess {
@@ -421,12 +420,15 @@ public final class TextCorrector {
             // selection reconciliation before receiving new text keystrokes.
             usleep(15_000)
         }
-        for event in insertions {
+        for (eventIndex, event) in insertions.enumerated() {
             if isOwnProcess {
                 event.postToPid(targetPID)
             } else {
                 event.post(tap: .cghidEventTap)
-                usleep(3_000)
+                // Keep a gap between chunks without sleeping between key-down and key-up.
+                if !eventIndex.isMultiple(of: 2) {
+                    usleep(3_000)
+                }
             }
         }
         if !insertions.isEmpty && !isOwnProcess {

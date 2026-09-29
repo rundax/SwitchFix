@@ -161,6 +161,12 @@ public final class TextCorrector {
             deletions: events.deletions,
             insertions: events.insertions,
             targetPID: plan.targetPID,
+            contextEpoch: plan.contextEpoch,
+            boundarySequence: plan.boundarySequence,
+            editGeneration: plan.editGeneration,
+            rollbackText: plan.originalText + plan.boundaryText,
+            replacementText: plan.replacementText,
+            latestCaptureState: latestCaptureState,
             shouldContinue: { [self] in isEmissionCurrent(plan, latestCaptureState: latestCaptureState) }
         ) else {
             logger.notice("correction emission interrupted pid=\(plan.targetPID)")
@@ -275,6 +281,12 @@ public final class TextCorrector {
             deletions: events.deletions,
             insertions: events.insertions,
             targetPID: inverse.targetPID,
+            contextEpoch: inverse.contextEpoch,
+            boundarySequence: inverse.boundarySequence,
+            editGeneration: inverse.editGeneration,
+            rollbackText: inverse.originalText + inverse.boundaryText,
+            replacementText: inverse.replacementText,
+            latestCaptureState: latestCaptureState,
             shouldContinue: { [self] in isEmissionCurrent(inverse, latestCaptureState: latestCaptureState) }
         ) else {
             logger.notice("undo emission interrupted pid=\(inverse.targetPID)")
@@ -417,11 +429,32 @@ public final class TextCorrector {
         deletions: [CGEvent],
         insertions: [CGEvent],
         targetPID: pid_t,
+        contextEpoch: UInt64,
+        boundarySequence: UInt64,
+        editGeneration: UInt64,
+        rollbackText: String,
+        replacementText: String,
+        latestCaptureState: () -> CaptureStateSnapshot,
         shouldContinue: () -> Bool
     ) -> Bool {
         let isOwnProcess = targetPID == getpid()
+        var deletedPairsPosted = 0
+        var insertedCharactersPosted = 0
+        let insertionChunks = replacementText.utf16Chunks(maxUnits: 20)
         for pairStart in stride(from: 0, to: deletions.count, by: 2) {
-            guard shouldContinue() else { return false }
+            guard shouldContinue() else {
+                rollbackEmission(
+                    deletedPairs: deletedPairsPosted,
+                    insertedCharacters: insertedCharactersPosted,
+                    originalText: rollbackText,
+                    targetPID: targetPID,
+                    contextEpoch: contextEpoch,
+                    boundarySequence: boundarySequence,
+                    editGeneration: editGeneration,
+                    latestCaptureState: latestCaptureState
+                )
+                return false
+            }
             if isOwnProcess {
                 deletions[pairStart].postToPid(targetPID)
                 deletions[pairStart + 1].postToPid(targetPID)
@@ -431,6 +464,7 @@ public final class TextCorrector {
                 // Pace between backspace key pairs; down/up events stay adjacent.
                 usleep(3_000)
             }
+            deletedPairsPosted += 1
         }
         if !deletions.isEmpty && !insertions.isEmpty && !isOwnProcess {
             // Settle interval between backspacing and typing replacement text to allow
@@ -440,7 +474,19 @@ public final class TextCorrector {
             usleep(15_000)
         }
         for pairStart in stride(from: 0, to: insertions.count, by: 2) {
-            guard shouldContinue() else { return false }
+            guard shouldContinue() else {
+                rollbackEmission(
+                    deletedPairs: deletedPairsPosted,
+                    insertedCharacters: insertedCharactersPosted,
+                    originalText: rollbackText,
+                    targetPID: targetPID,
+                    contextEpoch: contextEpoch,
+                    boundarySequence: boundarySequence,
+                    editGeneration: editGeneration,
+                    latestCaptureState: latestCaptureState
+                )
+                return false
+            }
             if isOwnProcess {
                 insertions[pairStart].postToPid(targetPID)
                 insertions[pairStart + 1].postToPid(targetPID)
@@ -450,6 +496,7 @@ public final class TextCorrector {
                 // Keep a gap between chunks without sleeping between key-down and key-up.
                 usleep(3_000)
             }
+            insertedCharactersPosted += insertionChunks[pairStart / 2].count
         }
         if !insertions.isEmpty && !isOwnProcess {
             // Settle interval after replacement insertion to ensure the target
@@ -458,7 +505,91 @@ public final class TextCorrector {
             // (TISSelectInputSource) resets the input context.
             usleep(20_000)
         }
-        return shouldContinue()
+        guard shouldContinue() else {
+            rollbackEmission(
+                deletedPairs: deletedPairsPosted,
+                insertedCharacters: insertedCharactersPosted,
+                originalText: rollbackText,
+                targetPID: targetPID,
+                contextEpoch: contextEpoch,
+                boundarySequence: boundarySequence,
+                editGeneration: editGeneration,
+                latestCaptureState: latestCaptureState
+            )
+            return false
+        }
+        return true
+    }
+
+    private func rollbackEmission(
+        deletedPairs: Int,
+        insertedCharacters: Int,
+        originalText: String,
+        targetPID: pid_t,
+        contextEpoch: UInt64,
+        boundarySequence: UInt64,
+        editGeneration: UInt64,
+        latestCaptureState: () -> CaptureStateSnapshot
+    ) {
+        guard deletedPairs > 0 || insertedCharacters > 0 else { return }
+        guard Permissions.hasRequiredAccess() else {
+            logger.error("correction rollback skipped because required access was revoked pid=\(targetPID)")
+            return
+        }
+        let latest = latestCaptureState()
+        let sameKnownField = latest.context.frontmostPID == targetPID &&
+            latest.context.epoch == contextEpoch &&
+            latest.context.secureFocus == .notSecure
+        let targetIsBackground = NSWorkspace.shared.frontmostApplication?.processIdentifier != targetPID
+        guard sameKnownField || targetIsBackground else {
+            logger.error("correction rollback skipped because target focus changed within the app pid=\(targetPID)")
+            return
+        }
+        let physicalInputChanged = latest.latestPhysicalSequence != boundarySequence ||
+            latest.editGeneration != editGeneration
+
+        var rollbackDeletions: [CGEvent] = []
+        // Do not backspace over unknown input that may have arrived between emitted chunks.
+        for _ in 0..<(physicalInputChanged ? 0 : insertedCharacters) {
+            guard let keyDown = makeKeyEvent(keyCode: 51, keyDown: true),
+                  let keyUp = makeKeyEvent(keyCode: 51, keyDown: false) else {
+                logger.error("correction rollback could not create deletion events pid=\(targetPID)")
+                return
+            }
+            rollbackDeletions.append(keyDown)
+            rollbackDeletions.append(keyUp)
+        }
+
+        let textToRestore = String(originalText.suffix(min(deletedPairs, originalText.count)))
+        var rollbackInsertions: [CGEvent] = []
+        for chunk in textToRestore.utf16Chunks(maxUnits: 20) {
+            guard let keyDown = makeUnicodeEvent(text: chunk, keyDown: true),
+                  let keyUp = makeUnicodeEvent(text: chunk, keyDown: false) else {
+                logger.error("correction rollback could not create insertion events pid=\(targetPID)")
+                return
+            }
+            rollbackInsertions.append(keyDown)
+            rollbackInsertions.append(keyUp)
+        }
+
+        // Keep rollback delivery bound to the original process if another app took focus.
+        // ponytail: process-level recovery is the ceiling without retaining the target AX element; revisit if edits become AX-range based.
+        for pairStart in stride(from: 0, to: rollbackDeletions.count, by: 2) {
+            rollbackDeletions[pairStart].postToPid(targetPID)
+            rollbackDeletions[pairStart + 1].postToPid(targetPID)
+            if targetPID != getpid() { usleep(3_000) }
+        }
+        if !rollbackDeletions.isEmpty && !rollbackInsertions.isEmpty && targetPID != getpid() {
+            usleep(15_000)
+        }
+        for pairStart in stride(from: 0, to: rollbackInsertions.count, by: 2) {
+            rollbackInsertions[pairStart].postToPid(targetPID)
+            rollbackInsertions[pairStart + 1].postToPid(targetPID)
+            if targetPID != getpid() { usleep(3_000) }
+        }
+        logger.notice(
+            "correction emission interrupted; rollback posted pid=\(targetPID) deletedPairs=\(deletedPairs) removedInsertedChars=\(physicalInputChanged ? 0 : insertedCharacters)"
+        )
     }
 
     private func isPlanCurrent(

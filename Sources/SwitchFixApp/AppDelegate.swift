@@ -189,6 +189,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if accessChanged {
             retryBudget.reset()
             lastRequiredAccess = requiredAccess
+            if requiredAccess {
+                let context = state.invalidateFocus()
+                inputEngine?.updateContext(context)
+            }
             inputEngine?.updateAccessAllowed(requiredAccess)
         }
 

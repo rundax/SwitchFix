@@ -41,15 +41,17 @@ cleanup() {
     trap - EXIT HUP INT TERM
     if [ "$result" -ne 0 ] && [ "$REPLACED" -eq 1 ]; then
         for pid in $(app_pids); do kill "$pid" 2>/dev/null || true; done
-        if ! rm -rf "$APP_DEST"; then
-            KEEP_BACKUP=1
-        elif [ -n "$BACKUP" ] && [ -d "$BACKUP" ]; then
-            if mv "$BACKUP" "$APP_DEST"; then
+        if [ -n "$BACKUP" ] && [ -d "$BACKUP" ]; then
+            if ! rm -rf "$APP_DEST"; then
+                KEEP_BACKUP=1
+            elif mv "$BACKUP" "$APP_DEST"; then
                 echo "Restored the previous SwitchFix installation." >&2
                 if [ "$WAS_RUNNING" -eq 1 ]; then open "$APP_DEST" || true; fi
             else
                 KEEP_BACKUP=1
             fi
+        elif [ "$HAD_PREVIOUS_APP" -eq 0 ] && [ -e "$APP_DEST" ]; then
+            rm -rf "$APP_DEST" || echo "SwitchFix: could not remove the incomplete installation at $APP_DEST." >&2
         fi
     fi
     if [ "$KEEP_BACKUP" -eq 1 ]; then
@@ -198,9 +200,14 @@ if [ -n "$PIDS" ]; then
 fi
 if [ -d "$APP_DEST" ]; then
     BACKUP="$STAGE_DIR/Previous-SwitchFix.app"
-    mv "$APP_DEST" "$BACKUP" || fail "Could not preserve the previous app. Check /Applications access and retry."
 fi
 REPLACED=1
+if [ -n "$BACKUP" ]; then
+    if ! mv "$APP_DEST" "$BACKUP"; then
+        REPLACED=0
+        fail "Could not preserve the previous app. Check /Applications access and retry."
+    fi
+fi
 mv "$STAGE_DIR/SwitchFix.app" "$APP_DEST" || fail "Installing the new app failed. Check /Applications access and free disk space; the previous app will be restored."
 REPLACED=0
 if open "$APP_DEST"; then

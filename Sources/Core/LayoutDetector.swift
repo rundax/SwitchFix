@@ -635,6 +635,7 @@ public class LayoutDetector {
     }
 
     private func isSelfSwitch(_ targetLayout: Layout) -> Bool {
+        guard targetLayout == currentLayout else { return false }
         let currentSourceID = currentInputSourceID
         let targetPreferred = preferredSourceIDProvider?(targetLayout)
         return (currentSourceID != "unknown" && targetPreferred != nil && currentSourceID == targetPreferred)

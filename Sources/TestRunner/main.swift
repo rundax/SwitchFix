@@ -1258,6 +1258,26 @@ runSuite("Hybrid Layout: Mistype on Birman switches to ABC") {
     assert(result?.shouldSwitchLayout == true, "should switch to English")
 }
 
+runSuite("Hybrid Layout: Different layout on shared source still corrects") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.activeSourceSupportedLayouts = [.english, .ukrainian]
+    detector.currentLayout = .english
+    detector.currentInputSourceID = "test.hybrid"
+    detector.allowedLayouts = [.ukrainian]
+    detector.preferredSourceIDProvider = { _ in "test.hybrid" }
+
+    for char in "ghbdsn" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "shared physical source must not suppress a different logical layout")
+    assertEqual(mockDelegate.results.first?.targetLayout, .ukrainian)
+    assertEqual(mockDelegate.results.first?.convertedWord, "привіт")
+}
+
 runSuite("Hybrid Layout: Self-switch suppression") {
     let detector = LayoutDetector()
     detector.activeSourceSupportedLayouts = [.russian, .ukrainian]

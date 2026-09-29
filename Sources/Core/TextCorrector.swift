@@ -241,6 +241,15 @@ public final class TextCorrector {
             return false
         }
 
+        if undo.plan.deleteCount == 0 && undo.plan.replacementText.isEmpty {
+            undoState.withLock { $0 = nil }
+            if undo.plan.targetLayout != nil {
+                scheduleLayoutSwitch(undo.plan.originalLayout, for: undo.plan, latestCaptureState: latestCaptureState)
+            }
+            logger.notice("revert APPLIED (layout-only) pid=\(undo.plan.targetPID)")
+            return true
+        }
+
         let replacement = undo.plan.originalText + undo.plan.boundaryText
         let inverse = CorrectionPlan(
             boundarySequence: sequence,

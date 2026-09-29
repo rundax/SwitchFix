@@ -80,6 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             willSelect: { [weak self] layout, sourceID in
                 self?.generatedLayoutSelectionWillBegin(layout: layout, sourceID: sourceID)
             },
+            activeSourceSelected: { [weak self] layout, sourceID in
+                self?.activeSourceLayoutSelected(layout: layout, sourceID: sourceID)
+            },
             selectionFailed: { [weak self] in
                 self?.generatedLayoutSelectionFailed()
             }
@@ -393,6 +396,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             secureFocus: .unknown
         )
         inputEngine?.handleGeneratedLayoutContext(context)
+        refreshRuntimeReadiness()
+    }
+
+    private func activeSourceLayoutSelected(layout: Layout, sourceID: String) {
+        guard let state = captureState else { return }
+        let current = state.snapshot().context
+        guard current.layout != layout || current.inputSourceID != sourceID else { return }
+        let context = state.replaceContext(
+            frontmostPID: current.frontmostPID,
+            appAllowed: current.appAllowed,
+            layout: layout,
+            inputSourceID: sourceID,
+            secureFocus: current.secureFocus
+        )
+        inputEngine?.updateContext(context)
+        updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }
 

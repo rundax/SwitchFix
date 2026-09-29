@@ -22,6 +22,7 @@ public final class InputSourceManager {
 
     private struct SelectionCallbacks {
         var willSelect: ((Layout, String) -> Void)?
+        var activeSourceSelected: ((Layout, String) -> Void)?
         var selectionFailed: (() -> Void)?
     }
 
@@ -129,10 +130,12 @@ public final class InputSourceManager {
 
     public func setSelectionCallbacks(
         willSelect: ((Layout, String) -> Void)?,
+        activeSourceSelected: ((Layout, String) -> Void)? = nil,
         selectionFailed: (() -> Void)?
     ) {
         selectionCallbacks.withLock { value in
             value.willSelect = willSelect
+            value.activeSourceSelected = activeSourceSelected
             value.selectionFailed = selectionFailed
         }
     }
@@ -212,12 +215,16 @@ public final class InputSourceManager {
         let callbacks = selectionCallbacks.withLock { $0 }
 
         if liveSourceID == target.1 {
-            state.withLock {
-                $0.pendingSelectionID = nil
-                $0.currentInputSourceID = target.1
-                $0.currentLayout = layout
+            let didChangeLayout = state.withLock { value -> Bool in
+                let changed = value.currentLayout != layout
+                value.pendingSelectionID = nil
+                value.currentInputSourceID = target.1
+                value.currentLayout = layout
+                return changed
             }
-            callbacks.willSelect?(layout, target.1)
+            if didChangeLayout {
+                callbacks.activeSourceSelected?(layout, target.1)
+            }
             SwitchFixLog.source.debug("switchTo(\(layout.rawValue)): already active")
             return true
         }
@@ -243,10 +250,11 @@ public final class InputSourceManager {
     }
 
     @discardableResult
-    public func switchToSource(id: String) -> Bool {
+    public func switchToSource(id: String, layout: Layout) -> Bool {
         guard let target = state.withLock({ value -> (TISInputSource, Layout)? in
-            guard let source = value.rawSources[id] else { return nil }
-            let layout = value.allDiscoveredDescriptors.first(where: { $0.id == id })?.supportedLayouts.first ?? .english
+            guard let source = value.rawSources[id],
+                  let descriptor = value.allDiscoveredDescriptors.first(where: { $0.id == id }),
+                  descriptor.supportedLayouts.contains(layout) else { return nil }
             value.pendingSelectionID = id
             return (source, layout)
         }) else {
@@ -258,12 +266,16 @@ public final class InputSourceManager {
         let callbacks = selectionCallbacks.withLock { $0 }
 
         if liveSourceID == id {
-            state.withLock {
-                $0.pendingSelectionID = nil
-                $0.currentInputSourceID = id
-                $0.currentLayout = target.1
+            let didChangeLayout = state.withLock { value -> Bool in
+                let changed = value.currentLayout != target.1
+                value.pendingSelectionID = nil
+                value.currentInputSourceID = id
+                value.currentLayout = target.1
+                return changed
             }
-            callbacks.willSelect?(target.1, id)
+            if didChangeLayout {
+                callbacks.activeSourceSelected?(target.1, id)
+            }
             SwitchFixLog.source.debug("switchToSource(\(id)): already active")
             return true
         }

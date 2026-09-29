@@ -3,6 +3,11 @@ import ServiceManagement
 import Core
 import Utils
 
+private struct InstalledSourceSelection {
+    let sourceID: String
+    let layout: Layout
+}
+
 public class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu: NSMenu
@@ -244,6 +249,7 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         let sub = NSMenu()
         let sourcesByLayout = InputSourceManager.shared.availableInputSourcesByLayout()
         let currentID = InputSourceManager.shared.currentInputSourceID()
+        let currentLayout = InputSourceManager.shared.currentLayout()
 
         var added = false
         for layout in Layout.allCases {
@@ -259,9 +265,9 @@ public class StatusBarController: NSObject, NSMenuDelegate {
                 }
                 let item = NSMenuItem(title: title, action: #selector(selectInstalledSource(_:)), keyEquivalent: "")
                 item.target = self
-                item.representedObject = source.id
+                item.representedObject = InstalledSourceSelection(sourceID: source.id, layout: layout)
                 item.toolTip = source.id
-                if source.id == currentID {
+                if source.id == currentID && layout == currentLayout {
                     item.state = .on
                 }
                 layoutMenu.addItem(item)
@@ -281,8 +287,8 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func selectInstalledSource(_ sender: NSMenuItem) {
-        guard let sourceID = sender.representedObject as? String else { return }
-        InputSourceManager.shared.switchToSource(id: sourceID)
+        guard let selection = sender.representedObject as? InstalledSourceSelection else { return }
+        InputSourceManager.shared.switchToSource(id: selection.sourceID, layout: selection.layout)
         refreshInstalledLayoutsMenu()
     }
 

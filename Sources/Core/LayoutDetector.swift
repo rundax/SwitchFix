@@ -220,7 +220,7 @@ public class LayoutDetector {
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
         if containsMixedScripts(word) {
-            SwitchFixLog.detector.debug("mixed scripts, skipping '\(word)'")
+            SwitchFixLog.detector.debug("mixed scripts skipped chars=\(word.count)")
             state = .buffering
             return nil
         }
@@ -274,11 +274,11 @@ public class LayoutDetector {
                     boundaryAfterWord: boundary
                 )
                 SwitchFixLog.detector.info(
-                    "deferred ambiguous valid word '\(word)' -> '\(ambiguous.convertedWord)' until neighboring layout evidence"
+                    "deferred ambiguous valid word chars=\(word.count) until neighboring layout evidence"
                 )
             }
 
-            SwitchFixLog.detector.debug("valid in active layout set (\(activeLayouts.map(\.rawValue).joined(separator: ", "))): '\(word)' — no correction")
+            SwitchFixLog.detector.debug("valid in active layout set (\(activeLayouts.map(\.rawValue).joined(separator: ", "))): chars=\(word.count) — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
@@ -326,7 +326,7 @@ public class LayoutDetector {
                     isLowConfidence: isLowConfidence,
                     shouldSwitch: shouldSwitch
                 ) {
-                    SwitchFixLog.detector.info("suppressed desynchronized word '\(word)' (weak evidence, deferring)")
+                    SwitchFixLog.detector.info("suppressed desynchronized word chars=\(word.count) (weak evidence, deferring)")
                     consecutiveWrongCount = 0
                     lastDetectionResult = nil
                     if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
@@ -352,7 +352,7 @@ public class LayoutDetector {
                     shouldSwitchLayout: shouldSwitch
                 )
 
-                SwitchFixLog.detector.notice("detect desynchronized layout '\(word)' active=\(self.currentLayout.rawValue) actual=\(sourceLayout.rawValue) switch=\(shouldSwitch)")
+                SwitchFixLog.detector.notice("detected desynchronized layout chars=\(word.count) active=\(self.currentLayout.rawValue) actual=\(sourceLayout.rawValue) switch=\(shouldSwitch)")
 
                 if consecutiveWrongCount >= consecutiveThreshold {
                     let result = lastDetectionResult
@@ -435,14 +435,14 @@ public class LayoutDetector {
                 // Pure punctuation in the source layout must not be converted to letters
                 // in the target layout without explicit target-layout context (e.g. ':' -> 'Ж' / 'ж').
                 if originalParts.core.isEmpty && !tokenParts.core.isEmpty && !hasTargetContext(targetLayout) {
-                    SwitchFixLog.detector.debug("suppressed punctuation-to-letter conversion '\(word)' -> '\(candidate)' without \(targetLayout.rawValue) context")
+                    SwitchFixLog.detector.debug("suppressed punctuation-to-letter conversion without \(targetLayout.rawValue) context")
                     continue
                 }
 
                 // Tokens with a hyphen prefix (e.g. flags like '-r', '--r', '-rf')
                 // must never be converted to letters in another layout.
                 if originalParts.prefix.contains("-") && tokenParts.prefix.contains("-") && originalParts.core.count <= shortWordSuppressionLength {
-                    SwitchFixLog.detector.debug("suppressed prefixed flag conversion '\(word)' -> '\(candidate)'")
+                    SwitchFixLog.detector.debug("suppressed prefixed flag conversion chars=\(word.count)")
                     continue
                 }
 
@@ -469,7 +469,7 @@ public class LayoutDetector {
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
                     ) {
-                        SwitchFixLog.detector.info("suppressed short word '\(word)' -> '\(finalWord)' (weak evidence, deferring)")
+                        SwitchFixLog.detector.info("suppressed short word chars=\(word.count) (weak evidence, deferring)")
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
                         if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
@@ -563,7 +563,7 @@ public class LayoutDetector {
         }
 
         // No valid alternative found — unknown word, do nothing
-        SwitchFixLog.detector.debug("unknown word '\(word)' — no valid alternative in any layout")
+        SwitchFixLog.detector.debug("unknown word chars=\(word.count) — no valid alternative in any layout")
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
         if !currentWordParts.core.isEmpty {

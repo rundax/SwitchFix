@@ -136,19 +136,15 @@ public final class TextCorrector {
     @discardableResult
     public func apply(
         _ plan: CorrectionPlan,
-        latestCaptureState: () -> CaptureStateSnapshot
+        latestCaptureState: @escaping () -> CaptureStateSnapshot
     ) -> Bool {
         guard Permissions.hasRequiredAccess() else { return false }
         if plan.deleteCount == 0 && plan.replacementText.isEmpty {
-            guard plan.isEligible(using: latestCaptureState()) else { return false }
+            guard isPlanCurrent(plan, latestCaptureState: latestCaptureState) else { return false }
             undoState.withLock { $0 = UndoState(plan: plan) }
-            if let layout = plan.targetLayout {
-                DispatchQueue.main.async { [inputSourceManager] in
-                    inputSourceManager.switchTo(layout)
-                }
-            }
+            scheduleLayoutSwitch(for: plan, latestCaptureState: latestCaptureState)
             logger.notice(
-                "correction APPLIED (layout-only) '\(plan.correctedText)' deletes=0 pid=\(plan.targetPID) layoutSwitch=\(plan.targetLayout?.rawValue ?? "none")"
+                "correction APPLIED (layout-only) chars=\(plan.correctedText.count) deletes=0 pid=\(plan.targetPID) layoutSwitch=\(plan.targetLayout?.rawValue ?? "none")"
             )
             return true
         }
@@ -157,11 +153,19 @@ public final class TextCorrector {
               plan.deleteCount <= 128,
               let events = makeCorrectionEvents(plan: plan),
               Permissions.hasRequiredAccess(),
-              plan.isEligible(using: latestCaptureState()) else {
-            logger.debug("apply rejected '\(plan.originalText)' (oversized/no events/state changed)")
+              isPlanCurrent(plan, latestCaptureState: latestCaptureState) else {
+            logger.debug("apply rejected chars=\(plan.originalText.count) (oversized/no events/state changed)")
             return false
         }
-        post(deletions: events.deletions, insertions: events.insertions, targetPID: plan.targetPID)
+        guard post(
+            deletions: events.deletions,
+            insertions: events.insertions,
+            targetPID: plan.targetPID,
+            shouldContinue: { [self] in isEmissionCurrent(plan, latestCaptureState: latestCaptureState) }
+        ) else {
+            logger.notice("correction emission interrupted pid=\(plan.targetPID)")
+            return false
+        }
         NotificationCenter.default.post(
             name: .switchFixCorrectionApplied,
             object: nil,
@@ -169,15 +173,9 @@ public final class TextCorrector {
         )
 
         undoState.withLock { $0 = UndoState(plan: plan) }
-        if let layout = plan.targetLayout,
-           plan.isEligible(using: latestCaptureState()) {
-            // TIS APIs are main-thread-only; apply() runs on the correction queue.
-            DispatchQueue.main.async { [inputSourceManager] in
-                inputSourceManager.switchTo(layout)
-            }
-        }
+        scheduleLayoutSwitch(for: plan, latestCaptureState: latestCaptureState)
         logger.notice(
-            "correction APPLIED '\(plan.correctedText)' <- '\(plan.originalText)' deletes=\(plan.deleteCount) pid=\(plan.targetPID) layoutSwitch=\(plan.targetLayout?.rawValue ?? "none")"
+            "correction APPLIED chars=\(plan.originalText.count) replacementChars=\(plan.correctedText.count) deletes=\(plan.deleteCount) pid=\(plan.targetPID) layoutSwitch=\(plan.targetLayout?.rawValue ?? "none")"
         )
         return true
     }
@@ -224,7 +222,7 @@ public final class TextCorrector {
     public func undo(
         sequence: UInt64,
         context: InputContextSnapshot,
-        latestCaptureState: () -> CaptureStateSnapshot
+        latestCaptureState: @escaping () -> CaptureStateSnapshot
     ) -> Bool {
         guard Permissions.hasRequiredAccess() else { return false }
         guard let undo = undoState.withLock({ $0 }) else {
@@ -238,7 +236,7 @@ public final class TextCorrector {
             context: context,
             latest: latest
         ) else {
-            logger.info("undo skipped: state stale since correction '\(undo.plan.correctedText)'")
+            logger.info("undo skipped: state stale since correction chars=\(undo.plan.correctedText.count)")
             undoState.withLock { $0 = nil }
             return false
         }
@@ -260,21 +258,26 @@ public final class TextCorrector {
         )
         guard let events = makeCorrectionEvents(plan: inverse),
               Permissions.hasRequiredAccess(),
-              inverse.isEligible(using: latestCaptureState()) else {
+              isPlanCurrent(inverse, latestCaptureState: latestCaptureState) else {
             logger.debug("undo rejected: could not build inverse events or state changed")
             return false
         }
-        post(deletions: events.deletions, insertions: events.insertions, targetPID: inverse.targetPID)
+        guard post(
+            deletions: events.deletions,
+            insertions: events.insertions,
+            targetPID: inverse.targetPID,
+            shouldContinue: { [self] in isEmissionCurrent(inverse, latestCaptureState: latestCaptureState) }
+        ) else {
+            logger.notice("undo emission interrupted pid=\(inverse.targetPID)")
+            return false
+        }
         undoState.withLock { $0 = nil }
         logger.notice(
-            "revert APPLIED '\(inverse.correctedText)' <- '\(inverse.originalText)' deletes=\(inverse.deleteCount) pid=\(inverse.targetPID)"
+            "revert APPLIED chars=\(inverse.originalText.count) replacementChars=\(inverse.correctedText.count) deletes=\(inverse.deleteCount) pid=\(inverse.targetPID)"
         )
         if inverse.isEligible(using: latestCaptureState()) {
             let undoLayout = undo.plan.originalLayout
-            // TIS APIs are main-thread-only; undo() runs on the correction queue.
-            DispatchQueue.main.async { [inputSourceManager] in
-                inputSourceManager.switchTo(undoLayout)
-            }
+            scheduleLayoutSwitch(undoLayout, for: inverse, latestCaptureState: latestCaptureState)
         }
         return true
     }
@@ -300,6 +303,7 @@ public final class TextCorrector {
                   latest.correctionEpoch == correctionEpoch,
                   latest.context.epoch == context.epoch,
                   latest.context.frontmostPID == context.frontmostPID,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == context.frontmostPID,
                   latest.context.secureFocus == .notSecure,
                   latest.context.appAllowed,
                   Permissions.hasRequiredAccess(),
@@ -309,7 +313,7 @@ public final class TextCorrector {
             }
 
             logger.notice(
-                "selection paste '\(convertedText)' <- '\(selectedText)' pid=\(context.frontmostPID) layoutSwitch=\(shouldSwitchLayout ? targetLayout.rawValue : "none")"
+                "selection paste chars=\(selectedText.count) replacementChars=\(convertedText.count) pid=\(context.frontmostPID) layoutSwitch=\(shouldSwitchLayout ? targetLayout.rawValue : "none")"
             )
             let pasteboard = NSPasteboard.general
             // Snapshot item data into fresh items: items read from a pasteboard are
@@ -400,17 +404,23 @@ public final class TextCorrector {
         return (deletions, insertions)
     }
 
-    private func post(deletions: [CGEvent], insertions: [CGEvent], targetPID: pid_t) {
+    private func post(
+        deletions: [CGEvent],
+        insertions: [CGEvent],
+        targetPID: pid_t,
+        shouldContinue: () -> Bool
+    ) -> Bool {
         let isOwnProcess = targetPID == getpid()
-        for (eventIndex, event) in deletions.enumerated() {
+        for pairStart in stride(from: 0, to: deletions.count, by: 2) {
+            guard shouldContinue() else { return false }
             if isOwnProcess {
-                event.postToPid(targetPID)
+                deletions[pairStart].postToPid(targetPID)
+                deletions[pairStart + 1].postToPid(targetPID)
             } else {
-                event.post(tap: .cghidEventTap)
+                deletions[pairStart].post(tap: .cghidEventTap)
+                deletions[pairStart + 1].post(tap: .cghidEventTap)
                 // Pace between backspace key pairs; down/up events stay adjacent.
-                if !eventIndex.isMultiple(of: 2) {
-                    usleep(3_000)
-                }
+                usleep(3_000)
             }
         }
         if !deletions.isEmpty && !insertions.isEmpty && !isOwnProcess {
@@ -420,15 +430,16 @@ public final class TextCorrector {
             // selection reconciliation before receiving new text keystrokes.
             usleep(15_000)
         }
-        for (eventIndex, event) in insertions.enumerated() {
+        for pairStart in stride(from: 0, to: insertions.count, by: 2) {
+            guard shouldContinue() else { return false }
             if isOwnProcess {
-                event.postToPid(targetPID)
+                insertions[pairStart].postToPid(targetPID)
+                insertions[pairStart + 1].postToPid(targetPID)
             } else {
-                event.post(tap: .cghidEventTap)
+                insertions[pairStart].post(tap: .cghidEventTap)
+                insertions[pairStart + 1].post(tap: .cghidEventTap)
                 // Keep a gap between chunks without sleeping between key-down and key-up.
-                if !eventIndex.isMultiple(of: 2) {
-                    usleep(3_000)
-                }
+                usleep(3_000)
             }
         }
         if !insertions.isEmpty && !isOwnProcess {
@@ -437,6 +448,48 @@ public final class TextCorrector {
             // fully commits the inserted text before any subsequent layout switch
             // (TISSelectInputSource) resets the input context.
             usleep(20_000)
+        }
+        return shouldContinue()
+    }
+
+    private func isPlanCurrent(
+        _ plan: CorrectionPlan,
+        latestCaptureState: () -> CaptureStateSnapshot
+    ) -> Bool {
+        guard Permissions.hasRequiredAccess(), plan.isEligible(using: latestCaptureState()) else {
+            return false
+        }
+        return true
+    }
+
+    private func isEmissionCurrent(
+        _ plan: CorrectionPlan,
+        latestCaptureState: () -> CaptureStateSnapshot
+    ) -> Bool {
+        isPlanCurrent(plan, latestCaptureState: latestCaptureState) && isTargetFrontmost(plan)
+    }
+
+    private func isTargetFrontmost(_ plan: CorrectionPlan) -> Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == plan.targetPID
+    }
+
+    private func scheduleLayoutSwitch(
+        for plan: CorrectionPlan,
+        latestCaptureState: @escaping () -> CaptureStateSnapshot
+    ) {
+        guard let layout = plan.targetLayout else { return }
+        scheduleLayoutSwitch(layout, for: plan, latestCaptureState: latestCaptureState)
+    }
+
+    private func scheduleLayoutSwitch(
+        _ layout: Layout,
+        for plan: CorrectionPlan,
+        latestCaptureState: @escaping () -> CaptureStateSnapshot
+    ) {
+        // TIS APIs are main-thread-only; revalidate after the queue hop.
+        DispatchQueue.main.async { [self] in
+            guard isPlanCurrent(plan, latestCaptureState: latestCaptureState), isTargetFrontmost(plan) else { return }
+            inputSourceManager.switchTo(layout)
         }
     }
 

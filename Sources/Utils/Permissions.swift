@@ -4,15 +4,6 @@ import Carbon
 import os
 
 public class Permissions {
-    public static func ensureRequiredPermissions(completion: @escaping () -> Void) {
-        ensureAccessibility {
-            completion()
-            if !isInputMonitoringGranted() {
-                _ = requestInputMonitoring()
-            }
-        }
-    }
-
     public static func isAccessibilityGranted() -> Bool {
         return AXIsProcessTrusted()
     }
@@ -31,73 +22,33 @@ public class Permissions {
         return CGRequestListenEventAccess()
     }
 
-    /// Shows an alert prompting the user to grant accessibility access,
-    /// then polls until permission is granted, calling the completion handler on main thread.
-    public static func ensureAccessibility(completion: @escaping () -> Void) {
-        if isAccessibilityGranted() {
-            completion()
-            return
-        }
-
-        SwitchFixLog.permissions.notice("Permissions: Accessibility not granted, requesting access")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        requestAccessibility()
-        openAccessibilitySettings()
-        pollForAccessibilityAccess(completion: completion)
+    public static func isEventPostingGranted() -> Bool {
+        CGPreflightPostEventAccess()
     }
 
-    public static func ensureInputMonitoring(completion: @escaping () -> Void) {
-        if isInputMonitoringGranted() {
-            completion()
-            return
-        }
-
-        SwitchFixLog.permissions.notice("Permissions: Input Monitoring not granted, requesting access")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        _ = requestInputMonitoring()
-        openInputMonitoringSettings()
-        pollForInputMonitoringAccess(completion: completion)
+    /// Read at each correction boundary; cached UI readiness is not authorization.
+    public static func hasRequiredAccess() -> Bool {
+        isAccessibilityGranted() && isInputMonitoringGranted() && isEventPostingGranted()
     }
 
-    public static func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
+    @discardableResult
+    public static func openAccessibilitySettings() -> Bool {
+        openPrivacySettings(anchor: "Privacy_Accessibility")
     }
 
-    public static func openInputMonitoringSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
-            if NSWorkspace.shared.open(url) {
-                return
-            }
-        }
-
-        if let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-            NSWorkspace.shared.open(fallback)
-        }
+    @discardableResult
+    public static func openInputMonitoringSettings() -> Bool {
+        openPrivacySettings(anchor: "Privacy_ListenEvent")
     }
 
-    private static func pollForAccessibilityAccess(completion: @escaping () -> Void) {
-        guard !isAccessibilityGranted() else {
-            SwitchFixLog.permissions.info("Permissions: Accessibility granted")
-            completion()
-            return
+    private static func openPrivacySettings(anchor: String) -> Bool {
+        for suffix in [anchor, "Privacy"] {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(suffix)"),
+               NSWorkspace.shared.open(url) { return true }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            pollForAccessibilityAccess(completion: completion)
-        }
+        return false
     }
 
-    private static func pollForInputMonitoringAccess(completion: @escaping () -> Void) {
-        guard !isInputMonitoringGranted() else {
-            SwitchFixLog.permissions.info("Permissions: Input Monitoring granted")
-            completion()
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            pollForInputMonitoringAccess(completion: completion)
-        }
-    }
 }
 
 public enum AccessibilityFocusState: Equatable {

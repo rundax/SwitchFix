@@ -39,9 +39,8 @@ func getKeyString(for key: UInt16) -> String {
 }
 
 class SettingsViewModel: ObservableObject {
-    @Published var launchAtLogin: Bool = PreferencesManager.shared.launchAtLogin {
-        didSet { PreferencesManager.shared.launchAtLogin = launchAtLogin }
-    }
+    @Published var launchAtLogin: Bool = PreferencesManager.shared.launchAtLogin
+    @Published var launchAtLoginMessage: String? = PreferencesManager.shared.launchAtLoginMessage
     
     @Published var correctionMode: CorrectionMode = PreferencesManager.shared.correctionMode {
         didSet { PreferencesManager.shared.correctionMode = correctionMode }
@@ -69,6 +68,7 @@ class SettingsViewModel: ObservableObject {
     init() {
         reloadLayouts()
         NotificationCenter.default.addObserver(self, selector: #selector(syncFromPreferences), name: .preferencesDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncFromPreferences), name: NSApplication.didBecomeActiveNotification, object: nil)
     }
     
     deinit {
@@ -76,11 +76,22 @@ class SettingsViewModel: ObservableObject {
     }
     
     @objc private func syncFromPreferences() {
+        syncLaunchAtLogin()
         // Sync back only if different to avoid loops
         if self.correctionMode != PreferencesManager.shared.correctionMode {
             self.correctionMode = PreferencesManager.shared.correctionMode
         }
         reloadLayouts()
+    }
+
+    func syncLaunchAtLogin() {
+        launchAtLogin = PreferencesManager.shared.launchAtLogin
+        launchAtLoginMessage = PreferencesManager.shared.launchAtLoginMessage
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        PreferencesManager.shared.setLaunchAtLogin(enabled)
+        syncLaunchAtLogin()
     }
 
     func reloadLayouts() {
@@ -506,11 +517,28 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+
+                ReadinessSetupView(compact: true)
+                Divider()
                 
                 // GENERAL
                 VStack(alignment: .leading, spacing: 8) {
                     Text("General").font(.headline)
-                    Toggle("Launch at Login", isOn: $model.launchAtLogin)
+                    Toggle("Launch at Login", isOn: Binding(
+                        get: { model.launchAtLogin },
+                        set: { model.setLaunchAtLogin($0) }
+                    ))
+                    if let launchAtLoginMessage = model.launchAtLoginMessage {
+                        Text(launchAtLoginMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Button("Open Login Items Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .font(.caption)
                 }
                 
                 Divider()
@@ -576,5 +604,6 @@ struct SettingsView: View {
             .padding(30)
         }
         .frame(width: 480, height: 750)
+        .onAppear { model.syncLaunchAtLogin() }
     }
 }

@@ -33,10 +33,18 @@ compile_bin_if_needed "uk_UA"
 
 echo "Building $APP_NAME in release mode..."
 cd "$PROJECT_DIR"
-swift build -c release
+
+# Target the physical Mac architecture, even when Terminal is running in Rosetta.
+if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then
+    ARCH=arm64
+    /usr/bin/arch -arm64 swift build -c release
+else
+    ARCH=$(uname -m)
+    [ "$ARCH" = "x86_64" ] || { echo "ERROR: unsupported Mac architecture: $ARCH" >&2; exit 1; }
+    swift build -c release
+fi
 
 # Determine the build products directory
-ARCH=$(uname -m)
 if [ "$ARCH" = "arm64" ]; then
     PRODUCTS_DIR="$BUILD_DIR/arm64-apple-macosx/release"
 else
@@ -138,7 +146,11 @@ fi
 
 if [ -n "$IDENTITY" ]; then
     echo "Signing with identity: $IDENTITY"
-    codesign --force --deep --sign "$IDENTITY" "$APP_BUNDLE"
+    if [[ "$IDENTITY" == Developer\ ID\ Application:* ]]; then
+        codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
+    else
+        codesign --force --deep --sign "$IDENTITY" "$APP_BUNDLE"
+    fi
 else
     echo "Signing with ad-hoc identity..."
     codesign --force --deep --sign - "$APP_BUNDLE"

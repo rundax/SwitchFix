@@ -9,6 +9,7 @@ DerivedData/
 .claude/settings.local.json
 .grepai/
 .codesign-identity
+/plan/
 
 # Generated dictionary artifacts
 .build/dictionary-bin/

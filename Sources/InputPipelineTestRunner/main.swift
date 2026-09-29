@@ -799,6 +799,91 @@ run("disabling invalidates queued corrections") {
     )
 }
 
+run("access revocation invalidates queued corrections") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let detectionEntered = DispatchSemaphore(value: 0)
+    let releaseDetection = DispatchSemaphore(value: 0)
+    let correctionCalled = DispatchSemaphore(value: 0)
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            detectionEntered.signal()
+            _ = releaseDetection.wait(timeout: .now() + 5)
+            return DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: "ч",
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { _ in
+            correctionCalled.signal()
+            return true
+        }
+    )
+    engine.enqueue(store.capture(timestamp: 1, kind: .character("x"), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    engine.enqueue(store.capture(timestamp: 2, kind: .boundary(" "), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    check(detectionEntered.wait(timeout: .now() + 1) == .success, "queued detection must start before access loss")
+
+    let originalEpoch = store.snapshot().correctionEpoch
+    engine.updateAccessAllowed(false)
+    let revoked = store.snapshot()
+    check(!revoked.correctionAllowed, "revoked access must synchronously block correction")
+    check(revoked.correctionEpoch != originalEpoch, "revoked access must invalidate existing plans")
+    engine.updateAccessAllowed(true)
+    check(store.snapshot().correctionEpoch != revoked.correctionEpoch, "restored access must not revive stale plans")
+
+    releaseDetection.signal()
+    check(correctionCalled.wait(timeout: .now() + 0.2) == .timedOut, "a detection queued before access loss must not emit after recovery")
+}
+
+run("readiness states reflect permission and mode prerequisites") {
+    var readiness = RuntimeReadinessSnapshot()
+    check(readiness.status == .checking, "unknown runtime state must remain checking")
+
+    readiness.checked = true
+    readiness.accessibilityGranted = true
+    check(readiness.status == .setupNeeded, "missing Input Monitoring keeps setup blocked")
+    check(readiness.missingPermissions == ["Input Monitoring"], "only the missing required grant is listed")
+
+    readiness.inputMonitoringGranted = true
+    readiness.postingGranted = false
+    check(readiness.status == .needsAttention, "posting capability failure is not a third permission category")
+
+    readiness.postingGranted = true
+    readiness.monitor = .active
+    readiness.installedLayouts = [.english, .russian]
+    readiness.dictionaryLayouts = [.english, .russian]
+    readiness.dictionariesLoaded = true
+    readiness.appAllowed = true
+    readiness.secureFocus = .notSecure
+    readiness.sourceSupported = true
+    check(readiness.status == .working, "working requires permissions, monitor, dictionaries, and a supported context")
+
+    readiness.runtimeFailure = "Keyboard monitoring keeps stopping."
+    check(readiness.status == .needsAttention && readiness.message == readiness.runtimeFailure, "persistent runtime failures remain visible")
+    readiness.runtimeFailure = nil
+
+    readiness.mode = .hotkey
+    readiness.dictionaryLayouts = []
+    readiness.dictionariesLoaded = false
+    check(readiness.status == .working, "manual correction mode does not depend on automatic dictionaries")
+
+    var retries = MonitorRetryBudget()
+    check(retries.canAttempt, "monitor retry begins available")
+    retries.recordFailure()
+    retries.recordFailure()
+    check(retries.canAttempt, "monitor retries remain available within the bounded budget")
+    retries.recordFailure()
+    check(!retries.canAttempt, "monitor retries stop after three failures")
+    retries.reset()
+    check(retries.canAttempt, "explicit recovery resets the retry budget")
+}
+
 run("100,000 event stress") {
     let current = context()
     let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))

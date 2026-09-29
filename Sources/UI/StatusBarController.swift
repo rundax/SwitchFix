@@ -9,10 +9,10 @@ public class StatusBarController: NSObject, NSMenuDelegate {
     private var enableMenuItem: NSMenuItem!
     private var appFilterMenuItem: NSMenuItem!
     private var installedLayoutsMenuItem: NSMenuItem!
+    private var readinessMenuItem: NSMenuItem!
+    private var readinessActionItem: NSMenuItem!
     private var conflictMenuItem: NSMenuItem?
     private var conflictSeparatorItem: NSMenuItem?
-    private var permissionMenuItems: [NSMenuItem] = []
-    private var permissionSeparatorItem: NSMenuItem?
 
     public override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -56,6 +56,14 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         let prefs = PreferencesManager.shared
 
         menu.delegate = self
+
+        readinessMenuItem = NSMenuItem(title: "Checking access…", action: nil, keyEquivalent: "")
+        readinessMenuItem.isEnabled = false
+        menu.addItem(readinessMenuItem)
+        readinessActionItem = NSMenuItem(title: "Finish setup…", action: #selector(openReadiness), keyEquivalent: "")
+        readinessActionItem.target = self
+        menu.addItem(readinessActionItem)
+        menu.addItem(NSMenuItem.separator())
 
         // Enable/Disable toggle
         enableMenuItem = NSMenuItem(
@@ -114,12 +122,13 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         
         // Launch at Login
         let loginItem = NSMenuItem(
-            title: "Launch at Login",
+            title: PreferencesManager.shared.launchAtLoginMessage == nil ? "Launch at Login" : "Launch at Login — Needs attention",
             action: #selector(toggleLaunchAtLogin(_:)),
             keyEquivalent: ""
         )
         loginItem.target = self
         loginItem.state = prefs.launchAtLogin ? .on : .off
+        loginItem.toolTip = prefs.launchAtLoginMessage
         menu.addItem(loginItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -130,11 +139,20 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(quitItem)
 
         refreshSystemHotkeyConflictIndicator()
-        refreshPermissionIndicators()
+        refreshReadiness(ReadinessStore.shared.snapshot)
     }
 
     @objc private func openSettings() {
         SettingsWindowController.shared.showSettings()
+    }
+
+    @objc private func openReadiness() {
+        if ReadinessStore.shared.snapshot.needsSetup {
+            SettingsWindowController.shared.showSetup()
+        } else {
+            SettingsWindowController.shared.showSettings()
+        }
+        ReadinessStore.shared.refresh()
     }
     
     @objc private func toggleEnabled() {
@@ -161,9 +179,10 @@ public class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
         let prefs = PreferencesManager.shared
-        prefs.launchAtLogin = !prefs.launchAtLogin
-        // The sender state will update in menuWillOpen, but we can update it immediately too for feedback
+        prefs.setLaunchAtLogin(!prefs.launchAtLogin)
         sender.state = prefs.launchAtLogin ? .on : .off
+        sender.title = prefs.launchAtLoginMessage == nil ? "Launch at Login" : "Launch at Login — Needs attention"
+        sender.toolTip = prefs.launchAtLoginMessage
     }
 
     @objc private func quit() {
@@ -271,75 +290,20 @@ public class StatusBarController: NSObject, NSMenuDelegate {
         installedLayoutsMenuItem.submenu = buildInstalledLayoutsMenu()
     }
 
-    private func refreshPermissionIndicators() {
-        permissionMenuItems.forEach { menu.removeItem($0) }
-        permissionMenuItems.removeAll()
-        if let separator = permissionSeparatorItem {
-            menu.removeItem(separator)
-            permissionSeparatorItem = nil
+    public func refreshReadiness(_ snapshot: RuntimeReadinessSnapshot) {
+        readinessMenuItem.title = snapshot.message
+        readinessMenuItem.toolTip = snapshot.message
+        readinessActionItem.title = snapshot.needsSetup ? "Finish setup…" : "Settings…"
+        switch snapshot.status {
+        case .setupNeeded:
+            statusItem.button?.title = " Setup needed"
+        case .needsAttention:
+            statusItem.button?.title = " Check"
+        default:
+            statusItem.button?.title = ""
         }
-
-        var itemsToInsert: [NSMenuItem] = []
-
-        if !Permissions.isAccessibilityGranted() {
-            let item = NSMenuItem(
-                title: "Grant Accessibility Permission…",
-                action: #selector(openAccessibilityPermissionSettings),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.toolTip = "SwitchFix needs Accessibility access to monitor keyboard input and replace mistyped words."
-            itemsToInsert.append(item)
-        }
-
-        if !Permissions.isInputMonitoringGranted() {
-            let item = NSMenuItem(
-                title: "Grant Input Monitoring Permission…",
-                action: #selector(openInputMonitoringPermissionSettings),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.toolTip = "SwitchFix needs Input Monitoring access to observe keystrokes."
-            itemsToInsert.append(item)
-        }
-
-        guard !itemsToInsert.isEmpty else {
-            updateMenuBarTooltipForPermissions()
-            return
-        }
-
-        for (index, item) in itemsToInsert.enumerated() {
-            menu.insertItem(item, at: index)
-        }
-        let separator = NSMenuItem.separator()
-        menu.insertItem(separator, at: itemsToInsert.count)
-
-        permissionMenuItems = itemsToInsert
-        permissionSeparatorItem = separator
-
-        updateMenuBarTooltipForPermissions()
-    }
-
-    private func updateMenuBarTooltipForPermissions() {
-        guard permissionMenuItems.isEmpty else {
-            statusItem.button?.toolTip = "SwitchFix (missing permissions)"
-            return
-        }
-
-        let hasConflict = SystemHotkeyConflicts.hasCapsLockConflict(
-            revertHotkeyKeyCode: PreferencesManager.shared.revertHotkeyKeyCode
-        )
-        statusItem.button?.toolTip = hasConflict
-            ? "SwitchFix (CapsLock conflict detected)"
-            : "SwitchFix"
-    }
-
-    @objc private func openAccessibilityPermissionSettings() {
-        Permissions.openAccessibilitySettings()
-    }
-
-    @objc private func openInputMonitoringPermissionSettings() {
-        Permissions.openInputMonitoringSettings()
+        statusItem.button?.toolTip = snapshot.message
+        statusItem.button?.setAccessibilityLabel("SwitchFix. \(snapshot.message)")
     }
 
     private func refreshSystemHotkeyConflictIndicator() {
@@ -358,12 +322,13 @@ public class StatusBarController: NSObject, NSMenuDelegate {
                 item.toolTip = "CapsLock is configured both in SwitchFix (revert) and in macOS (input source switch)."
 
                 let separator = NSMenuItem.separator()
-                menu.insertItem(item, at: 0)
-                menu.insertItem(separator, at: 1)
+                let readinessItems = min(3, menu.numberOfItems)
+                menu.insertItem(item, at: readinessItems)
+                menu.insertItem(separator, at: readinessItems + 1)
                 conflictMenuItem = item
                 conflictSeparatorItem = separator
             }
-            statusItem.button?.toolTip = "SwitchFix (CapsLock conflict detected)"
+            statusItem.button?.toolTip = "CapsLock conflicts with macOS input switching. \(ReadinessStore.shared.snapshot.message)"
         } else {
             if let item = conflictMenuItem {
                 menu.removeItem(item)
@@ -373,21 +338,23 @@ public class StatusBarController: NSObject, NSMenuDelegate {
                 menu.removeItem(separator)
                 conflictSeparatorItem = nil
             }
-            statusItem.button?.toolTip = "SwitchFix"
+            statusItem.button?.toolTip = ReadinessStore.shared.snapshot.message
         }
     }
 
     public func menuWillOpen(_ menu: NSMenu) {
         if menu === self.menu {
             refreshSystemHotkeyConflictIndicator()
-            refreshPermissionIndicators()
+            ReadinessStore.shared.refresh()
             refreshAppFilterMenuItem()
             refreshInstalledLayoutsMenu()
             refreshModeMenu()
             
             // Refresh Launch at Login state
-            if let item = menu.items.first(where: { $0.title == "Launch at Login" }) {
+            if let item = menu.items.first(where: { $0.title.hasPrefix("Launch at Login") }) {
                 item.state = PreferencesManager.shared.launchAtLogin ? .on : .off
+                item.title = PreferencesManager.shared.launchAtLoginMessage == nil ? "Launch at Login" : "Launch at Login — Needs attention"
+                item.toolTip = PreferencesManager.shared.launchAtLoginMessage
             }
             
             // Refresh Enable state (title)

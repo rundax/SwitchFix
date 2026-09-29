@@ -138,6 +138,7 @@ public final class TextCorrector {
         _ plan: CorrectionPlan,
         latestCaptureState: () -> CaptureStateSnapshot
     ) -> Bool {
+        guard Permissions.hasRequiredAccess() else { return false }
         if plan.deleteCount == 0 && plan.replacementText.isEmpty {
             guard plan.isEligible(using: latestCaptureState()) else { return false }
             undoState.withLock { $0 = UndoState(plan: plan) }
@@ -155,11 +156,17 @@ public final class TextCorrector {
         guard plan.originalText.count <= 64,
               plan.deleteCount <= 128,
               let events = makeCorrectionEvents(plan: plan),
+              Permissions.hasRequiredAccess(),
               plan.isEligible(using: latestCaptureState()) else {
             logger.debug("apply rejected '\(plan.originalText)' (oversized/no events/state changed)")
             return false
         }
         post(deletions: events.deletions, insertions: events.insertions, targetPID: plan.targetPID)
+        NotificationCenter.default.post(
+            name: .switchFixCorrectionApplied,
+            object: nil,
+            userInfo: ["pid": plan.targetPID]
+        )
 
         undoState.withLock { $0 = UndoState(plan: plan) }
         if let layout = plan.targetLayout,
@@ -219,6 +226,7 @@ public final class TextCorrector {
         context: InputContextSnapshot,
         latestCaptureState: () -> CaptureStateSnapshot
     ) -> Bool {
+        guard Permissions.hasRequiredAccess() else { return false }
         guard let undo = undoState.withLock({ $0 }) else {
             logger.info("undo skipped: no recorded correction")
             return false
@@ -251,6 +259,7 @@ public final class TextCorrector {
             targetLayout: undo.plan.originalLayout
         )
         guard let events = makeCorrectionEvents(plan: inverse),
+              Permissions.hasRequiredAccess(),
               inverse.isEligible(using: latestCaptureState()) else {
             logger.debug("undo rejected: could not build inverse events or state changed")
             return false
@@ -284,6 +293,7 @@ public final class TextCorrector {
     ) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard Permissions.hasRequiredAccess() else { return }
             let latest = latestCaptureState()
             guard latest.latestPhysicalSequence == sequence,
                   latest.editGeneration == editGeneration,
@@ -292,6 +302,7 @@ public final class TextCorrector {
                   latest.context.frontmostPID == context.frontmostPID,
                   latest.context.secureFocus == .notSecure,
                   latest.context.appAllowed,
+                  Permissions.hasRequiredAccess(),
                   latest.correctionAllowed else {
                 logger.debug("selection correction skipped: state changed before paste")
                 return
@@ -316,6 +327,11 @@ public final class TextCorrector {
             pasteboard.setString(convertedText, forType: .string)
             let replacementChangeCount = pasteboard.changeCount
             self.postPaste(targetPID: context.frontmostPID)
+            NotificationCenter.default.post(
+                name: .switchFixCorrectionApplied,
+                object: nil,
+                userInfo: ["pid": context.frontmostPID]
+            )
             let afterPaste = latestCaptureState()
             if shouldSwitchLayout,
                afterPaste.latestPhysicalSequence == sequence,

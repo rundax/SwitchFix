@@ -112,6 +112,19 @@ public final class InputEngine {
         }
     }
 
+    public func updateAccessAllowed(_ allowed: Bool) {
+        let epoch = captureState.updateAccessAllowed(allowed)
+        inputQueue.async { [weak self] in
+            guard let self else { return }
+            self.correctionEpoch = epoch
+            self.stateMachine.invalidateUntilBoundary()
+            self.resetDetectorState()
+        }
+        if !allowed {
+            correctionQueue.async { [weak self] in self?.corrector.clearUndo() }
+        }
+    }
+
     public func handleGeneratedLayoutContext(_ context: InputContextSnapshot) {
         let generation = captureState.snapshot().editGeneration
         inputQueue.async { [weak self] in

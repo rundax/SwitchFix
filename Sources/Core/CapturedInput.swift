@@ -154,6 +154,7 @@ public final class CaptureStateStore {
         var overloadMarkerPending = false
         var correctionAllowed = true
         var correctionEnabled = true
+        var accessAllowed = true
     }
 
     public enum EnqueueDecision {
@@ -180,7 +181,7 @@ public final class CaptureStateStore {
                 correctionEpoch: value.correctionEpoch,
                 context: value.context,
                 pendingInputCount: value.pendingInputCount,
-                correctionAllowed: value.correctionAllowed && value.correctionEnabled
+                correctionAllowed: value.correctionAllowed && value.correctionEnabled && value.accessAllowed
             )
         }
     }
@@ -192,6 +193,17 @@ public final class CaptureStateStore {
                 return value.correctionEpoch
             }
             value.correctionEnabled = isEnabled
+            value.correctionEpoch &+= 1
+            return value.correctionEpoch
+        }
+    }
+
+    /// Revocation invalidates pending work even if focus resolves or access later recovers.
+    @discardableResult
+    public func updateAccessAllowed(_ allowed: Bool) -> UInt64 {
+        state.withLock { value in
+            guard value.accessAllowed != allowed else { return value.correctionEpoch }
+            value.accessAllowed = allowed
             value.correctionEpoch &+= 1
             return value.correctionEpoch
         }

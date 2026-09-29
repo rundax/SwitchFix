@@ -12,7 +12,7 @@ jobs:
   build:
     name: Build (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -27,6 +27,11 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
+      - name: Run input pipeline and dictionary checks
+        run: |
+          swift run InputPipelineTestRunner
+          swift run TestRunner
+
       - name: Determine architecture label
         run: |
           ARCH="$(uname -m)"
@@ -40,79 +45,39 @@ jobs:
           fi
           echo "Runner architecture: $ARCH"
 
-      - name: Check for Apple certificates
-        id: cert_check
+      - name: Build and verify free ad-hoc app
         env:
-          P12: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-          PWD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APP_ID: ${{ secrets.SWITCHFIX_CODESIGN_IDENTITY }}
+          SWITCHFIX_CODESIGN_IDENTITY: "-"
         run: |
-          if [ -n "$P12" ] && [ -n "$PWD" ] && [ -n "$APP_ID" ]; then
-             echo "has_certs=true" >> "$GITHUB_OUTPUT"
-          else
-             echo "has_certs=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Import signing certificate (optional)
-        if: steps.cert_check.outputs.has_certs == 'true'
-        env:
-          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          CERT_PATH="$RUNNER_TEMP/switchfix-signing-cert.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/switchfix-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(uuidgen)"
-
-          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH" 2>/dev/null || \
-          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 -D > "$CERT_PATH"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security find-identity -v -p codesigning
-
-      - name: Build App
-        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+          APP_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist)
+          [ "$APP_VERSION" = "$TAG_VERSION" ] || {
+            echo "Tag v$TAG_VERSION must match app version $APP_VERSION." >&2
+            exit 1
+          }
+          [ "$APP_BUILD" -ge 10 ] || {
+            echo "Refusing to publish an app without guided permission setup." >&2
+            exit 1
+          }
           chmod +x scripts/build-app.sh
-
-          # Use named signing identity only when certs were imported.
-          # Otherwise force ad-hoc signing to avoid CI failures when only
-          # SWITCHFIX_CODESIGN_IDENTITY is configured.
-          if [ "${{ steps.cert_check.outputs.has_certs }}" = "true" ]; then
-            export SWITCHFIX_CODESIGN_IDENTITY="${{ secrets.SWITCHFIX_CODESIGN_IDENTITY }}"
-            echo "Using configured signing identity."
-          else
-            unset SWITCHFIX_CODESIGN_IDENTITY
-            echo "Using ad-hoc signing (no cert secrets configured)."
-          fi
-
           scripts/build-app.sh
+          codesign --verify --deep --strict dist/SwitchFix.app
+          SIGNATURE="$(codesign -dv --verbose=4 dist/SwitchFix.app 2>&1)"
+          TEAM="$(printf '%s\n' "$SIGNATURE" | sed -n 's/^TeamIdentifier=//p')"
+          FLAGS="$(printf '%s\n' "$SIGNATURE" | sed -n 's/^CodeDirectory .* flags=\([^ ]*\) .*/\1/p')"
+          [ "$TEAM" = "not set" ] && [[ "$FLAGS" == *"(adhoc)"* ]] || {
+            echo "The release must use an ad-hoc signature; no Apple signing account is used." >&2
+            exit 1
+          }
 
-      - name: Create DMG
-        env:
-          SWITCHFIX_DMG_NAME: SwitchFix-${{ env.ASSET_ARCH }}
-        run: |
-          chmod +x scripts/create-dmg.sh
-          scripts/create-dmg.sh
-
-      - name: Zip App Bundle
-        run: |
-          cd dist
-          zip -r "SwitchFix-${ASSET_ARCH}.app.zip" SwitchFix.app
-          cd ..
+      - name: Package app bundle
+        run: ditto -c -k --keepParent dist/SwitchFix.app "dist/SwitchFix-${ASSET_ARCH}.app.zip"
 
       - name: Collect release assets
         run: |
           mkdir -p release-assets
-          cp "dist/SwitchFix-${ASSET_ARCH}.dmg" release-assets/
           cp "dist/SwitchFix-${ASSET_ARCH}.app.zip" release-assets/
-          if [ "$ASSET_ARCH" = "arm64" ]; then
-            cp "Resources/Assets.xcassets/AppIcon.svg" "release-assets/AppIcon.svg"
-          fi
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4
@@ -145,7 +110,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            release-assets/*.dmg
             release-assets/*.zip
-            release-assets/*.svg
           generate_release_notes: true

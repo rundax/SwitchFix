@@ -2,6 +2,10 @@
 
 A macOS menu bar utility that automatically corrects keyboard layout mistakes. Type in the wrong layout (e.g., English instead of Ukrainian/Russian) and SwitchFix detects it, deletes the mistyped word, switches the layout, and retypes the correct text — like PuntoSwitcher, but native, lightweight, and modern.
 
+[![Website](https://img.shields.io/badge/Website-rundax.github.io%2FSwitchFix-blue?style=flat-square)](https://rundax.github.io/SwitchFix/)
+[![Setup Guide](https://img.shields.io/badge/Guide-Interactive%20Setup-green?style=flat-square)](https://rundax.github.io/SwitchFix/tutorial/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+
 ![SwitchFix Demo](SwitchFix.gif)
 ![SwitchFix App Icon](Resources/Assets.xcassets/AppIcon.svg)
 
@@ -30,7 +34,8 @@ Open Terminal and run:
 /bin/bash -o pipefail -c 'curl --fail --location --silent --show-error https://raw.githubusercontent.com/rundax/SwitchFix/master/install.sh | /bin/bash'
 ```
 
-> 💡 **Visual Guide**: Need help setting up permissions? Check out the **[Interactive Setup Guide](https://rundax.github.io/SwitchFix/)** (with step-by-step animations and practice simulators).
+> 🌐 **Website**: Visit the [SwitchFix Landing Page](https://rundax.github.io/SwitchFix/) to try the live typo simulator and explore features.  
+> 💡 **Visual Guide**: Need help setting up permissions? Check out the **[Interactive Setup Guide](https://rundax.github.io/SwitchFix/tutorial/)** (with step-by-step animations and practice simulators).
 
 The installer downloads and verifies the native release for your Mac, installs it to `/Applications`, and opens SwitchFix. Follow the setup window: use **Open Settings + Show App** for each permission, return to SwitchFix, and wait for the live status check. When both permissions are ready, use **Try a correction** to confirm setup.
 

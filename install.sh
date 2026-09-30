@@ -244,4 +244,6 @@ fi
 if [ "$HAD_PREVIOUS_APP" -eq 1 ]; then
     echo "Stale permissions from the previous installation have been removed automatically. Follow the setup window to grant Accessibility and Input Monitoring for the new version."
 fi
-echo "Easy setup guide (with interactive visuals): https://rundax.github.io/SwitchFix/"
+echo "Easy setup guide (with interactive visuals): https://rundax.github.io/SwitchFix/tutorial/"
+echo "Project website & documentation: https://rundax.github.io/SwitchFix/"
+

@@ -20,5 +20,6 @@ Sources/Dictionary/Resources/uk_full.txt
 
 # Local / temporary files and tooling
 .pi/
+.playwright-cli/
 temp.txt
 *.key

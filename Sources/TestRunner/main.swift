@@ -208,6 +208,8 @@ runSuite("WordValidator: Short words whitelist") {
     assert(wv.isValidWord("як", language: .ukrainian), "common 2-char words should be allowed")
     assert(wv.isValidWord("би", language: .ukrainian), "'би' should be allowed in Ukrainian")
     assert(wv.isValidWord("б", language: .ukrainian), "'б' should be allowed in Ukrainian")
+    assert(wv.isValidWord("а", language: .ukrainian), "'а' should be allowed in Ukrainian")
+    assert(wv.isValidWord("а", language: .russian), "'а' should be allowed in Russian")
 }
 
 runSuite("WordValidator: URL patterns skipped") {
@@ -838,6 +840,56 @@ runSuite("LayoutDetector: Convert Ukrainian 'Ш' followed by 'цфте' to Engli
     } else if mockDelegate.results.count == 2 {
         assertEqual(mockDelegate.results[0].convertedWord, "I")
         assertEqual(mockDelegate.results[1].convertedWord, "want")
+    }
+}
+
+runSuite("LayoutDetector: Convert English 'f' followed by 'ns' to Ukrainian 'а ті' (standard)") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .standard
+
+    for char in "f" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "ns" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for f / ns")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "f ns")
+        assertEqual(result.convertedWord, "а ті")
+        assertEqual(result.targetLayout, .ukrainian)
+    }
+}
+
+runSuite("LayoutDetector: Convert English 'f' followed by 'ns' to Ukrainian 'а ти' (legacy)") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .legacy
+
+    for char in "f" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "ns" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for f / ns")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "f ns")
+        assertEqual(result.convertedWord, "а ти")
+        assertEqual(result.targetLayout, .ukrainian)
     }
 }
 

@@ -28,22 +28,64 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 
 ## Installation
 
-Open Terminal and run:
+**SwitchFix is free to install and use; no payment to Apple is required.** Public releases are **ad-hoc signed, not notarized by Apple**. This keeps distribution independent of a paid Apple Developer Program membership, but macOS can block the first launch until you explicitly approve the app. The installer does not disable Gatekeeper or automatically bypass this approval.
+
+### 1. Install SwitchFix
+
+Open Terminal and run this command as your signed-in user, **without `sudo`**:
 
 ```bash
 /bin/bash -o pipefail -c 'curl --fail --location --silent --show-error https://raw.githubusercontent.com/rundax/SwitchFix/master/install.sh | /bin/bash'
 ```
 
-> 🌐 **Website**: Visit the [SwitchFix Landing Page](https://rundax.github.io/SwitchFix/) to try the live typo simulator and explore features.  
-> 💡 **Visual Guide**: Need help setting up permissions? Check out the **[Interactive Setup Guide](https://rundax.github.io/SwitchFix/tutorial/)** (with step-by-step animations and practice simulators).
+The installer downloads the native release for your Mac, checks its archive, architecture, macOS compatibility, and code seal, installs it to `/Applications/SwitchFix.app`, then attempts to open it. These checks verify the bundle's format and integrity; they are not Apple notarization or a guarantee that the app is safe. Only install it if you trust this project and its download source.
 
-The installer downloads and verifies the native release for your Mac, installs it to `/Applications`, and opens SwitchFix. Follow the setup window: use **Open Settings + Show App** for Accessibility and, if keyboard input access is unavailable, Input Monitoring. Return to SwitchFix and wait for the live access check, then use **Try a correction** to confirm setup.
+**Prefer a manual download?** Open the [latest GitHub release](https://github.com/rundax/SwitchFix/releases/latest), download `SwitchFix-arm64.app.zip` for Apple Silicon or `SwitchFix-intel.app.zip` for Intel, extract it, and move `SwitchFix.app` to `/Applications`. Open it and continue below. Version 0.0.10 and later use ZIP downloads, not DMG installers.
 
-macOS can provide keyboard-listening access through Accessibility without listing SwitchFix under Input Monitoring. Public access checks (including IOHID) do not distinguish that from a separate Input Monitoring grant. The setup window therefore checks **Keyboard input access — Available**, not the separate toggle. It shows **Setup complete** when required access, the keyboard monitor, and mode prerequisites are ready. **Check Again** refreshes these live facts, and temporary correction pauses do not undo setup completion. The keyboard-input Settings button remains available to inspect or enable Input Monitoring.
+### 2. Approve the first launch in macOS
 
-Releases are free ad-hoc signed builds, not notarized. macOS may require a one-time approval in **System Settings → Privacy & Security → Open Anyway** before opening SwitchFix. Use this only for builds downloaded through the command above. Because ad-hoc signatures do not provide a stable publisher identity, an update may need fresh Accessibility and Input Monitoring grants. The setup window’s **Open Settings + Show App** buttons open the relevant pane and reveal the installed app in Finder. If a permission is checked but SwitchFix still reports **Not allowed** or **Unavailable**, select the old SwitchFix row, click **−**, then click **+** and add the current SwitchFix.app. Repeat in each affected pane and return to **Check Again**. Launch at Login is optional and can be enabled in Settings.
+If you see **“SwitchFix” Not Opened** and **“Apple could not verify “SwitchFix” is free of malware…”**, the app has been installed but Gatekeeper has blocked it because this build is not notarized. That message alone is not a malware detection; it also does not establish that the app is safe.
 
-The currently published release predates the guided setup. Until version **0.0.10** is published, `install.sh` will refuse it and leave any existing installation unchanged.
+Only proceed for the app you intentionally downloaded from this repository and trust:
+
+1. Click **Done** in the warning, **not Move to Bin**.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll down to the **Security** section. Find the message that SwitchFix was blocked and click **Open Anyway**.
+4. Authenticate with Touch ID or your Mac password if requested, then click **Open** in the confirmation. The exact order of prompts can vary by macOS version.
+5. If SwitchFix does not launch automatically, open **Finder → Applications → SwitchFix** again. It runs in the menu bar, so look for the **Ab** icon rather than a Dock icon.
+
+**No Open Anyway button?** Try opening `/Applications/SwitchFix.app` again, click **Done**, and return to Privacy & Security. Apple makes this option available for about an hour after a blocked launch. If this is a managed work or school Mac, your organization's policy may prevent approval; contact its administrator rather than bypassing the policy.
+
+**Clicked Move to Bin?** Run the installer again (or restore the trusted app to Applications), then repeat the steps above.
+
+Do not disable Gatekeeper system-wide or remove quarantine attributes as a routine installation step. These instructions are for the unverified-developer warning, not a warning that macOS has detected malware. See [Apple’s guidance for opening apps safely](https://support.apple.com/en-us/102445).
+
+### 3. Complete SwitchFix's permission setup
+
+Gatekeeper approval lets the app launch; it does **not** grant permission to monitor or correct typing.
+
+1. In SwitchFix's setup window, use **Open Settings + Show App** for **Accessibility**. Enable the installed `SwitchFix.app` in **System Settings → Privacy & Security → Accessibility**; use **+** to add it from Applications if needed.
+2. If **Keyboard input access** is **Unavailable**, use the setup window's Input Monitoring button and enable or add SwitchFix in **Privacy & Security → Input Monitoring**. Restart SwitchFix if macOS requests it.
+3. Return to SwitchFix and wait for the live access check, or click **Check Again**.
+4. If prompted, add at least two supported keyboard layouts in **System Settings → Keyboard → Text Input → Edit**.
+5. Once the window shows **Setup complete**, use **Try a correction** to verify that correction works.
+
+macOS can provide keyboard-listening access through Accessibility without listing SwitchFix under Input Monitoring. **Keyboard input access — Available** means listening is allowed; it does not claim that a separate Input Monitoring toggle is enabled. You do not need to add an Input Monitoring entry just to make that pane match a screenshot. Setup completion reflects current access, keyboard-monitor health, and mode prerequisites; temporary pauses in excluded apps or password fields do not undo it.
+
+Launch at Login is optional and can be enabled in SwitchFix's Settings.
+
+### Updating or repairing permissions
+
+Run the same installer command to update. It preserves the previous app if replacement fails, but after a successful replacement it attempts to clear stale SwitchFix permission registrations. Because ad-hoc signatures do not provide a stable publisher identity, expect to grant permissions again after an update; macOS may also require another **Open Anyway** approval.
+
+If a permission is checked but SwitchFix still reports **Not allowed** or **Unavailable**:
+
+1. Use **Open Settings + Show App** to open the affected permission pane and reveal the current app in Finder.
+2. Select the old SwitchFix entry, click **−**, then click **+** and add `/Applications/SwitchFix.app` again. Enable its toggle.
+3. Repeat in any other affected pane, restart SwitchFix if requested, then return to **Check Again**.
+
+> **Visual setup guide:** Follow the [Interactive Setup Guide](https://rundax.github.io/SwitchFix/tutorial/) for permission walkthroughs and practice simulators. First complete the Gatekeeper approval above if macOS will not open the app.
+> **Website:** Explore the [SwitchFix landing page](https://rundax.github.io/SwitchFix/) and its live typo simulator.
 
 ## Menu Bar Options
 

@@ -55,12 +55,22 @@ public struct ReadinessSetupView: View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             Text(compact ? "SwitchFix status" : "Finish setting up SwitchFix")
                 .font(.title2.weight(.semibold))
-            Text(compact
-                 ? snapshot.message
-                 : "Grant each permission below in System Settings, then return here. SwitchFix checks access automatically and will guide you through a typing test.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(compact
+                     ? snapshot.message
+                     : "Grant each permission below in System Settings, then return here. SwitchFix checks access automatically and will guide you through a typing test.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !compact && (!snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted) {
+                    Button("Open Interactive Setup Guide ↗") {
+                        openWebGuide()
+                    }
+                    .buttonStyle(.link)
+                    .font(.callout)
+                }
+            }
 
             permissionRow(
                 title: "Accessibility",
@@ -107,18 +117,27 @@ public struct ReadinessSetupView: View {
                 if !snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted {
                     Button("Reset Permissions") { resetPermissions() }
                 }
+                Button("Web Guide") { openWebGuide() }
             }
             if snapshot.accessibilityGranted && snapshot.inputMonitoringGranted &&
                 (!snapshot.postingGranted || snapshot.monitor != .active) {
                 Button("Restart SwitchFix") { restartSwitchFix() }
             }
 
-            DisclosureGroup("Manual steps") {
-                Text("For Accessibility and Input Monitoring, select the current SwitchFix entry and enable it. If an old entry is checked but SwitchFix still says Not allowed, click Reset Permissions or select the old row and click −, then click + and choose SwitchFix.app from Applications. The Open Settings buttons reveal the installed app in Finder. Return here and select Check Again. If an older installer added a separate SwitchFix login item, remove it in General > Login Items.")
+            DisclosureGroup("Manual steps & Web guide") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("For Accessibility and Input Monitoring, select the current SwitchFix entry and enable it. If an old entry is checked but SwitchFix still says Not allowed, click Reset Permissions or select the old row and click −, then click + and choose SwitchFix.app from Applications. The Open Settings buttons reveal the installed app in Finder. Return here and select Check Again. If an older installer added a separate SwitchFix login item, remove it in General > Login Items.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+
+                    Button("Open Interactive Setup Guide (Web) ↗") {
+                        openWebGuide()
+                    }
+                    .buttonStyle(.link)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
+                }
             }
 
             Divider()
@@ -220,6 +239,12 @@ public struct ReadinessSetupView: View {
 
     private func revealCurrentAppInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    private func openWebGuide() {
+        if let url = URL(string: "https://rundax.github.io/SwitchFix/tutorial/") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func resetPermissions() {

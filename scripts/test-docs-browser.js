@@ -16,12 +16,27 @@ async page => {
     passed++;
   }
   await page.clock.install();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
 
   try {
     for (const path of paths) {
       await page.goto(base + path);
       const tutorial = path !== 'docs/index.html';
-      if (tutorial) await page.evaluate(() => { state.soundEnabled = false; });
+      if (tutorial) {
+        const sections = await page.locator('main > section.card').evaluateAll(nodes => nodes.map(el => el.id));
+        check(JSON.stringify(sections) === JSON.stringify(['install', 'open-app', 'allow-access']), `${path}: installation follows three ordered steps`);
+        check(await page.locator('#open-app').innerText().then(text => text.includes('right pane, scroll down') && text.includes('Open Anyway')), `${path}: approval explains where to scroll`);
+        check(await page.locator('#allow-access').innerText().then(text => text.includes('Only if Keyboard input access is Unavailable')), `${path}: Input Monitoring is conditional`);
+        check(await page.locator('.settings-link').getAttribute('href') === 'x-apple.systempreferences:com.apple.preference.security', `${path}: native Settings shortcut is available`);
+        check(await page.locator('#progress-bar, #confetti-canvas, .sound-toggle').count() === 0, `${path}: no simulated setup completion or distracting overlays`);
+        for (const id of ['practice-acc', 'practice-input', 'practice-correction']) {
+          check(!await page.locator(`#${id}`).evaluate(el => el.open), `${path}: ${id} is optional and collapsed`);
+          await page.locator(`#${id} > summary`).click();
+        }
+      } else {
+        check(await page.locator('.install-warning a').getAttribute('href') === 'tutorial/#open-app', `${path}: warning links directly to launch approval`);
+        check(await page.locator('.install-flow > li').count() === 3, `${path}: homepage shows the same three steps`);
+      }
       const input = page.locator(tutorial ? '#playground-input' : '#demo-input');
       const feedback = page.locator(tutorial ? '#playground-feedback' : '#demo-status');
       const payload = '<img src=x onerror="window.xssExecuted=true"> & <svg/onload=window.xssExecuted=true> "\'';
@@ -54,6 +69,7 @@ async page => {
           await control.focus();
           await control.press('Space');
           check(await control.getAttribute('aria-checked') === 'true', `${path}: Space enables ${id}`);
+          check(await page.locator('main > section.card.completed').count() === 0, `${path}: practice cannot mark actual setup complete`);
           await control.press('Enter');
           check(await control.getAttribute('aria-checked') === 'false', `${path}: Enter disables ${id}`);
           await control.dispatchEvent('keydown', { key: ' ', repeat: true });
@@ -192,6 +208,34 @@ async page => {
       await page.evaluate(() => window.resolveCopy());
       await page.clock.runFor(3500);
       check(await label.innerText() === defaultLabel, `${path}: repeated copies restore the default label`);
+
+      // Assets and layouts must work both on Pages and in the standalone guide.
+      check(await page.locator('img').evaluateAll(images => images.every(img => img.complete && img.naturalWidth > 0)), `${path}: every screenshot and icon loads`);
+      if (tutorial) {
+        for (const type of ['acc', 'input']) {
+          await page.locator(`#btn-toggle-${type}-real`).click();
+          check(await page.locator(`#screenshot-${type}`).isVisible(), `${path}: ${type} real screenshot can be opened`);
+          await page.locator(`#btn-toggle-${type}-sim`).click();
+          check(!await page.locator(`#screenshot-${type}`).isVisible(), `${path}: ${type} simulator can be restored`);
+        }
+        for (const id of ['practice-acc', 'practice-input', 'practice-correction']) {
+          await page.locator(`#${id} > summary`).click();
+        }
+        await page.locator('#launch-help > summary').focus();
+        await page.keyboard.press('Enter');
+        check(await page.locator('#launch-help').evaluate(el => el.open), `${path}: launch help opens with the keyboard`);
+      }
+      for (const width of [1280, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${path}: no horizontal overflow at ${width}px`);
+      }
+      if (tutorial) {
+        await page.locator('.setup-nav a[href="#open-app"]').click();
+        const top = await page.locator('#open-app').evaluate(el => el.getBoundingClientRect().top);
+        check(top >= 55 && top <= 100, `${path}: launch anchor is visible below the sticky header`);
+        const screenshots = await page.locator('#open-app img').evaluateAll(images => images.map(img => img.getAttribute('src')));
+        check(screenshots.length === 2 && screenshots.some(src => src.endsWith('gatekeeper-open-anyway.png')), `${path}: launch approval uses both supplied screenshots`);
+      }
     }
     check(errors.length === 0, `Unexpected page errors: ${errors.join('; ')}`);
     return { passed, failed: 0, pages: paths };

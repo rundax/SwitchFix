@@ -510,6 +510,13 @@
       font-weight: 600;
     }
 
+    .install-warning { max-width: 780px; margin: 0 auto 20px; font-size: 15px; color: var(--text-muted); }
+    .install-warning a { font-weight: 600; }
+    .install-flow { max-width: 780px; margin: 0 auto 24px; padding-left: 22px; }
+    .install-flow li { padding: 12px 0 12px 8px; border-bottom: 1px solid var(--card-border); }
+    .install-flow strong, .install-flow a { font-weight: 600; }
+    .install-flow p { margin-top: 4px; font-size: 14px; color: var(--text-muted); }
+
     /* Features Grid */
     .features-section {
       padding: 90px 0 70px;
@@ -517,7 +524,7 @@
 
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
       gap: 24px;
       margin-top: 40px;
     }
@@ -571,7 +578,7 @@
 
     .workflow-steps {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
       gap: 24px;
       margin-top: 40px;
     }
@@ -718,6 +725,7 @@
 
     .footer-links {
       display: flex;
+      flex-wrap: wrap;
       gap: 20px;
       list-style: none;
     }
@@ -728,6 +736,18 @@
 
     .footer-links a:hover {
       color: var(--text-main);
+    }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    #install { scroll-margin-top: 80px; }
+    @media (max-width: 600px) {
+      .nav-secondary { display: none; }
+      .nav-links { gap: 12px; }
+      .nav-brand { font-size: 17px; gap: 8px; }
+      .nav-brand img { width: 28px; height: 28px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition: none !important; }
     }
   </style>
 </head>
@@ -742,12 +762,12 @@
       </a>
       <nav>
         <ul class="nav-links">
-          <li><a href="#features">Features</a></li>
-          <li><a href="#demo">Try Demo</a></li>
+          <li class="nav-secondary"><a href="#features">Features</a></li>
+          <li class="nav-secondary"><a href="#demo">Try Demo</a></li>
           <li><a href="#install">Install</a></li>
           <li><a href="tutorial/">Setup Guide</a></li>
-          <li><a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="#install" class="btn-nav-cta">Get SwitchFix</a></li>
+          <li class="nav-secondary"><a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener">GitHub</a></li>
+          <li class="nav-secondary"><a href="#install" class="btn-nav-cta">Get SwitchFix</a></li>
         </ul>
       </nav>
     </div>
@@ -831,9 +851,11 @@
   <section id="install" class="install-section">
     <div class="container">
       <div class="section-header">
-        <h2 class="section-title">One-Line Terminal Install</h2>
-        <p class="section-subtitle">Downloads verified native app, installs into /Applications, and guides you through instant setup.</p>
+        <h2 class="section-title">Install SwitchFix</h2>
+        <p class="section-subtitle">One command, a macOS approval, then typing access. Free. macOS 13 or later.</p>
       </div>
+
+      <p class="install-warning"><strong>Before you start:</strong> this free build is not notarized by Apple. If macOS shows “SwitchFix Not Opened,” click <strong>Done</strong>—then follow the <a href="tutorial/#open-app">Open Anyway screenshots</a>. Approve only a download you trust.</p>
 
       <div class="terminal-box">
         <div class="terminal-bar">
@@ -848,8 +870,13 @@
         </div>
       </div>
 
+      <ol class="install-flow">
+        <li><strong>Run the command in Terminal.</strong><p>Paste, press Return, and wait for installation. Do not use sudo.</p></li>
+        <li><a href="tutorial/#open-app">Approve the first launch.</a><p>Privacy &amp; Security → scroll down to Security → Open Anyway → Open.</p></li>
+        <li><a href="tutorial/#allow-access">Allow typing access in the app.</a><p>Enable Accessibility, follow the live checks, then use Try a correction.</p></li>
+      </ol>
       <div class="install-callout">
-        Need assistance with macOS System Settings? Visit the <a href="tutorial/">Interactive Visual Permissions Guide →</a>
+        <a href="tutorial/">Follow the visual setup guide →</a>
       </div>
     </div>
   </section>
@@ -956,11 +983,11 @@
       <!-- Tutorial Banner -->
       <div class="tutorial-banner-card">
         <div class="tutorial-banner-text">
-          <h3>Need help granting macOS permissions?</h3>
-          <p>macOS requires Accessibility and Input Monitoring permissions to perform seamless text corrections. We built a visual, animated guide with an interactive simulator so you're ready in under 60 seconds.</p>
+          <h3>App blocked, or need help with setup?</h3>
+          <p>See exactly where to find Open Anyway, then let the app guide you through typing access. Real Mac screenshots, one step at a time.</p>
         </div>
         <a href="tutorial/" class="btn-primary" style="white-space: nowrap;">
-          Open Setup Tutorial →
+          Open setup guide →
         </a>
       </div>
     </div>
@@ -975,7 +1002,7 @@
       </div>
       <ul class="footer-links">
         <li><a href="#install">Install</a></li>
-        <li><a href="tutorial/">Permissions Guide</a></li>
+        <li><a href="tutorial/">Setup Guide</a></li>
         <li><a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener">GitHub Repo</a></li>
         <li><a href="https://github.com/rundax/SwitchFix/releases" target="_blank" rel="noopener">Releases</a></li>
         <li><a href="https://github.com/rundax/SwitchFix/issues" target="_blank" rel="noopener">Issues</a></li>

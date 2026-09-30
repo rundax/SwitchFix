@@ -77,7 +77,7 @@ public struct ReadinessSetupView: View {
 
             if !snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted {
                 Label {
-                    Text("After an update, System Settings can show an old SwitchFix entry as enabled while this copy still lacks access. Use Open Settings + Show App to open the right pane and reveal this copy in Finder. In each affected pane, select the old entry, click −, then click + and add the Finder-selected SwitchFix.app.")
+                    Text("Grant each permission below in System Settings. If an old SwitchFix entry from an earlier version is still listed or checked, use Reset Permissions below to remove it, or remove the old entry with −.")
                 } icon: {
                     Image(systemName: "arrow.triangle.2.circlepath")
                 }
@@ -104,6 +104,9 @@ public struct ReadinessSetupView: View {
             HStack(spacing: 10) {
                 Button("Check Again") { store.refresh(retry: true) }
                 Button("Show SwitchFix in Finder") { revealCurrentAppInFinder() }
+                if !snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted {
+                    Button("Reset Permissions") { resetPermissions() }
+                }
             }
             if snapshot.accessibilityGranted && snapshot.inputMonitoringGranted &&
                 (!snapshot.postingGranted || snapshot.monitor != .active) {
@@ -111,7 +114,7 @@ public struct ReadinessSetupView: View {
             }
 
             DisclosureGroup("Manual steps") {
-                Text("For Accessibility and Input Monitoring, select the current SwitchFix entry and enable it. If an old entry is checked but SwitchFix still says Not allowed, select the old row and click −, then click + and choose SwitchFix.app from Applications. The Open Settings buttons reveal the installed app in Finder. Return here and select Check Again. If an older installer added a separate SwitchFix login item, remove it in General > Login Items.")
+                Text("For Accessibility and Input Monitoring, select the current SwitchFix entry and enable it. If an old entry is checked but SwitchFix still says Not allowed, click Reset Permissions or select the old row and click −, then click + and choose SwitchFix.app from Applications. The Open Settings buttons reveal the installed app in Finder. Return here and select Check Again. If an older installer added a separate SwitchFix login item, remove it in General > Login Items.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -217,6 +220,12 @@ public struct ReadinessSetupView: View {
 
     private func revealCurrentAppInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    private func resetPermissions() {
+        Permissions.resetPermissions()
+        settingsError = "Stale permissions were reset. Use Open Settings to grant permissions."
+        store.refresh(retry: true)
     }
 
     private func startExercise() {

@@ -210,6 +210,26 @@ if [ -n "$BACKUP" ]; then
 fi
 mv "$STAGE_DIR/SwitchFix.app" "$APP_DEST" || fail "Installing the new app failed. Check /Applications access and free disk space; the previous app will be restored."
 REPLACED=0
+
+# Reset stale permissions from previous installations so System Settings
+# does not retain invalid ad-hoc signatures for SwitchFix.
+echo "Clearing previous permissions for SwitchFix…"
+tccutil reset Accessibility com.switchfix.app >/dev/null 2>&1 || true
+tccutil reset ListenEvent com.switchfix.app >/dev/null 2>&1 || true
+tccutil reset PostEvent com.switchfix.app >/dev/null 2>&1 || true
+tccutil reset All com.switchfix.app >/dev/null 2>&1 || true
+
+# Force LaunchServices to refresh registration for the new app bundle
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -f "$APP_DEST" 2>/dev/null || true
+fi
+
+# Close System Settings if open so its Privacy & Security cache reloads fresh
+if pgrep -x "System Settings" >/dev/null 2>&1; then
+    osascript -e 'tell application "System Settings" to quit' 2>/dev/null || true
+fi
+
 if open "$APP_DEST"; then
     for attempt in 1 2 3 4 5; do
         [ -n "$(app_pids)" ] && break
@@ -222,5 +242,6 @@ else
     echo "SwitchFix is installed. If macOS blocked it, click Done, then open System Settings > Privacy & Security, scroll to Security, click Open Anyway for SwitchFix, confirm Open, and launch it from Applications."
 fi
 if [ "$HAD_PREVIOUS_APP" -eq 1 ]; then
-    echo "This was an update. If setup still reports a permission missing while an old SwitchFix row is checked, use Open Settings + Show App in the setup window, remove the old row with −, then add the selected SwitchFix.app with +."
+    echo "Stale permissions from the previous installation have been removed automatically. Follow the setup window to grant Accessibility and Input Monitoring for the new version."
 fi
+echo "Easy setup guide (with interactive visuals): https://rundax.github.io/SwitchFix/"

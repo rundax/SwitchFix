@@ -49,6 +49,34 @@ public class Permissions {
         return false
     }
 
+    @discardableResult
+    public static func resetPermissions(bundleID: String? = nil) -> Bool {
+        let targetID = bundleID ?? Bundle.main.bundleIdentifier ?? "com.switchfix.app"
+        let services = ["Accessibility", "ListenEvent", "PostEvent", "All"]
+        var allSucceeded = true
+        for service in services {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, targetID]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    allSucceeded = false
+                }
+            } catch {
+                allSucceeded = false
+            }
+        }
+        if let script = NSAppleScript(source: "tell application \"System Settings\" to quit") {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+        }
+        return allSucceeded
+    }
+
 }
 
 public enum AccessibilityFocusState: Equatable {

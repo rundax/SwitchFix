@@ -30,6 +30,8 @@ Open Terminal and run:
 /bin/bash -o pipefail -c 'curl --fail --location --silent --show-error https://raw.githubusercontent.com/rundax/SwitchFix/master/install.sh | /bin/bash'
 ```
 
+> 💡 **Visual Guide**: Need help setting up permissions? Check out the **[Interactive Setup Guide](https://rundax.github.io/SwitchFix/)** (with step-by-step animations and practice simulators).
+
 The installer downloads and verifies the native release for your Mac, installs it to `/Applications`, and opens SwitchFix. Follow the setup window: use **Open Settings + Show App** for each permission, return to SwitchFix, and wait for the live status check. When both permissions are ready, use **Try a correction** to confirm setup.
 
 Releases are free ad-hoc signed builds, not notarized. macOS may require a one-time approval in **System Settings → Privacy & Security → Open Anyway** before opening SwitchFix. Use this only for builds downloaded through the command above. Because ad-hoc signatures do not provide a stable publisher identity, an update may need fresh Accessibility and Input Monitoring grants. The setup window’s **Open Settings + Show App** buttons open the relevant pane and reveal the installed app in Finder. If a permission is checked but SwitchFix still reports **Not allowed**, select the old SwitchFix row, click **−**, then click **+** and add the current SwitchFix.app. Repeat in each affected pane and return to **Check Again**. Launch at Login is optional and can be enabled in Settings.

@@ -1,18 +1,10 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import IOKit.hidsystem
 import os
 
 public class Permissions {
-    public static func ensureRequiredPermissions(completion: @escaping () -> Void) {
-        ensureAccessibility {
-            completion()
-            if !isInputMonitoringGranted() {
-                _ = requestInputMonitoring()
-            }
-        }
-    }
-
     public static func isAccessibilityGranted() -> Bool {
         return AXIsProcessTrusted()
     }
@@ -22,82 +14,83 @@ public class Permissions {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    public static func isInputMonitoringGranted() -> Bool {
-        return CGPreflightListenEventAccess()
+    /// Effective keyboard-listening access, NOT the separate System Settings toggle.
+    /// TCC can authorize ListenEvent through Accessibility even with no ListenEvent
+    /// record. Both IOHID and CoreGraphics report that effective authorization.
+    /// Public preflights cannot verify membership in the Input Monitoring list.
+    public static func isKeyboardListeningAvailable(
+        checkAccess: (IOHIDRequestType) -> IOHIDAccessType = IOHIDCheckAccess
+    ) -> Bool {
+        checkAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     }
 
     @discardableResult
-    public static func requestInputMonitoring() -> Bool {
-        return CGRequestListenEventAccess()
+    public static func requestKeyboardListeningAccess(
+        requestAccess: (IOHIDRequestType) -> Bool = IOHIDRequestAccess
+    ) -> Bool {
+        // Even this direct ListenEvent request can succeed through Accessibility
+        // without adding an Input Monitoring row. Never treat success as proof
+        // that the user enabled the separate System Settings toggle.
+        requestAccess(kIOHIDRequestTypeListenEvent)
     }
 
-    /// Shows an alert prompting the user to grant accessibility access,
-    /// then polls until permission is granted, calling the completion handler on main thread.
-    public static func ensureAccessibility(completion: @escaping () -> Void) {
-        if isAccessibilityGranted() {
-            completion()
-            return
+    public static func isEventPostingGranted() -> Bool {
+        CGPreflightPostEventAccess()
+    }
+
+    /// Read at each correction boundary; cached UI readiness is not authorization.
+    public static func hasRequiredAccess() -> Bool {
+        isAccessibilityGranted() && isKeyboardListeningAvailable() && isEventPostingGranted()
+    }
+
+    @discardableResult
+    public static func openAccessibilitySettings() -> Bool {
+        openPrivacySettings(anchor: "Privacy_Accessibility")
+    }
+
+    @discardableResult
+    public static func openInputMonitoringSettings() -> Bool {
+        openPrivacySettings(anchor: "Privacy_ListenEvent")
+    }
+
+    private static func openPrivacySettings(anchor: String) -> Bool {
+        for suffix in [anchor, "Privacy"] {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(suffix)"),
+               NSWorkspace.shared.open(url) { return true }
         }
-
-        SwitchFixLog.permissions.notice("Permissions: Accessibility not granted, requesting access")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        requestAccessibility()
-        openAccessibilitySettings()
-        pollForAccessibilityAccess(completion: completion)
+        return false
     }
 
-    public static func ensureInputMonitoring(completion: @escaping () -> Void) {
-        if isInputMonitoringGranted() {
-            completion()
-            return
-        }
-
-        SwitchFixLog.permissions.notice("Permissions: Input Monitoring not granted, requesting access")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        _ = requestInputMonitoring()
-        openInputMonitoringSettings()
-        pollForInputMonitoringAccess(completion: completion)
-    }
-
-    public static func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    public static func openInputMonitoringSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
-            if NSWorkspace.shared.open(url) {
-                return
+    @discardableResult
+    public static func resetPermissions(bundleID: String? = nil) -> Bool {
+        let targetID = bundleID ?? Bundle.main.bundleIdentifier ?? "com.switchfix.app"
+        // All is scoped to this bundle, and covers Accessibility and ListenEvent.
+        // PostEvent is not a separate user-facing permission on supported macOS.
+        let services = ["All"]
+        var allSucceeded = true
+        for service in services {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, targetID]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    allSucceeded = false
+                }
+            } catch {
+                allSucceeded = false
             }
         }
-
-        if let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-            NSWorkspace.shared.open(fallback)
+        if let script = NSAppleScript(source: "tell application \"System Settings\" to quit") {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
         }
+        return allSucceeded
     }
 
-    private static func pollForAccessibilityAccess(completion: @escaping () -> Void) {
-        guard !isAccessibilityGranted() else {
-            SwitchFixLog.permissions.info("Permissions: Accessibility granted")
-            completion()
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            pollForAccessibilityAccess(completion: completion)
-        }
-    }
-
-    private static func pollForInputMonitoringAccess(completion: @escaping () -> Void) {
-        guard !isInputMonitoringGranted() else {
-            SwitchFixLog.permissions.info("Permissions: Input Monitoring granted")
-            completion()
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            pollForInputMonitoringAccess(completion: completion)
-        }
-    }
 }
 
 public enum AccessibilityFocusState: Equatable {

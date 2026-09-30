@@ -7,6 +7,7 @@ import Utils
 
 public final class KeyboardMonitor {
     public var onInput: ((CapturedInput) -> Void)?
+    public var onHealthChanged: (() -> Void)?
 
     private struct TapLifecycle {
         var tap: CFMachPort?
@@ -39,6 +40,7 @@ public final class KeyboardMonitor {
     // Tap-callback-thread confined: tracks caps lock toggle state for edge detection.
     private var lastAlphaShiftState: Bool?
     private var tapResetCount: UInt64 = 0
+    private var consecutiveTapResets = 0
 
     private static let spaceKeyCode: UInt16 = 49
     private static let returnKeyCode: UInt16 = 36
@@ -140,11 +142,20 @@ public final class KeyboardMonitor {
         }
     }
 
+    public var health: MonitorHealth {
+        lifecycle.withLock { value in
+            guard value.isMonitoring, let tap = value.tap else { return .stopped }
+            return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap) ? .active : .failed
+        }
+    }
+
     @discardableResult
     public func start() -> Bool {
-        if lifecycle.withLock({ $0.isMonitoring }) {
-            return true
-        }
+        precondition(Thread.isMainThread)
+        if health == .active { return true }
+        stop()
+        guard Permissions.hasRequiredAccess() else { return false }
+        consecutiveTapResets = 0
 
         let eventMask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
@@ -156,9 +167,9 @@ public final class KeyboardMonitor {
         guard let tapResult = createEventTap(eventMask: eventMask, userInfo: userInfo),
               let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tapResult.tap, 0) else {
             let accessibility = Permissions.isAccessibilityGranted()
-            let inputMonitoring = Permissions.isInputMonitoringGranted()
+            let listening = Permissions.isKeyboardListeningAvailable()
             SwitchFixLog.monitor.error(
-                "KeyboardMonitor: failed to create event tap (Accessibility: \(accessibility ? "granted" : "missing"), Input Monitoring: \(inputMonitoring ? "granted" : "missing"))"
+                "KeyboardMonitor: failed to create event tap (Accessibility: \(accessibility ? "granted" : "missing"), effective keyboard listening: \(listening ? "available" : "unavailable"))"
             )
             return false
         }
@@ -171,6 +182,10 @@ public final class KeyboardMonitor {
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tapResult.tap, enable: true)
+        guard health == .active else {
+            stop()
+            return false
+        }
         SwitchFixLog.monitor.notice(
             "KeyboardMonitor: event tap active (\(tapResult.location == .cgSessionEventTap ? "session" : "HID"))"
         )
@@ -251,9 +266,12 @@ public final class KeyboardMonitor {
             sourceUserData: event.getIntegerValueField(.eventSourceUserData)
         )
         onInput?(input)
-        if let tap = lifecycle.withLock({ $0.tap }) {
+        consecutiveTapResets += 1
+        if consecutiveTapResets <= 3, let tap = lifecycle.withLock({ $0.tap }), CFMachPortIsValid(tap) {
             CGEvent.tapEnable(tap: tap, enable: true)
         }
+        // Permission preflight and recovery decisions happen outside the tap callback.
+        DispatchQueue.main.async { [weak self] in self?.onHealthChanged?() }
     }
 
     private func handle(type: CGEventType, event: CGEvent, startedAt: UInt64) {
@@ -264,6 +282,7 @@ public final class KeyboardMonitor {
 
         let sourceUserData = event.getIntegerValueField(.eventSourceUserData)
         guard sourceUserData != switchFixEventMarker else { return }
+        consecutiveTapResets = 0
 
         let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags

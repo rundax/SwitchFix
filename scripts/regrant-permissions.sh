@@ -46,12 +46,21 @@ echo "Cleaning stale TCC entries to reduce crash risk..."
 "$SCRIPT_DIR/cleanup-tcc.sh" 2>/dev/null || true
 echo ""
 
+if [ ! -d "$APP_BUNDLE" ]; then
+  echo "Error: app bundle not found at $APP_BUNDLE" >&2
+  exit 1
+fi
+
 echo "Stopping running SwitchFix..."
 pkill -x SwitchFixApp || true
 
 echo "Resetting TCC permissions for $BUNDLE_ID..."
-tccutil reset Accessibility "$BUNDLE_ID" || true
-tccutil reset ListenEvent "$BUNDLE_ID" || true
+if ! tccutil reset Accessibility "$BUNDLE_ID"; then
+  echo "Warning: failed to reset Accessibility permissions for $BUNDLE_ID" >&2
+fi
+if ! tccutil reset ListenEvent "$BUNDLE_ID"; then
+  echo "Warning: failed to reset Input Monitoring permissions for $BUNDLE_ID" >&2
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"

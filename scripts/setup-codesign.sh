@@ -19,7 +19,7 @@ CERT_NAME="${1:-SwitchFix Development}"
 
 if [ -f "$IDENTITY_FILE" ]; then
     EXISTING="$(cat "$IDENTITY_FILE")"
-    if security find-identity -v -p codesigning | grep -qF "$EXISTING"; then
+    if security find-identity -v -p codesigning | grep -qF "\"$EXISTING\""; then
         echo "✅ Already configured: signing identity \"$EXISTING\" exists in keychain."
         echo "   build-app.sh will use it automatically."
         echo ""
@@ -33,7 +33,7 @@ fi
 
 # ── Check if a certificate with this name already exists ─────────────────────
 
-if security find-identity -v -p codesigning | grep -qF "$CERT_NAME"; then
+if security find-identity -v -p codesigning | grep -qF "\"$CERT_NAME\""; then
     echo "✅ Certificate \"$CERT_NAME\" already exists in your keychain."
     echo "$CERT_NAME" > "$IDENTITY_FILE"
     echo "   Saved to .codesign-identity — build-app.sh will use it automatically."
@@ -54,7 +54,7 @@ echo ""
 echo "A Keychain Access window will open — follow the 5 steps below."
 echo ""
 
-if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$CERT_NAME"; then
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CERT_NAME\""; then
     echo "Creating via Keychain Access (this takes 10 seconds)..."
     echo ""
 

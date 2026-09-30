@@ -36,6 +36,7 @@ public final class InputEngine {
 
     private struct DetectionConfiguration {
         var allowedLayouts = Set(Layout.allCases)
+        var activeSourceSupportedLayouts: Set<Layout> = [.english]
         var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
         var ukrainianToVariant: UkrainianKeyboardVariant = .standard
     }
@@ -55,7 +56,7 @@ public final class InputEngine {
     private var correctionEpoch: UInt64
     private var latestProcessedSequence: UInt64 = 0
     private var maximumQueueDepth = 0
-    private let logger = Logger(subsystem: "com.switchfix", category: "input-engine")
+    private let logger = SwitchFixLog.engine
 
     public init(
         captureState: CaptureStateStore,
@@ -108,6 +109,19 @@ public final class InputEngine {
             if !self.stateMachine.updatePreferences(preferences).isEmpty {
                 self.resetDetectorState()
             }
+        }
+    }
+
+    public func updateAccessAllowed(_ allowed: Bool) {
+        let epoch = captureState.updateAccessAllowed(allowed)
+        inputQueue.async { [weak self] in
+            guard let self else { return }
+            self.correctionEpoch = epoch
+            self.stateMachine.invalidateUntilBoundary()
+            self.resetDetectorState()
+        }
+        if !allowed {
+            correctionQueue.async { [weak self] in self?.corrector.clearUndo() }
         }
     }
 
@@ -227,11 +241,13 @@ public final class InputEngine {
 
     public func updateDetectionConfiguration(
         allowedLayouts: Set<Layout>,
+        activeSourceSupportedLayouts: Set<Layout> = [.english],
         ukrainianFromVariant: UkrainianKeyboardVariant,
         ukrainianToVariant: UkrainianKeyboardVariant
     ) {
         detectionConfiguration.withLock { value in
             value.allowedLayouts = allowedLayouts
+            value.activeSourceSupportedLayouts = activeSourceSupportedLayouts
             value.ukrainianFromVariant = ukrainianFromVariant
             value.ukrainianToVariant = ukrainianToVariant
         }
@@ -256,7 +272,7 @@ public final class InputEngine {
 
     private func process(_ input: CapturedInput) {
         latestProcessedSequence = input.sequence
-        logger.debug("input seq=\(input.sequence) kind=\(String(describing: input.kind)) keyCode=\(input.keyCode) autorepeat=\(input.isAutorepeat) srcPid=\(input.sourcePID)")
+        logger.debug("input seq=\(input.sequence) keyCode=\(input.keyCode) autorepeat=\(input.isAutorepeat) srcPid=\(input.sourcePID)")
 
         if input.kind.recordsUserEdit {
             correctionQueue.async { [weak self] in
@@ -271,7 +287,7 @@ public final class InputEngine {
             // word buffer up and get "corrected" with a wrong delete count.
             stateMachine.invalidateUntilBoundary()
             resetDetectorState()
-            logger.debug("buffer invalidated reason=stale-capture-context captured=\(String(describing: input.context)) live=\(String(describing: liveContext))")
+            logger.debug("buffer invalidated reason=stale-capture-context capturedEpoch=\(input.context.epoch) liveEpoch=\(liveContext.epoch)")
             return
         }
 
@@ -289,14 +305,14 @@ public final class InputEngine {
     private func handle(_ command: InputStateCommand) {
         switch command {
         case .append(let text):
-            logger.debug("buffer '\(self.stateMachine.currentBuffer)' (+ '\(text)')")
+            logger.debug("buffer appended chars=\(text.count) bufferLength=\(self.stateMachine.currentBuffer.count)")
         case .deleteLast:
-            logger.debug("buffer '\(self.stateMachine.currentBuffer)' (backspace)")
+            logger.debug("buffer deleted last character length=\(self.stateMachine.currentBuffer.count)")
         case .invalidate(let reason):
             resetDetectorState()
             logger.debug("buffer invalidated reason=\(String(describing: reason))")
         case .flush(let word, let boundary, let sequence, let context):
-            logger.notice("word flushed '\(word)' boundary='\(boundary)' seq=\(sequence) layout=\(context.layout.rawValue)")
+            logger.notice("word flushed length=\(word.count) boundaryLength=\(boundary.count) seq=\(sequence) layout=\(context.layout.rawValue)")
             let latest = captureState.snapshot()
             runDetection(DetectionRequest(
                 word: word,
@@ -307,10 +323,10 @@ public final class InputEngine {
                 context: context
             ))
         case .requestManualCorrection(let word, let sequence, let context):
-            logger.notice("hotkey correction requested word='\(word ?? "nil")' seq=\(sequence)")
+            logger.notice("hotkey correction requested hasWord=\(word != nil) seq=\(sequence)")
             requestManualCorrection(word: word, sequence: sequence, context: context)
         case .requestRevert(let word, let sequence, let context):
-            logger.notice("revert hotkey pressed word='\(word ?? "nil")' seq=\(sequence)")
+            logger.notice("revert hotkey pressed hasWord=\(word != nil) seq=\(sequence)")
             correctionQueue.async { [weak self] in
                 guard let self else { return }
                 if !self.corrector.undo(
@@ -327,6 +343,7 @@ public final class InputEngine {
             correctionQueue.async { [weak self] in
                 self?.corrector.clearUndo()
             }
+            resetDetectorState()
         }
     }
 
@@ -340,6 +357,8 @@ public final class InputEngine {
             } else {
                 let configuration = self.detectionConfiguration.withLock { $0 }
                 self.detector.currentLayout = request.context.layout
+                self.detector.currentInputSourceID = request.context.inputSourceID
+                self.detector.activeSourceSupportedLayouts = configuration.activeSourceSupportedLayouts
                 self.detector.allowedLayouts = configuration.allowedLayouts
                 self.detector.ukrainianFromVariant = configuration.ukrainianFromVariant
                 self.detector.ukrainianToVariant = configuration.ukrainianToVariant
@@ -352,11 +371,11 @@ public final class InputEngine {
             let duration = DispatchTime.now().uptimeNanoseconds &- startedAt
             if let result {
                 SwitchFixLog.detector.notice(
-                    "detect '\(result.originalWord)' -> '\(result.convertedWord)' source=\(result.sourceLayout.rawValue) target=\(result.targetLayout.rawValue) switch=\(result.shouldSwitchLayout) ms=\(Double(duration) / 1_000_000.0)"
+                    "correction detected source=\(result.sourceLayout.rawValue) target=\(result.targetLayout.rawValue) switch=\(result.shouldSwitchLayout) chars=\(result.originalWord.count) ms=\(Double(duration) / 1_000_000.0)"
                 )
             } else {
                 SwitchFixLog.detector.info(
-                    "detect '\(request.word)' -> keep (no correction, ms=\(Double(duration) / 1_000_000.0))"
+                    "no correction detected chars=\(request.word.count) ms=\(Double(duration) / 1_000_000.0)"
                 )
             }
             guard let result else { return }
@@ -368,9 +387,11 @@ public final class InputEngine {
 
     private func prepareCorrection(result: DetectionResult, request: DetectionRequest) {
         let latest = captureState.snapshot()
-        var cancelReason: String?
+        let cancelReason: String?
+        let isTextIdentical = result.originalWord == result.convertedWord
+
         if latest.latestPhysicalSequence != request.sequence {
-            cancelReason = "stale-sequence"
+            cancelReason = "sequence-drift"
         } else if latest.editGeneration != request.editGeneration {
             cancelReason = "edit-generation-changed"
         } else if latest.correctionEpoch != request.correctionEpoch {
@@ -385,15 +406,21 @@ public final class InputEngine {
             cancelReason = "correction-disallowed"
         } else if result.originalWord.count > 64 {
             cancelReason = "word-too-long"
+        } else if isTextIdentical && !result.shouldSwitchLayout {
+            cancelReason = "text-identical-no-switch"
+        } else {
+            cancelReason = nil
         }
         guard cancelReason == nil else {
-            logger.debug("correction cancelled reason=\(cancelReason!) word='\(result.originalWord)'")
+            logger.debug("correction cancelled reason=\(cancelReason!) chars=\(result.originalWord.count)")
             return
         }
 
         let boundary = request.boundary
+        let deleteCount = isTextIdentical ? 0 : result.originalWord.count + boundary.count
+        let replacementText = isTextIdentical ? "" : result.convertedWord + boundary
         logger.notice(
-            "correction planned '\(result.originalWord)' -> '\(result.convertedWord)' deletes=\(result.originalWord.count + boundary.count) pid=\(request.context.frontmostPID)"
+            "correction planned chars=\(result.originalWord.count) replacementChars=\(result.convertedWord.count) deletes=\(deleteCount) pid=\(request.context.frontmostPID) layoutSwitch=\(result.shouldSwitchLayout ? result.targetLayout.rawValue : "none")"
         )
         let plan = CorrectionPlan(
             boundarySequence: request.sequence,
@@ -401,8 +428,8 @@ public final class InputEngine {
             targetPID: request.context.frontmostPID,
             editGeneration: request.editGeneration,
             correctionEpoch: request.correctionEpoch,
-            deleteCount: result.originalWord.count + boundary.count,
-            replacementText: result.convertedWord + boundary,
+            deleteCount: deleteCount,
+            replacementText: replacementText,
             originalText: result.originalWord,
             correctedText: result.convertedWord,
             boundaryText: boundary,
@@ -413,7 +440,7 @@ public final class InputEngine {
         correctionQueue.async { [weak self] in
             guard let self else { return }
             guard plan.isEligible(using: self.captureState.snapshot()) else {
-                SwitchFixLog.corrector.debug("emission skipped: state changed before apply '\(plan.originalText)'")
+                SwitchFixLog.corrector.debug("emission skipped: state changed before apply chars=\(plan.originalText.count)")
                 return
             }
             if let customEmission = self.customEmission {

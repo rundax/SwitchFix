@@ -3,6 +3,7 @@ import Core
 import CoreGraphics
 import Darwin
 import Foundation
+import IOKit.hidsystem
 import Utils
 
 private var passed = 0
@@ -117,6 +118,89 @@ run("autorepeat preserved") {
         return nil
     }.first
     check(word == "cc", "autorepeat characters must not be deduplicated")
+}
+
+run("delete on empty buffer preserves subsequent characters") {
+    let current = context()
+    var machine = automaticMachine(current)
+    let deleteCommands = machine.consume(input(sequence: 1, kind: .delete, context: current))
+    check(!machine.isInvalidUntilBoundary, "delete on empty buffer must not invalidate until boundary")
+    check(deleteCommands == [.invalidate(.navigation)], "delete on empty buffer emits navigation invalidation")
+    _ = machine.consume(input(sequence: 2, kind: .character("I"), context: current))
+    let flushes = machine.consume(input(sequence: 3, kind: .boundary(" "), context: current))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushes == ["I"], "word typed after delete on empty buffer must flush")
+}
+
+run("navigation and repeated untracked deletes suppress in-word correction") {
+    let current = context()
+    var machine = automaticMachine(current)
+
+    for (index, character) in ["w", "o", "r"] .enumerated() {
+        _ = machine.consume(input(
+            sequence: UInt64(index + 1),
+            kind: .character(character),
+            context: current
+        ))
+    }
+    _ = machine.consume(input(sequence: 4, kind: .navigation, context: current))
+    check(machine.isInvalidUntilBoundary, "navigation must invalidate the tracked word")
+    _ = machine.consume(input(sequence: 5, kind: .character("d"), context: current))
+    _ = machine.consume(input(sequence: 6, kind: .character("s"), context: current))
+    check(machine.currentBuffer.isEmpty, "characters typed after navigation must stay untracked")
+    check(
+        machine.consume(input(sequence: 7, kind: .boundary(" "), context: current)).isEmpty,
+        "boundary after navigation must not flush an in-word fragment"
+    )
+
+    _ = machine.consume(input(sequence: 8, kind: .delete, context: current))
+    _ = machine.consume(input(sequence: 9, kind: .delete, context: current))
+    check(machine.isInvalidUntilBoundary, "repeated deletes beyond the buffer must invalidate until boundary")
+}
+
+run("delete across boundary restores previous word and re-buffers edits") {
+    let current = context()
+    var machine = automaticMachine(current)
+    _ = machine.consume(input(sequence: 1, kind: .character("c"), context: current))
+    _ = machine.consume(input(sequence: 2, kind: .character("a"), context: current))
+    _ = machine.consume(input(sequence: 3, kind: .character("t"), context: current))
+    _ = machine.consume(input(sequence: 4, kind: .boundary(" "), context: current))
+    let delSpace = machine.consume(input(sequence: 5, kind: .delete, context: current))
+    check(delSpace == [.deleteLast], "deleting boundary emits deleteLast")
+    check(machine.currentBuffer == "cat", "deleting boundary restores committed word to buffer")
+    _ = machine.consume(input(sequence: 6, kind: .delete, context: current))
+    check(machine.currentBuffer == "ca", "deleting character removes last character")
+    _ = machine.consume(input(sequence: 7, kind: .character("r"), context: current))
+    check(machine.currentBuffer == "car", "typing character appends to restored word")
+    let flushes = machine.consume(input(sequence: 8, kind: .boundary(" "), context: current))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushes == ["car"], "edited word must flush full revised word")
+}
+
+run("deleting previous word completely and typing new word") {
+    let ukContext = context(layout: .ukrainian, sourceID: "com.apple.keylayout.Ukrainian")
+    var machine = automaticMachine(ukContext)
+    _ = machine.consume(input(sequence: 1, kind: .character("Я"), context: ukContext))
+    _ = machine.consume(input(sequence: 2, kind: .boundary(" "), context: ukContext))
+    _ = machine.consume(input(sequence: 3, kind: .delete, context: ukContext))
+    check(machine.currentBuffer == "Я", "deleting boundary restores Я")
+    _ = machine.consume(input(sequence: 4, kind: .delete, context: ukContext))
+    check(machine.currentBuffer.isEmpty, "deleting character empties buffer")
+    check(!machine.isInvalidUntilBoundary, "buffer must not be invalid")
+    _ = machine.consume(input(sequence: 5, kind: .character("Ш"), context: ukContext))
+    check(machine.currentBuffer == "Ш", "Ш must be buffered")
+    let flushes = machine.consume(input(sequence: 6, kind: .boundary(" "), context: ukContext))
+        .compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    check(flushes == ["Ш"], "Ш must flush cleanly after previous word deletion")
 }
 
 run("manual hotkey resyncs buffer") {
@@ -268,6 +352,106 @@ run("correction sequence and context gates") {
         correctionAllowed: false
     )
     check(!plan.isEligible(using: reset), "tap reset or overload must disable correction eligibility")
+}
+
+run("identical original and converted text avoids text deletion") {
+    let current = context(focus: .notSecure)
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    var emittedPlan: CorrectionPlan?
+    let correctionCalled = DispatchSemaphore(value: 0)
+
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: request.word,
+                originalWord: request.word,
+                shouldSwitchLayout: true
+            )
+        },
+        correctionEmission: { plan in
+            emittedPlan = plan
+            correctionCalled.signal()
+            return true
+        }
+    )
+
+    engine.enqueue(store.capture(
+        timestamp: 1,
+        kind: .character("де"),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+    engine.enqueue(store.capture(
+        timestamp: 2,
+        kind: .boundary(" "),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+
+    check(correctionCalled.wait(timeout: .now() + 1) == .success, "identical text with switch must emit plan")
+    check(emittedPlan?.deleteCount == 0, "identical text must have deleteCount 0 to avoid erasing on-screen message")
+    check(emittedPlan?.replacementText.isEmpty == true, "identical text must have empty replacementText")
+    check(emittedPlan?.targetLayout == .ukrainian, "identical text must preserve target layout switch")
+
+    // Verify TextCorrector handles layout-only plan without errors
+    let corrector = TextCorrector()
+    if let emittedPlan {
+        let applied = corrector.apply(emittedPlan, latestCaptureState: store.snapshot)
+        check(applied, "TextCorrector must apply layout-only plan without deleting text")
+    }
+
+    // Now test that identical text WITHOUT layout switch is completely cancelled
+    let noSwitchCalled = DispatchSemaphore(value: 0)
+    let noSwitchEngine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: request.word,
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { _ in
+            noSwitchCalled.signal()
+            return true
+        }
+    )
+
+    noSwitchEngine.enqueue(store.capture(
+        timestamp: 3,
+        kind: .character("тест"),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+    noSwitchEngine.enqueue(store.capture(
+        timestamp: 4,
+        kind: .boundary(" "),
+        keyCode: 0,
+        flagsRawValue: 0,
+        isAutorepeat: false,
+        sourcePID: 100,
+        sourceUserData: 0
+    ))
+
+    check(noSwitchCalled.wait(timeout: .now() + 0.05) == .timedOut, "identical text without layout switch must be cancelled")
 }
 
 run("secure focus fails closed") {
@@ -425,8 +609,30 @@ run("bounded tagged event batch") {
         return false
     }
     check(deletes.count == 8, "N deletes must produce exactly N tagged key pairs")
-    check(unicode.count == plan.replacementText.count * 2, "replacement of N chars must produce N Unicode key pairs")
+    check(unicode.count == 2, "single chunk <= 20 chars produces 1 Unicode key pair")
     check(events.allSatisfy { $0.sourceUserData == switchFixEventMarker }, "every generated event must carry the marker")
+
+    let longPlan = CorrectionPlan(
+        boundarySequence: 1,
+        contextEpoch: 1,
+        targetPID: 100,
+        editGeneration: 1,
+        correctionEpoch: 0,
+        deleteCount: 0,
+        replacementText: "12345678901234567890EXTRA",
+        originalText: "x",
+        correctedText: "x",
+        boundaryText: "",
+        originalLayout: .english,
+        targetLayout: nil
+    )
+    let longEvents = TextCorrector.eventDescriptors(for: longPlan)
+    let longUnicode = longEvents.filter {
+        if case .unicodeKeyDown = $0.kind { return true }
+        if case .unicodeKeyUp = $0.kind { return true }
+        return false
+    }
+    check(longUnicode.count == 4, "25 chars across 2 chunks must produce 2 Unicode key pairs")
 }
 
 run("undo generation") {
@@ -594,6 +800,185 @@ run("disabling invalidates queued corrections") {
     )
 }
 
+run("access revocation invalidates queued corrections") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let detectionEntered = DispatchSemaphore(value: 0)
+    let releaseDetection = DispatchSemaphore(value: 0)
+    let correctionCalled = DispatchSemaphore(value: 0)
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            detectionEntered.signal()
+            _ = releaseDetection.wait(timeout: .now() + 5)
+            return DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: "ч",
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { _ in
+            correctionCalled.signal()
+            return true
+        }
+    )
+    engine.enqueue(store.capture(timestamp: 1, kind: .character("x"), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    engine.enqueue(store.capture(timestamp: 2, kind: .boundary(" "), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    check(detectionEntered.wait(timeout: .now() + 1) == .success, "queued detection must start before access loss")
+
+    let originalEpoch = store.snapshot().correctionEpoch
+    engine.updateAccessAllowed(false)
+    let revoked = store.snapshot()
+    check(!revoked.correctionAllowed, "revoked access must synchronously block correction")
+    check(revoked.correctionEpoch != originalEpoch, "revoked access must invalidate existing plans")
+    engine.updateAccessAllowed(true)
+    check(store.snapshot().correctionEpoch != revoked.correctionEpoch, "restored access must not revive stale plans")
+
+    releaseDetection.signal()
+    check(correctionCalled.wait(timeout: .now() + 0.2) == .timedOut, "a detection queued before access loss must not emit after recovery")
+}
+
+run("effective listening access does not verify the Input Monitoring toggle") {
+    check(RuntimeReadinessSnapshot().keyboardListeningStatus == .checking, "unchecked keyboard access must remain checking")
+    // Real macOS reproduction: only the Accessibility TCC row exists, yet even
+    // IOHIDCheckAccess(ListenEvent) returns Granted. Mock that actual result below,
+    // not the incorrect assumption that a missing ListenEvent row returns Unknown.
+    for access in [kIOHIDAccessTypeUnknown, kIOHIDAccessTypeDenied, kIOHIDAccessTypeGranted] {
+        var checkedListenEvent = false
+        let granted = Permissions.isKeyboardListeningAvailable { requestType in
+            checkedListenEvent = requestType == kIOHIDRequestTypeListenEvent
+            return access
+        }
+        check(checkedListenEvent, "listening capability must query ListenEvent")
+        check(granted == (access == kIOHIDAccessTypeGranted), "only Granted indicates effective listening capability")
+
+        var readiness = RuntimeReadinessSnapshot()
+        readiness.checked = true
+        readiness.accessibilityGranted = true
+        readiness.postingGranted = true
+        readiness.keyboardListeningAvailable = granted
+        if !granted {
+            check(readiness.missingPermissions == ["Input Monitoring"], "unavailable listening access must retain Input Monitoring guidance")
+            check(readiness.status == .setupNeeded && readiness.needsSetup, "unavailable listening capability must keep setup open")
+            check(!readiness.hasRequiredAccess && !readiness.canTryCorrection, "unavailable listening capability must block correction")
+            check(readiness.keyboardListeningStatus == .unavailable, "unavailable keyboard access must retain Settings guidance")
+        } else {
+            check(readiness.missingPermissions.isEmpty, "effective access clears runtime permission blockers")
+            check(readiness.hasRequiredAccess, "effective authorization can support correction without a separate ListenEvent row")
+            check(readiness.keyboardListeningStatus == .available, "effective keyboard access must not be permanently marked unverified")
+            check(readiness.keyboardListeningStatus.label == "Available", "capability label must describe access, not claim the Input Monitoring toggle is Allowed")
+            check(readiness.keyboardListeningStatus.symbolName == "checkmark.circle.fill", "verified runtime access must show its completed capability state")
+            readiness.accessibilityGranted = false
+            check(readiness.keyboardListeningStatus == .available, "keyboard access remains a separate capability from Accessibility")
+            check(!readiness.setupComplete, "keyboard access alone cannot complete setup")
+        }
+    }
+
+    for result in [false, true] {
+        var requestedListenEvent = false
+        let granted = Permissions.requestKeyboardListeningAccess { requestType in
+            requestedListenEvent = requestType == kIOHIDRequestTypeListenEvent
+            return result
+        }
+        check(requestedListenEvent, "listening requests must address ListenEvent")
+        check(granted == result, "requests must preserve the effective authorization result, not assert toggle membership")
+    }
+}
+
+run("readiness states reflect permission and mode prerequisites") {
+    var readiness = RuntimeReadinessSnapshot()
+    check(readiness.status == .checking, "unknown runtime state must remain checking")
+
+    readiness.checked = true
+    readiness.accessibilityGranted = true
+    check(readiness.status == .setupNeeded, "missing Input Monitoring keeps setup blocked")
+    check(readiness.missingPermissions == ["Input Monitoring"], "only the missing required grant is listed")
+
+    readiness.keyboardListeningAvailable = true
+    readiness.postingGranted = false
+    check(readiness.status == .needsAttention, "posting capability failure is not a third permission category")
+
+    readiness.postingGranted = true
+    readiness.monitor = .active
+    readiness.installedLayouts = [.english, .russian]
+    readiness.dictionaryLayouts = [.english, .russian]
+    readiness.dictionariesLoaded = true
+    readiness.appAllowed = true
+    readiness.secureFocus = .notSecure
+    readiness.sourceSupported = true
+    check(readiness.status == .working, "working requires effective access, monitor, dictionaries, and a supported context")
+    check(readiness.canTryCorrection, "an unverified separate toggle must not block an operational typing test")
+    check(readiness.setupComplete, "a working runtime must show Setup complete rather than perpetual Check in Settings")
+    check(readiness.keyboardListeningStatus == .available, "a working runtime must show keyboard input access as Available")
+
+    readiness.runtimeFailure = "Keyboard monitoring keeps stopping."
+    check(readiness.status == .needsAttention && readiness.message == readiness.runtimeFailure, "persistent runtime failures remain visible")
+    readiness.runtimeFailure = nil
+
+    readiness.mode = .hotkey
+    readiness.dictionaryLayouts = []
+    readiness.dictionariesLoaded = false
+    check(readiness.status == .working, "manual correction mode does not depend on automatic dictionaries")
+
+    var retries = MonitorRetryBudget()
+    check(retries.canAttempt, "monitor retry begins available")
+    retries.recordFailure()
+    retries.recordFailure()
+    check(retries.canAttempt, "monitor retries remain available within the bounded budget")
+    retries.recordFailure()
+    check(!retries.canAttempt, "monitor retries stop after three failures")
+    retries.reset()
+    check(retries.canAttempt, "explicit recovery resets the retry budget")
+}
+
+run("setup completion follows live access and survives temporary pauses") {
+    var readiness = RuntimeReadinessSnapshot()
+    check(!readiness.setupComplete, "unchecked setup cannot be complete")
+    readiness.checked = true
+    readiness.accessibilityGranted = true
+    readiness.keyboardListeningAvailable = true
+    readiness.installedLayouts = [.english, .russian]
+    readiness.dictionaryLayouts = [.english, .russian]
+    readiness.dictionariesLoaded = true
+    check(!readiness.setupComplete, "Accessibility with listening access but no posting must not complete setup")
+
+    // Match the reported relaunch: permissions authorized, posting ready, tap active.
+    readiness.postingGranted = true
+    check(!readiness.setupComplete, "authorized permissions with a stopped monitor are not complete")
+    readiness.monitor = .active
+    check(readiness.setupComplete, "authorized access plus a live monitor and prerequisites completes setup")
+    check(!readiness.needsSetup, "completed setup must not reopen missing-permission guidance")
+    check(readiness.status == .paused, "a disallowed frontmost context only pauses correction")
+    check(readiness.setupComplete, "a temporary app/focus pause must not undo completed setup")
+
+    readiness.isEnabled = false
+    check(readiness.setupComplete && !readiness.canTryCorrection, "user-disabled correction retains setup completion but blocks the exercise")
+    readiness.isEnabled = true
+    readiness.runtimeFailure = "Monitor stopped"
+    check(!readiness.setupComplete, "a runtime failure clears completion")
+    readiness.runtimeFailure = nil
+    readiness.monitor = .failed
+    check(!readiness.setupComplete, "monitor failure clears completion")
+    readiness.monitor = .active
+    readiness.keyboardListeningAvailable = false
+    check(!readiness.setupComplete && readiness.keyboardListeningStatus == .unavailable, "Check Again must reflect live access revocation")
+    readiness.keyboardListeningAvailable = true
+    check(readiness.setupComplete, "Check Again must restore completion after access returns")
+    readiness.accessibilityGranted = false
+    check(!readiness.setupComplete, "revoked Accessibility clears completion even with input access")
+    readiness.accessibilityGranted = true
+    readiness.dictionariesLoaded = false
+    check(!readiness.setupComplete, "automatic mode waits for dictionaries")
+    readiness.mode = .hotkey
+    check(readiness.setupComplete, "manual mode does not require automatic dictionaries")
+    readiness.installedLayouts = [.english]
+    check(!readiness.setupComplete, "setup still requires two supported layouts")
+}
+
 run("100,000 event stress") {
     let current = context()
     let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
@@ -741,7 +1126,7 @@ run("blocked collaborators") {
 }
 
 private func runIntegrationSmoke() {
-    guard Permissions.isAccessibilityGranted(), Permissions.isInputMonitoringGranted() else {
+    guard Permissions.isAccessibilityGranted(), Permissions.isKeyboardListeningAvailable() else {
         print("SKIP: integration smoke requires Accessibility and Input Monitoring")
         return
     }

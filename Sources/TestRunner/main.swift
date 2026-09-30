@@ -204,7 +204,12 @@ runSuite("WordValidator: Short words whitelist") {
     let wv = WordValidator.shared
     assert(!wv.isValidWord("ab", language: .english), "unknown 2-char words should be rejected")
     assert(wv.isValidWord("я", language: .russian), "common 1-char words should be allowed")
+    assert(wv.isValidWord("бы", language: .russian), "common 2-char words should be allowed")
     assert(wv.isValidWord("як", language: .ukrainian), "common 2-char words should be allowed")
+    assert(wv.isValidWord("би", language: .ukrainian), "'би' should be allowed in Ukrainian")
+    assert(wv.isValidWord("б", language: .ukrainian), "'б' should be allowed in Ukrainian")
+    assert(wv.isValidWord("а", language: .ukrainian), "'а' should be allowed in Ukrainian")
+    assert(wv.isValidWord("а", language: .russian), "'а' should be allowed in Russian")
 }
 
 runSuite("WordValidator: URL patterns skipped") {
@@ -236,6 +241,31 @@ runSuite("WordValidator: Valid English words") {
     assert(wv.isValidWord("seems", language: .english), "'seems' should be valid in English")
     assert(wv.isValidWord("after", language: .english), "'after' should be valid in English")
     assert(wv.isValidWord("expected", language: .english), "'expected' should be valid in English")
+    assert(wv.isValidWord("keys", language: .english), "'keys' should be valid in English")
+    assert(wv.isValidWord("remove", language: .english), "'remove' should be valid in English")
+    assert(wv.isValidWord("removes", language: .english), "'removes' should be valid in English")
+    assert(wv.isValidWord("removing", language: .english), "'removing' should be valid in English")
+    assert(wv.isValidWord("removed", language: .english), "'removed' should be valid in English")
+    assert(wv.isValidWord("changes", language: .english), "'changes' should be valid in English")
+    assert(wv.isValidWord("changing", language: .english), "'changing' should be valid in English")
+    assert(wv.isValidWord("wholes", language: .english), "'wholes' should be valid in English")
+    assert(wv.isValidWord("files", language: .english), "'files' should be valid in English")
+    assert(wv.isValidWord("users", language: .english), "'users' should be valid in English")
+    assert(wv.isValidWord("lines", language: .english), "'lines' should be valid in English")
+    assert(wv.isValidWord("checks", language: .english), "'checks' should be valid in English")
+    assert(wv.isValidWord("checking", language: .english), "'checking' should be valid in English")
+    assert(wv.isValidWord("typed", language: .english), "'typed' should be valid in English")
+    assert(wv.isValidWord("llm", language: .english), "'llm' should be valid in English")
+    assert(wv.isValidWord("llms", language: .english), "'llms' should be valid in English")
+    assert(wv.isValidWord("LLM", language: .english), "'LLM' should be valid in English")
+    assert(wv.isValidWord("replace", language: .english), "'replace' should be valid in English")
+    assert(wv.isValidWord("replaces", language: .english), "'replaces' should be valid in English")
+    assert(wv.isValidWord("replaced", language: .english), "'replaced' should be valid in English")
+    assert(wv.isValidWord("replacing", language: .english), "'replacing' should be valid in English")
+    assert(wv.isValidWord("gsd", language: .english), "'gsd' should be valid in English")
+    assert(wv.isValidWord("GSD", language: .english), "'GSD' should be valid in English")
+    assert(wv.isValidWord("vs", language: .english), "'vs' should be valid in English")
+    assert(wv.isValidWord("VS", language: .english), "'VS' should be valid in English")
 }
 
 runSuite("WordValidator: English contractions") {
@@ -522,6 +552,66 @@ runSuite("LayoutDetector: Ukrainian variant fallback converts legacy word to Eng
     }
 }
 
+runSuite("LayoutDetector: Convert English ',s' to Ukrainian 'би'") {
+    // 1. With ukrainianToVariant = .legacy (direct mapping)
+    do {
+        let detector = LayoutDetector()
+        let mockDelegate = MockDetectorDelegate()
+        detector.delegate = mockDelegate
+        detector.currentLayout = .english
+        detector.ukrainianToVariant = .legacy
+
+        for char in ",s" {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+
+        assertEqual(mockDelegate.results.count, 1, "should detect and convert ',s' to 'би'")
+        if let result = mockDelegate.results.first {
+            assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+            assertEqual(result.convertedWord, "би", "should convert ',s' to 'би'")
+        }
+    }
+
+    // 2. With ukrainianToVariant = .standard (fallback mapping)
+    do {
+        let detector = LayoutDetector()
+        let mockDelegate = MockDetectorDelegate()
+        detector.delegate = mockDelegate
+        detector.currentLayout = .english
+        detector.ukrainianToVariant = .standard
+
+        for char in ",s" {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+
+        assertEqual(mockDelegate.results.count, 1, "should detect and convert ',s' to 'би' via variant fallback")
+        if let result = mockDelegate.results.first {
+            assertEqual(result.targetLayout, .ukrainian, "target should be Ukrainian")
+            assertEqual(result.convertedWord, "би", "should convert ',s' to 'би'")
+        }
+    }
+}
+
+runSuite("LayoutDetector: English words with inflections are never converted to Ukrainian") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .legacy
+
+    let testWords = ["keys", "remove", "removes", "removing", "removed", "changes", "wholes", "files", "users", "lines", "checks", "typed"]
+    for word in testWords {
+        mockDelegate.results.removeAll()
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+        assertEqual(mockDelegate.results.count, 0, "'\(word)' in English layout should NOT be corrected or converted")
+    }
+}
+
 runSuite("LayoutDetector: Acronym fallback preserves case") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
@@ -587,6 +677,31 @@ runSuite("LayoutDetector: Valid word does not trigger") {
     detector.flushBuffer()
 
     assertEqual(mockDelegate.results.count, 0, "valid word should not trigger detection")
+}
+
+runSuite("LayoutDetector: Ambiguous valid word waits for neighboring layout evidence") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("еру")
+    assertEqual(mockDelegate.results.count, 0, "valid Ukrainian 'еру' must not be rewritten in isolation")
+
+    typeWord("middle")
+    assertEqual(mockDelegate.results.count, 1, "neighboring English evidence should confirm the deferred word")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "еру middle")
+        assertEqual(result.convertedWord, "the middle")
+        assertEqual(result.targetLayout, .english)
+    }
 }
 
 runSuite("LayoutDetector: Mixed scripts ignored") {
@@ -701,6 +816,83 @@ runSuite("LayoutDetector: Merge suppressed short word when next word confirms la
     }
 }
 
+runSuite("LayoutDetector: Convert Ukrainian 'Ш' followed by 'цфте' to English 'I want'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+
+    for char in "Ш" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "цфте" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for Ш / цфте")
+    if mockDelegate.results.count == 1 {
+        let result = mockDelegate.results[0]
+        assertEqual(result.originalWord, "Ш цфте")
+        assertEqual(result.convertedWord, "I want")
+    } else if mockDelegate.results.count == 2 {
+        assertEqual(mockDelegate.results[0].convertedWord, "I")
+        assertEqual(mockDelegate.results[1].convertedWord, "want")
+    }
+}
+
+runSuite("LayoutDetector: Convert English 'f' followed by 'ns' to Ukrainian 'а ті' (standard)") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .standard
+
+    for char in "f" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "ns" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for f / ns")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "f ns")
+        assertEqual(result.convertedWord, "а ті")
+        assertEqual(result.targetLayout, .ukrainian)
+    }
+}
+
+runSuite("LayoutDetector: Convert English 'f' followed by 'ns' to Ukrainian 'а ти' (legacy)") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.ukrainianToVariant = .legacy
+
+    for char in "f" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "ns" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for f / ns")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "f ns")
+        assertEqual(result.convertedWord, "а ти")
+        assertEqual(result.targetLayout, .ukrainian)
+    }
+}
+
 runSuite("LayoutDetector: Reset drops suppressed cross-context history") {
     let detector = LayoutDetector()
     let mockDelegate = MockDetectorDelegate()
@@ -728,6 +920,426 @@ runSuite("LayoutDetector: Reset drops suppressed cross-context history") {
         assertEqual(result.originalWord, "цщкли", "reset must not merge text from an earlier context")
         assertEqual(result.convertedWord, "works", "current-context conversion should remain intact")
     }
+}
+
+runSuite("LayoutDetector: Standalone ':' is never converted to 'Ж' without context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter(":")
+    detector.flushBuffer(boundaryCharacter: "\n")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ':' without context must not be converted to 'Ж'")
+}
+
+runSuite("LayoutDetector: Standalone ':' in English context is not converted to 'Ж'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("The")
+    typeWord("goal")
+    typeWord("is")
+
+    detector.addCharacter(":")
+    detector.flushBuffer(boundaryCharacter: "\n")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ':' after English words must not be converted to 'Ж'")
+}
+
+runSuite("LayoutDetector: Standalone ':' in Ukrainian context can be converted to 'Ж'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Type "Wt" (wrong layout for "Це" in Ukrainian)
+    for char in "Wt" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "'Wt' should be corrected to 'Це'")
+
+    // Now type ":" in the resulting Ukrainian context
+    detector.addCharacter(":")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 2, "standalone ':' in Ukrainian context should be detected")
+    if mockDelegate.results.count == 2 {
+        assertEqual(mockDelegate.results[1].convertedWord, "Ж", "should convert to 'Ж'")
+        assertEqual(mockDelegate.results[1].targetLayout, .ukrainian)
+    }
+}
+
+runSuite("LayoutDetector: Standalone ';' is not converted to 'ж' without context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter(";")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ';' without context must not be converted to 'ж'")
+}
+
+runSuite("LayoutDetector: Standalone ',' is not converted to 'б' without context") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter(",")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "standalone ',' without context must not be converted to 'б'")
+}
+
+runSuite("LayoutDetector: Do not replace isolated single char '-r' to '-к'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "-r" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "isolated '-r' without context must not be converted to '-к'")
+}
+
+runSuite("LayoutDetector: Do not replace isolated single char 'r' to 'к'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    detector.addCharacter("r")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 0, "isolated 'r' without context must not be converted to 'к'")
+}
+
+runSuite("LayoutDetector: Do not replace '-r' after English words (chars from -r)") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    func typeWord(_ word: String) {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        detector.flushBuffer(boundaryCharacter: " ")
+    }
+
+    typeWord("chars")
+    typeWord("from")
+    typeWord("-r")
+
+    assertEqual(mockDelegate.results.count, 0, "'-r' after English words must not be converted to '-к'")
+}
+
+runSuite("LayoutDetector: Convert 'r' followed by Russian word 'dhfx' to 'к врач'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    for char in "r" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    for char in "dhfx" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assert(mockDelegate.results.count >= 1, "should emit correction for r / dhfx")
+    if let result = mockDelegate.results.first {
+        assertEqual(result.originalWord, "r dhfx")
+        assertEqual(result.convertedWord, "к врач")
+        assertEqual(result.targetLayout, .russian)
+    }
+}
+
+runSuite("LayoutDetector: Convert 'r' to 'к' when target Russian context exists") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+
+    // Type "gjitk" (wrong layout for "пошел" in Russian)
+    for char in "gjitk" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "'gjitk' should be corrected to 'пошел'")
+
+    // Now type "r" in the resulting Russian context
+    detector.addCharacter("r")
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 2, "'r' in Russian context should be detected as 'к'")
+    if mockDelegate.results.count == 2 {
+        assertEqual(mockDelegate.results[1].convertedWord, "к")
+        assertEqual(mockDelegate.results[1].targetLayout, .russian)
+    }
+}
+
+runSuite("LayoutDetector: Convert English 'futynf' to Ukrainian 'агента'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian]
+
+    for char in "futynf" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assert(result != nil, "should detect 'futynf' as wrong layout")
+    assertEqual(result?.targetLayout, .ukrainian)
+    assertEqual(result?.convertedWord, "агента")
+    assertEqual(result?.originalWord, "futynf")
+    assert(result?.shouldSwitchLayout == true, "should switch layout to Ukrainian")
+}
+
+runSuite("LayoutDetector: Desynchronized layout-only switch for Ukrainian 'агента' in English layout") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian]
+
+    for char in "агента" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assert(result != nil, "should detect desynchronized Ukrainian word 'агента' in English layout")
+    assertEqual(result?.sourceLayout, .english)
+    assertEqual(result?.targetLayout, .ukrainian)
+    assertEqual(result?.convertedWord, "агента")
+    assertEqual(result?.originalWord, "агента")
+    assert(result?.shouldSwitchLayout == true, "should switch layout to Ukrainian")
+}
+
+runSuite("LayoutDetector: English 'vs' is not converted to Ukrainian 'ми'") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian]
+
+    for char in "vs" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assertEqual(mockDelegate.results.count, 0, "English 'vs' must not be converted to 'ми'")
+    assert(result == nil, "'vs' should be kept as valid English")
+}
+
+// =============================================================================
+// Custom Keyboard Layout & Hybrid Discovery Tests (Plan 005)
+// =============================================================================
+
+runSuite("InputSourceDiscoveryEngine: Tier 1 language metadata") {
+    let ukProvider = MockInputSourcePropertyReader(
+        id: "custom.keylayout.ukrainian",
+        localizedName: "Custom Ukrainian",
+        languages: ["uk-UA"]
+    )
+    let ukDesc = InputSourceDiscoveryEngine.classify(provider: ukProvider)
+    assert(ukDesc != nil, "should classify provider with 'uk-UA' language")
+    assertEqual(ukDesc?.supportedLayouts, Set([.ukrainian]), "should map to .ukrainian")
+    assert(ukDesc?.isCustom == true, "should mark as custom")
+
+    let ruProvider = MockInputSourcePropertyReader(
+        id: "custom.keylayout.russian",
+        localizedName: "Custom Russian",
+        languages: ["ru-RU"]
+    )
+    let ruDesc = InputSourceDiscoveryEngine.classify(provider: ruProvider)
+    assert(ruDesc != nil, "should classify provider with 'ru-RU' language")
+    assertEqual(ruDesc?.supportedLayouts, Set([.russian]), "should map to .russian")
+
+    let enProvider = MockInputSourcePropertyReader(
+        id: "custom.keylayout.english",
+        localizedName: "Custom English",
+        languages: ["en-US"]
+    )
+    let enDesc = InputSourceDiscoveryEngine.classify(provider: enProvider)
+    assertEqual(enDesc?.supportedLayouts, Set([.english]), "should map to .english")
+}
+
+runSuite("InputSourceDiscoveryEngine: Tier 2 token & name heuristics") {
+    let birmanProvider = MockInputSourcePropertyReader(
+        id: "org.sil.ukelele.keyboardlayout.ru-ua-birman",
+        localizedName: "Russian - Ilya Birman Typography",
+        languages: []
+    )
+    let birmanDesc = InputSourceDiscoveryEngine.classify(provider: birmanProvider)
+    assert(birmanDesc != nil, "should classify Birman layout from tokens")
+    assertEqual(birmanDesc?.supportedLayouts, Set([.russian, .ukrainian]), "Birman layout should support both Russian and Ukrainian")
+    assert(birmanDesc?.isCustom == true, "Birman layout should be marked as custom")
+
+    let colemakProvider = MockInputSourcePropertyReader(
+        id: "com.custom.colemak",
+        localizedName: "Colemak Mod-DH",
+        languages: nil
+    )
+    let colemakDesc = InputSourceDiscoveryEngine.classify(provider: colemakProvider)
+    assertEqual(colemakDesc?.supportedLayouts, Set([.english]), "Colemak should map to .english")
+
+    let dvorakProvider = MockInputSourcePropertyReader(
+        id: "org.unknown.keylayout.DvorakSpecial",
+        localizedName: "Custom Dvorak",
+        languages: nil
+    )
+    let dvorakDesc = InputSourceDiscoveryEngine.classify(provider: dvorakProvider)
+    assertEqual(dvorakDesc?.supportedLayouts, Set([.english]), "Dvorak should map to .english")
+}
+
+runSuite("InputSourceDiscoveryEngine: Tier 3 UCKeyTranslate probing") {
+    let unshifted: [UInt16: Character] = [
+        0: "ф",
+        1: "ы",
+        12: "й",
+        30: "ъ",
+        39: "э"
+    ]
+    let option: [UInt16: Character] = [
+        1: "і",
+        5: "ґ",
+        30: "ї",
+        39: "є"
+    ]
+    let probedBirman = MockInputSourcePropertyReader(
+        id: "com.unknown.layout.custom",
+        localizedName: "Typographic Layout",
+        languages: nil,
+        unshiftedKeys: unshifted,
+        optionKeys: option
+    )
+    let probedDesc = InputSourceDiscoveryEngine.classify(provider: probedBirman)
+    assert(probedDesc != nil, "should classify layout with Cyrillic unshifted + Ukrainian Option keys")
+    assertEqual(probedDesc?.supportedLayouts, Set([.russian, .ukrainian]), "should detect hybrid Russian + Ukrainian from probing")
+}
+
+runSuite("InputSourceDiscoveryEngine: Ukrainian variant detection") {
+    let standardProvider = MockInputSourcePropertyReader(
+        id: "custom.ukrainian.standard",
+        localizedName: "Ukrainian Custom",
+        languages: ["uk"],
+        unshiftedKeys: [1: "і", 11: "и"]
+    )
+    let standardDesc = InputSourceDiscoveryEngine.classify(provider: standardProvider)
+    assertEqual(standardDesc?.ukrainianVariant, .standard, "should detect standard variant")
+
+    let legacyProvider = MockInputSourcePropertyReader(
+        id: "custom.ukrainian.legacy",
+        localizedName: "Ukrainian Legacy Custom",
+        languages: ["uk"],
+        unshiftedKeys: [1: "и", 11: "і"]
+    )
+    let legacyDesc = InputSourceDiscoveryEngine.classify(provider: legacyProvider)
+    assertEqual(legacyDesc?.ukrainianVariant, .legacy, "should detect legacy variant")
+}
+
+runSuite("Hybrid Layout: Multi-language validation without correction (No Death Spiral)") {
+    let detector = LayoutDetector()
+    detector.activeSourceSupportedLayouts = [.russian, .ukrainian]
+    detector.currentLayout = .russian
+    detector.currentInputSourceID = "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    detector.preferredSourceIDProvider = { layout in
+        layout == .english ? "com.apple.keylayout.ABC" : "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    }
+
+    let ukrainianWords = ["привіт", "єдина", "справи", "сьогодні", "перевірка"]
+    for word in ukrainianWords {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        let result = detector.flushBuffer(boundaryCharacter: " ")
+        assert(result == nil, "Ukrainian word '\(word)' on hybrid Birman layout must NOT be corrected or flickered")
+    }
+
+    let russianWords = ["привет", "хорошо", "погода", "сегодня", "проверка"]
+    for word in russianWords {
+        for char in word {
+            detector.addCharacter(String(char))
+        }
+        let result = detector.flushBuffer(boundaryCharacter: " ")
+        assert(result == nil, "Russian word '\(word)' on hybrid Birman layout must NOT be corrected")
+    }
+}
+
+runSuite("Hybrid Layout: Mistype on Birman switches to ABC") {
+    let detector = LayoutDetector()
+    detector.activeSourceSupportedLayouts = [.russian, .ukrainian]
+    detector.currentLayout = .russian
+    detector.currentInputSourceID = "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    detector.preferredSourceIDProvider = { layout in
+        layout == .english ? "com.apple.keylayout.ABC" : "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    }
+
+    for char in "руддщ" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assert(result != nil, "'руддщ' should be detected as wrong layout")
+    assertEqual(result?.targetLayout, .english)
+    assertEqual(result?.convertedWord, "hello")
+    assert(result?.shouldSwitchLayout == true, "should switch to English")
+}
+
+runSuite("Hybrid Layout: Different layout on shared source still corrects") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.activeSourceSupportedLayouts = [.english, .ukrainian]
+    detector.currentLayout = .english
+    detector.currentInputSourceID = "test.hybrid"
+    detector.allowedLayouts = [.ukrainian]
+    detector.preferredSourceIDProvider = { _ in "test.hybrid" }
+
+    for char in "ghbdsn" {
+        detector.addCharacter(String(char))
+    }
+    detector.flushBuffer(boundaryCharacter: " ")
+
+    assertEqual(mockDelegate.results.count, 1, "shared physical source must not suppress a different logical layout")
+    assertEqual(mockDelegate.results.first?.targetLayout, .ukrainian)
+    assertEqual(mockDelegate.results.first?.convertedWord, "привіт")
+}
+
+runSuite("Hybrid Layout: Self-switch suppression") {
+    let detector = LayoutDetector()
+    detector.activeSourceSupportedLayouts = [.russian, .ukrainian]
+    detector.currentLayout = .russian
+    detector.currentInputSourceID = "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    detector.preferredSourceIDProvider = { _ in
+        "org.sil.ukelele.keyboardlayout.ru-ua-birman"
+    }
+
+    assertEqual(detector.currentInputSourceID, detector.preferredSourceIDProvider?(.ukrainian))
 }
 
 // =============================================================================

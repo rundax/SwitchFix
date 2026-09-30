@@ -1,9 +1,9 @@
 # Feature Plan: Per-App Default Language / Layout Switching
 
 > **Status**: ✅ Implementation-ready after council amendments
-> **Priority**: High  
-> **Date created**: 2026-09-01 (Amended: 2026-09-01)  
-> **Target Module**: `Core`, `UI`, `SwitchFixApp`, `TestRunner`  
+> **Priority**: High
+> **Date created**: 2026-09-01 (Amended: 2026-09-01)
+> **Target Module**: `Core`, `UI`, `SwitchFixApp`, `TestRunner`
 > **Plan ID**: `004_per_app_default_language`
 
 ---
@@ -78,7 +78,7 @@ Currently, when users switch between Telegram and Arc, they must manually press 
 
 ### 3.1 Data Model: `PerAppLanguageManager`
 
-**Location:** `Sources/Core/PerAppLanguageManager.swift`  
+**Location:** `Sources/Core/PerAppLanguageManager.swift`
 *(Note: Placed in `Core` because `Layout` is defined in `Core`, preserving `Utils` as a zero-dependency foundational module).*
 
 The manager is the only owner of rule mutation. Production uses the singleton; tests use the public initializer with an isolated `UserDefaults(suiteName:)` store.

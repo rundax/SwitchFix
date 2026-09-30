@@ -70,14 +70,15 @@ public class LayoutDetector {
     public var allowedLayouts: Set<Layout> = Set(Layout.allCases)
 
     private enum RecentOutcome {
-        case validCurrent
-        case corrected
+        case valid(Layout)
+        case corrected(from: Layout, to: Layout)
         case unknown
     }
 
     private struct SuppressedShort {
         let originalWord: String
         let convertedWord: String
+        let sourceLayout: Layout
         let targetLayout: Layout
         let boundaryAfterWord: String
     }
@@ -98,7 +99,24 @@ public class LayoutDetector {
     private static let cyrillicRange: ClosedRange<UInt32> = 0x0400...0x052F
 
     /// The currently active keyboard layout (set externally by InputSourceManager).
-    public var currentLayout: Layout = .english
+    public var currentLayout: Layout = .english {
+        didSet {
+            if activeSourceSupportedLayouts == [oldValue] {
+                activeSourceSupportedLayouts = [currentLayout]
+            }
+        }
+    }
+
+    /// The set of languages supported by the currently active physical input source.
+    public var activeSourceSupportedLayouts: Set<Layout> = [.english]
+
+    /// The ID of the currently active input source.
+    public var currentInputSourceID: String = "unknown"
+
+    /// Provider to look up the preferred physical input source ID for a target layout.
+    public var preferredSourceIDProvider: ((Layout) -> String?)? = { layout in
+        InputSourceManager.shared.sourceID(for: layout)
+    }
 
     public init() {}
 
@@ -202,25 +220,152 @@ public class LayoutDetector {
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
         if containsMixedScripts(word) {
-            SwitchFixLog.detector.debug("mixed scripts, skipping '\(word)'")
+            SwitchFixLog.detector.debug("mixed scripts skipped chars=\(word.count)")
             state = .buffering
             return nil
         }
 
-        // Check if the word is valid in the current layout's language
+        let currentLanguage = languageForLayout(sourceLayout)
+
+        // Check if the word is valid in the current layout's language or ANY language supported by active hybrid source
         let currentWordParts = splitTokenForValidation(word)
         let currentValidationInput = currentWordParts.core.isEmpty ? word : currentWordParts.core
 
-        let currentLanguage = languageForLayout(sourceLayout)
-        if validator.validate(currentValidationInput, language: currentLanguage, allowSuggestion: false).isValid {
-            SwitchFixLog.detector.debug("valid in \(currentLanguage.rawValue): '\(word)' — no correction")
+        let activeLayouts = activeSourceSupportedLayouts.contains(currentLayout) ? activeSourceSupportedLayouts : [currentLayout]
+        let isLocallyValid = activeLayouts.contains { layout in
+            let lang = languageForLayout(layout)
+            return validator.validate(currentValidationInput, language: lang, allowSuggestion: false).isValid
+        }
+
+        if isLocallyValid {
+            if let merged = mergeSuppressedShort(
+                suppressedShort,
+                currentOriginal: word,
+                currentConverted: word,
+                targetLayout: sourceLayout,
+                isLowConfidence: word.count <= lowConfidenceMaxLength,
+                shouldSwitch: false
+            ), let suppressed = suppressedShort {
+                let result = DetectionResult(
+                    sourceLayout: suppressed.sourceLayout,
+                    targetLayout: sourceLayout,
+                    convertedWord: merged.converted,
+                    originalWord: merged.original,
+                    shouldSwitchLayout: false
+                )
+                consecutiveWrongCount = 0
+                lastDetectionResult = nil
+                recordOutcome(.corrected(from: suppressed.sourceLayout, to: sourceLayout))
+                state = .buffering
+                return result
+            }
+
+            // A short word valid in both layouts is undecidable in isolation.
+            // Keep it pending and only merge it when the next word confirms the
+            // alternative layout.
+            if let ambiguous = validAlternative(for: word, sourceLayout: sourceLayout, activeLayouts: activeLayouts),
+               let boundary = pendingBoundaryCharacter,
+               !boundary.isEmpty {
+                pendingSuppressedShort = SuppressedShort(
+                    originalWord: word,
+                    convertedWord: ambiguous.convertedWord,
+                    sourceLayout: sourceLayout,
+                    targetLayout: ambiguous.targetLayout,
+                    boundaryAfterWord: boundary
+                )
+                SwitchFixLog.detector.info(
+                    "deferred ambiguous valid word chars=\(word.count) until neighboring layout evidence"
+                )
+            }
+
+            SwitchFixLog.detector.debug("valid in active layout set (\(activeLayouts.map(\.rawValue).joined(separator: ", "))): chars=\(word.count) — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
             pendingSwitchCount = 0
-            recordOutcome(.validCurrent)
+            recordOutcome(.valid(sourceLayout))
             state = .buffering
             return nil
+        }
+
+        // If the word is typed in a script not supported by active layouts, but is ALREADY valid
+        // in an allowed alternative layout, switch layout without modifying the text (layout-only switch).
+        if !activeLayouts.contains(sourceLayout), allowedLayouts.contains(sourceLayout) {
+            let candidateLanguage = languageForLayout(sourceLayout)
+            if validator.validate(currentValidationInput, language: candidateLanguage, allowSuggestion: false).isValid {
+                let isLowConfidence = word.count <= lowConfidenceMaxLength
+                let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: sourceLayout)
+
+                if let merged = mergeSuppressedShort(
+                    suppressedShort,
+                    currentOriginal: word,
+                    currentConverted: word,
+                    targetLayout: sourceLayout,
+                    isLowConfidence: isLowConfidence,
+                    shouldSwitch: shouldSwitch
+                ), let suppressed = suppressedShort {
+                    let result = DetectionResult(
+                        sourceLayout: suppressed.sourceLayout,
+                        targetLayout: sourceLayout,
+                        convertedWord: merged.converted,
+                        originalWord: merged.original,
+                        shouldSwitchLayout: shouldSwitch
+                    )
+                    consecutiveWrongCount = 0
+                    lastDetectionResult = nil
+                    recordOutcome(.corrected(from: suppressed.sourceLayout, to: sourceLayout))
+                    state = .buffering
+                    return result
+                }
+
+                if shouldSuppressLowConfidenceCorrection(
+                    original: word,
+                    converted: word,
+                    targetLayout: sourceLayout,
+                    sourceLayout: currentLayout,
+                    isLowConfidence: isLowConfidence,
+                    shouldSwitch: shouldSwitch
+                ) {
+                    SwitchFixLog.detector.info("suppressed desynchronized word chars=\(word.count) (weak evidence, deferring)")
+                    consecutiveWrongCount = 0
+                    lastDetectionResult = nil
+                    if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
+                        pendingSuppressedShort = SuppressedShort(
+                            originalWord: word,
+                            convertedWord: word,
+                            sourceLayout: sourceLayout,
+                            targetLayout: sourceLayout,
+                            boundaryAfterWord: boundary
+                        )
+                    }
+                    recordOutcome(.unknown)
+                    state = .buffering
+                    return nil
+                }
+
+                consecutiveWrongCount += 1
+                lastDetectionResult = DetectionResult(
+                    sourceLayout: currentLayout,
+                    targetLayout: sourceLayout,
+                    convertedWord: word,
+                    originalWord: word,
+                    shouldSwitchLayout: shouldSwitch
+                )
+
+                SwitchFixLog.detector.notice("detected desynchronized layout chars=\(word.count) active=\(self.currentLayout.rawValue) actual=\(sourceLayout.rawValue) switch=\(shouldSwitch)")
+
+                if consecutiveWrongCount >= consecutiveThreshold {
+                    let result = lastDetectionResult
+                    consecutiveWrongCount = 0
+                    recordOutcome(.corrected(from: currentLayout, to: sourceLayout))
+                    state = .buffering
+                    return result
+                }
+
+                recordOutcome(.corrected(from: currentLayout, to: sourceLayout))
+                state = .buffering
+                return nil
+            }
         }
 
         if shouldSkipAutomaticEnglishAcronymCorrection(word: word, sourceLayout: sourceLayout) {
@@ -228,7 +373,7 @@ public class LayoutDetector {
             lastDetectionResult = nil
             pendingSwitchLayout = nil
             pendingSwitchCount = 0
-            recordOutcome(.validCurrent)
+            recordOutcome(.valid(sourceLayout))
             state = .buffering
             return nil
         }
@@ -242,6 +387,13 @@ public class LayoutDetector {
         )
             .filter { allowedLayouts.contains($0.0) }
         for (targetLayout, converted) in alternatives {
+            // Self-switch suppression: if target layout uses the exact same physical input source already active
+            if isSelfSwitch(targetLayout) {
+                let currentSourceID = currentInputSourceID
+                SwitchFixLog.detector.debug("self-switch suppressed: target \(targetLayout.rawValue) shares active source \(currentSourceID)")
+                continue
+            }
+
             let targetLanguage = languageForLayout(targetLayout)
             var candidateConversions: [String] = [converted]
             if sourceLayout == .ukrainian && targetLayout == .english {
@@ -256,6 +408,18 @@ public class LayoutDetector {
                 if fallbackConverted != converted && !candidateConversions.contains(fallbackConverted) {
                     candidateConversions.append(fallbackConverted)
                 }
+            } else if sourceLayout == .english && targetLayout == .ukrainian {
+                let fallbackVariant: UkrainianKeyboardVariant = (ukrainianToVariant == .legacy) ? .standard : .legacy
+                let fallbackConverted = LayoutMapper.convert(
+                    word,
+                    from: .english,
+                    to: .ukrainian,
+                    ukrainianFromVariant: ukrainianFromVariant,
+                    ukrainianToVariant: fallbackVariant
+                )
+                if fallbackConverted != converted && !candidateConversions.contains(fallbackConverted) {
+                    candidateConversions.append(fallbackConverted)
+                }
             }
 
             for candidate in candidateConversions {
@@ -265,6 +429,20 @@ public class LayoutDetector {
                 // Prevent 'fake switches' where a letter key maps to punctuation at the start of a word.
                 // e.g. 'бігу' (no prefix) -> ',sue' (prefix ',').
                 if tokenParts.prefix.count > originalParts.prefix.count {
+                    continue
+                }
+
+                // Pure punctuation in the source layout must not be converted to letters
+                // in the target layout without explicit target-layout context (e.g. ':' -> 'Ж' / 'ж').
+                if originalParts.core.isEmpty && !tokenParts.core.isEmpty && !hasTargetContext(targetLayout) {
+                    SwitchFixLog.detector.debug("suppressed punctuation-to-letter conversion without \(targetLayout.rawValue) context")
+                    continue
+                }
+
+                // Tokens with a hyphen prefix (e.g. flags like '-r', '--r', '-rf')
+                // must never be converted to letters in another layout.
+                if originalParts.prefix.contains("-") && tokenParts.prefix.contains("-") && originalParts.core.count <= shortWordSuppressionLength {
+                    SwitchFixLog.detector.debug("suppressed prefixed flag conversion chars=\(word.count)")
                     continue
                 }
 
@@ -291,13 +469,14 @@ public class LayoutDetector {
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
                     ) {
-                        SwitchFixLog.detector.info("suppressed short word '\(word)' -> '\(finalWord)' (weak evidence, deferring)")
+                        SwitchFixLog.detector.info("suppressed short word chars=\(word.count) (weak evidence, deferring)")
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
                         if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
                             pendingSuppressedShort = SuppressedShort(
                                 originalWord: word,
                                 convertedWord: finalWord,
+                                sourceLayout: sourceLayout,
                                 targetLayout: targetLayout,
                                 boundaryAfterWord: boundary
                             )
@@ -307,6 +486,7 @@ public class LayoutDetector {
                         return nil
                     }
 
+                    var correctionSourceLayout = sourceLayout
                     if let merged = mergeSuppressedShort(
                         suppressedShort,
                         currentOriginal: word,
@@ -317,11 +497,12 @@ public class LayoutDetector {
                     ) {
                         originalForCorrection = merged.original
                         finalWord = merged.converted
+                        correctionSourceLayout = suppressedShort?.sourceLayout ?? sourceLayout
                     }
 
                     consecutiveWrongCount += 1
                     lastDetectionResult = DetectionResult(
-                        sourceLayout: sourceLayout,
+                        sourceLayout: correctionSourceLayout,
                         targetLayout: targetLayout,
                         convertedWord: finalWord,
                         originalWord: originalForCorrection,
@@ -331,12 +512,12 @@ public class LayoutDetector {
                     if consecutiveWrongCount >= consecutiveThreshold {
                         let result = lastDetectionResult
                         consecutiveWrongCount = 0
-                        recordOutcome(.corrected)
+                        recordOutcome(.corrected(from: correctionSourceLayout, to: targetLayout))
                         state = .buffering
                         return result
                     }
 
-                    recordOutcome(.corrected)
+                    recordOutcome(.corrected(from: correctionSourceLayout, to: targetLayout))
                     state = .buffering
                     return nil
                 }
@@ -370,22 +551,24 @@ public class LayoutDetector {
                 if consecutiveWrongCount >= consecutiveThreshold {
                     let result = lastDetectionResult
                     consecutiveWrongCount = 0
-                    recordOutcome(.corrected)
+                    recordOutcome(.corrected(from: sourceLayout, to: targetLayout))
                     state = .buffering
                     return result
                 }
 
-                recordOutcome(.corrected)
+                recordOutcome(.corrected(from: sourceLayout, to: targetLayout))
                 state = .buffering
                 return nil
             }
         }
 
         // No valid alternative found — unknown word, do nothing
-        SwitchFixLog.detector.debug("unknown word '\(word)' — no valid alternative in any layout")
+        SwitchFixLog.detector.debug("unknown word chars=\(word.count) — no valid alternative in any layout")
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
-        recordOutcome(.unknown)
+        if !currentWordParts.core.isEmpty {
+            recordOutcome(.unknown)
+        }
         state = .buffering
         return nil
     }
@@ -413,6 +596,52 @@ public class LayoutDetector {
         return false
     }
 
+    private func validAlternative(
+        for word: String,
+        sourceLayout: Layout,
+        activeLayouts: Set<Layout>
+    ) -> (targetLayout: Layout, convertedWord: String)? {
+        guard word.count <= lowConfidenceMaxLength else { return nil }
+
+        let alternatives = LayoutMapper.convertToAlternatives(
+            word,
+            from: sourceLayout,
+            ukrainianFromVariant: ukrainianFromVariant,
+            ukrainianToVariant: ukrainianToVariant
+        )
+
+        for (targetLayout, converted) in alternatives where allowedLayouts.contains(targetLayout) {
+            guard targetLayout != sourceLayout,
+                  !activeLayouts.contains(targetLayout),
+                  !isSelfSwitch(targetLayout) else {
+                continue
+            }
+
+            let parts = splitTokenForValidation(converted)
+            let validationInput = parts.core.isEmpty ? converted : parts.core
+            guard validator.validate(
+                validationInput,
+                language: languageForLayout(targetLayout),
+                allowSuggestion: false
+            ).isValid else {
+                continue
+            }
+
+            let recomposed = parts.prefix + validationInput + parts.suffix
+            return (targetLayout, applyCase(from: word, to: recomposed))
+        }
+
+        return nil
+    }
+
+    private func isSelfSwitch(_ targetLayout: Layout) -> Bool {
+        guard targetLayout == currentLayout else { return false }
+        let currentSourceID = currentInputSourceID
+        let targetPreferred = preferredSourceIDProvider?(targetLayout)
+        return (currentSourceID != "unknown" && targetPreferred != nil && currentSourceID == targetPreferred)
+            || (activeSourceSupportedLayouts.contains(targetLayout) && (targetPreferred == nil || targetPreferred == currentSourceID))
+    }
+
     private func shouldSuppressLowConfidenceCorrection(
         original: String,
         converted: String,
@@ -422,11 +651,21 @@ public class LayoutDetector {
         shouldSwitch: Bool
     ) -> Bool {
         guard isLowConfidence else { return false }
-        guard original.count <= shortWordSuppressionLength else { return false }
+        let originalCoreCount = splitTokenForValidation(original).core.count
+        let convertedCoreCount = splitTokenForValidation(converted).core.count
+        guard originalCoreCount <= shortWordSuppressionLength else { return false }
         guard !shouldSwitch else { return false }
         guard targetLayout != sourceLayout else { return false }
         guard !converted.isEmpty else { return false }
-        return hasStrongCurrentContext()
+        if hasStrongCurrentContext(for: sourceLayout) {
+            return true
+        }
+        // An isolated single-character conversion (e.g. 'r' -> 'к') without target-layout context
+        // must always be suppressed rather than converted immediately.
+        if convertedCoreCount <= 1 && !hasTargetContext(targetLayout) {
+            return true
+        }
+        return false
     }
 
     private func shouldSuppressAcronymFallback(
@@ -436,7 +675,7 @@ public class LayoutDetector {
     ) -> Bool {
         guard targetLayout != sourceLayout else { return false }
         guard !shouldSwitch else { return false }
-        return hasStrongCurrentContext()
+        return hasStrongCurrentContext(for: sourceLayout)
     }
 
     private func consumePendingSuppressedShort() -> SuppressedShort? {
@@ -469,11 +708,11 @@ public class LayoutDetector {
         )
     }
 
-    private func hasStrongCurrentContext() -> Bool {
+    private func hasStrongCurrentContext(for layout: Layout) -> Bool {
         let window = max(1, shortWordSuppressionContextWindow)
         let recent = recentOutcomes.suffix(window)
         let validCount = recent.reduce(0) { partial, outcome in
-            if case .validCurrent = outcome {
+            if case .valid(let l) = outcome, l == layout {
                 return partial + 1
             }
             return partial
@@ -483,6 +722,21 @@ public class LayoutDetector {
             return false
         }
         return validCount >= shortWordSuppressionMinValidContext && !hasRecentCorrection
+    }
+
+    private func hasTargetContext(_ targetLayout: Layout) -> Bool {
+        let window = max(1, shortWordSuppressionContextWindow)
+        let recent = recentOutcomes.suffix(window)
+        return recent.contains { outcome in
+            switch outcome {
+            case .valid(let layout):
+                return layout == targetLayout
+            case .corrected(_, let to):
+                return to == targetLayout
+            case .unknown:
+                return false
+            }
+        }
     }
 
     private func recordOutcome(_ outcome: RecentOutcome) {
@@ -604,6 +858,20 @@ public class LayoutDetector {
             if currentLayout == .ukrainian || currentLayout == .russian {
                 return currentLayout
             }
+            if activeSourceSupportedLayouts.contains(.ukrainian) || activeSourceSupportedLayouts.contains(.russian) {
+                if let inferred = inferCyrillicLayout(for: word), activeSourceSupportedLayouts.contains(inferred) {
+                    return inferred
+                }
+                if activeSourceSupportedLayouts.contains(currentLayout) {
+                    return currentLayout
+                }
+                if activeSourceSupportedLayouts.contains(.ukrainian) {
+                    return .ukrainian
+                }
+                if activeSourceSupportedLayouts.contains(.russian) {
+                    return .russian
+                }
+            }
             return inferCyrillicLayout(for: word) ?? currentLayout
         case .mixed, .unknown:
             return currentLayout
@@ -645,6 +913,14 @@ public class LayoutDetector {
         let hasRussian = allowedLayouts.contains(.russian)
         if hasUkrainian && !hasRussian { return .ukrainian }
         if hasRussian && !hasUkrainian { return .russian }
+        if hasUkrainian && hasRussian {
+            if hasTargetContext(.russian) && !hasTargetContext(.ukrainian) {
+                return .russian
+            }
+            if hasTargetContext(.ukrainian) && !hasTargetContext(.russian) {
+                return .ukrainian
+            }
+        }
         if hasUkrainian { return .ukrainian }
         if hasRussian { return .russian }
         return nil

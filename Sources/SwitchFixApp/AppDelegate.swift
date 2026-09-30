@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inputSourceManager = InputSourceManager.shared
     private var observersRegistered = false
     private var readyLayouts: Set<Layout> = []
+    private var dictionariesPrepared = false
+    private var readinessTimer: Timer?
+    private var retryBudget = MonitorRetryBudget()
+    private var lastRequiredAccess: Bool?
+    private var monitorFailure: String?
+    private var didHandleInitialReadiness = false
     private var previousLayout: Layout = .english
     private var previousInputSourceID = "unknown"
 
@@ -74,6 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             willSelect: { [weak self] layout, sourceID in
                 self?.generatedLayoutSelectionWillBegin(layout: layout, sourceID: sourceID)
             },
+            activeSourceSelected: { [weak self] layout, sourceID in
+                self?.activeSourceLayoutSelected(layout: layout, sourceID: sourceID)
+            },
             selectionFailed: { [weak self] in
                 self?.generatedLayoutSelectionFailed()
             }
@@ -81,23 +90,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         registerConfigurationObservers()
         registerMonitoringObservers()
+        registerReadinessObservers()
+        readinessTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.refreshRuntimeReadiness()
+        }
+        // Show missing-permission guidance immediately; dictionary preparation is asynchronous.
+        refreshRuntimeReadiness()
         prepareDictionaries { [weak self] allowedLayouts in
             guard let self else { return }
             self.readyLayouts = allowedLayouts
+            self.dictionariesPrepared = true
             self.updateDetectionConfiguration(allowedLayouts: allowedLayouts)
-            Permissions.ensureRequiredPermissions { [weak self] in
-                self?.startMonitoringAndFocusObservation()
-            }
+            self.refreshRuntimeReadiness()
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        readinessTimer?.invalidate()
         focusCoordinator?.stop()
         keyboardMonitor?.stop()
     }
 
     private func prepareDictionaries(completion: @escaping (Set<Layout>) -> Void) {
-        let installedLayouts = inputSourceManager.availableLayouts()
+        let installedLayouts = Set(inputSourceManager.availableLayouts())
         DispatchQueue.global(qos: .utility).async {
             var readyLayouts: Set<Layout> = []
             var unavailable: [String] = []
@@ -120,22 +135,128 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startMonitoringAndFocusObservation() {
-        guard let state = captureState, let engine = inputEngine else { return }
-        refreshFrontmostContext()
+        guard let state = captureState, let engine = inputEngine, keyboardMonitor == nil else { return }
         let monitor = KeyboardMonitor(captureState: state)
         monitor.refreshInputTranslations()
         monitor.onInput = { [weak engine] input in
             engine?.enqueue(input)
         }
-        keyboardMonitor = monitor
-
-        guard monitor.start() else {
-            SwitchFixLog.app.error("Monitoring failed to start (event tap creation failed)")
-            return
+        monitor.onHealthChanged = { [weak self] in
+            self?.refreshRuntimeReadiness()
         }
+        keyboardMonitor = monitor
+    }
+
+    private func registerReadinessObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(readinessRefreshRequested(_:)),
+            name: .readinessRefreshRequested,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationBecameActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(applicationBecameActive),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func readinessRefreshRequested(_ notification: Notification) {
+        refreshRuntimeReadiness(retry: notification.userInfo?["retry"] as? Bool ?? false)
+    }
+
+    @objc private func applicationBecameActive() {
+        refreshFrontmostContext()
+        refreshRuntimeReadiness()
+    }
+
+    private func refreshRuntimeReadiness(retry: Bool = false) {
+        guard let state = captureState else { return }
+        if retry { retryBudget.reset() }
+
+        let accessibility = Permissions.isAccessibilityGranted()
+        let listening = Permissions.isKeyboardListeningAvailable()
+        let posting = Permissions.isEventPostingGranted()
+        let requiredAccess = accessibility && listening && posting
+        let accessChanged = lastRequiredAccess != requiredAccess
+        if accessChanged {
+            retryBudget.reset()
+            lastRequiredAccess = requiredAccess
+            if requiredAccess {
+                let context = state.invalidateFocus()
+                inputEngine?.updateContext(context)
+            }
+            inputEngine?.updateAccessAllowed(requiredAccess)
+        }
+
+        var currentMonitor = MonitorHealth.stopped
+        if requiredAccess {
+            startMonitoringAndFocusObservation()
+            let monitorBeforeRetry = keyboardMonitor?.health ?? .stopped
+            if monitorBeforeRetry == .failed {
+                retryBudget.recordFailure()
+            }
+            if monitorBeforeRetry != .active {
+                if retryBudget.canAttempt, keyboardMonitor?.start() == true {
+                    monitorFailure = nil
+                    let context = state.snapshot().context
+                    focusCoordinator?.observeApplication(pid: context.frontmostPID, epoch: context.epoch)
+                } else if retryBudget.canAttempt {
+                    if monitorBeforeRetry != .failed { retryBudget.recordFailure() }
+                    monitorFailure = "Keyboard monitoring could not start. Check the permissions above, then retry or restart SwitchFix."
+                    SwitchFixLog.app.error("KeyboardMonitor failed to start; retry \(self.retryBudget.failures)")
+                } else {
+                    monitorFailure = "Keyboard monitoring keeps stopping. Select Check Again or restart SwitchFix to retry."
+                }
+            }
+            currentMonitor = keyboardMonitor?.health ?? .stopped
+        } else {
+            keyboardMonitor?.stop()
+            focusCoordinator?.stop()
+            monitorFailure = nil
+        }
+
         let context = state.snapshot().context
-        focusCoordinator?.observeApplication(pid: context.frontmostPID, epoch: context.epoch)
-        SwitchFixLog.app.notice("monitoring started pid=\(context.frontmostPID) layout=\(context.layout.rawValue) appAllowed=\(context.appAllowed)")
+        let currentLayout = inputSourceManager.currentLayout()
+        let installedLayouts = Set(inputSourceManager.availableLayouts())
+        var snapshot = RuntimeReadinessSnapshot()
+        snapshot.checked = true
+        snapshot.accessibilityGranted = accessibility
+        snapshot.keyboardListeningAvailable = listening
+        snapshot.postingGranted = posting
+        snapshot.monitor = currentMonitor
+        snapshot.installedLayouts = installedLayouts
+        snapshot.dictionaryLayouts = readyLayouts
+        snapshot.dictionariesLoaded = dictionariesPrepared
+        snapshot.mode = currentPreferencesSnapshot().correctionMode
+        snapshot.isEnabled = PreferencesManager.shared.isEnabled
+        snapshot.appAllowed = context.appAllowed
+        snapshot.appName = NSRunningApplication(processIdentifier: context.frontmostPID)?.localizedName ?? "this app"
+        snapshot.secureFocus = context.secureFocus
+        snapshot.sourceSupported = inputSourceManager.activeSourceSupportedLayouts().contains(currentLayout)
+        snapshot.currentLayout = currentLayout
+        snapshot.runtimeFailure = monitorFailure
+        ReadinessStore.shared.publish(snapshot)
+        statusBarController?.refreshReadiness(snapshot)
+
+        if !didHandleInitialReadiness {
+            didHandleInitialReadiness = true
+            if snapshot.needsSetup {
+                SettingsWindowController.shared.showSetup()
+            }
+        }
+
+        if currentMonitor == .active {
+            let context = state.snapshot().context
+            SwitchFixLog.app.debug("readiness active pid=\(context.frontmostPID) layout=\(context.layout.rawValue)")
+        }
     }
 
     private func registerConfigurationObservers() {
@@ -169,6 +290,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             suspensionBehavior: .deliverImmediately
         )
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(installedInputSourcesChanged),
+            name: NSNotification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String),
+            object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
+    }
+
+    @objc private func installedInputSourcesChanged() {
+        SwitchFixLog.app.notice("installed input sources changed notification received")
+        inputSourceManager.refreshInstalledSources()
+        statusBarController?.refreshInstalledLayoutsMenu()
+        prepareDictionaries { [weak self] allowedLayouts in
+            guard let self else { return }
+            self.readyLayouts = allowedLayouts
+            self.dictionariesPrepared = true
+            self.updateDetectionConfiguration(allowedLayouts: allowedLayouts)
+            self.refreshRuntimeReadiness()
+        }
     }
 
     @objc private func activeApplicationChanged(_ notification: Notification) {
@@ -194,7 +335,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         inputEngine?.updateContext(context)
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
-        focusCoordinator?.observeApplication(pid: context.frontmostPID, epoch: context.epoch)
+        if keyboardMonitor?.health == .active {
+            focusCoordinator?.observeApplication(pid: context.frontmostPID, epoch: context.epoch)
+        }
+        refreshRuntimeReadiness()
         SwitchFixLog.app.notice(
             "frontmost changed pid=\(context.frontmostPID) bundle=\(application.bundleIdentifier ?? "nil") allowed=\(allowed) layout=\(layout.rawValue)"
         )
@@ -229,6 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let toVariant = inputSourceManager.ukrainianVariant(forInputSourceID: newSourceID)
             ?? inputSourceManager.preferredUkrainianVariant()
         if expectedGeneratedSelection {
+            monitorFailure = nil
             inputEngine?.handleGeneratedLayoutContext(context)
             focusCoordinator?.focusMayChange(pid: context.frontmostPID, epoch: context.epoch)
         } else {
@@ -241,6 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
+        refreshRuntimeReadiness()
     }
 
     private func generatedLayoutSelectionWillBegin(layout: Layout, sourceID: String) {
@@ -254,6 +400,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             secureFocus: .unknown
         )
         inputEngine?.handleGeneratedLayoutContext(context)
+        refreshRuntimeReadiness()
+    }
+
+    private func activeSourceLayoutSelected(layout: Layout, sourceID: String) {
+        guard let state = captureState else { return }
+        let current = state.snapshot().context
+        guard current.layout != layout || current.inputSourceID != sourceID else { return }
+        let context = state.replaceContext(
+            frontmostPID: current.frontmostPID,
+            appAllowed: current.appAllowed,
+            layout: layout,
+            inputSourceID: sourceID,
+            secureFocus: current.secureFocus
+        )
+        inputEngine?.updateContext(context)
+        updateDetectionConfiguration(allowedLayouts: readyLayouts)
+        refreshRuntimeReadiness()
     }
 
     private func generatedLayoutSelectionFailed() {
@@ -268,6 +431,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             secureFocus: .unknown
         )
         inputEngine?.updateContext(context)
+        monitorFailure = "Could not switch the keyboard layout. Check that the target layout is installed and enabled."
+        refreshRuntimeReadiness()
         DispatchQueue.main.async { [weak self] in
             self?.focusCoordinator?.focusMayChange(pid: context.frontmostPID, epoch: context.epoch)
         }
@@ -279,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         captureState?.updateHotkeys(currentHotkeyConfiguration())
         inputEngine?.updatePreferences(currentPreferencesSnapshot())
+        refreshRuntimeReadiness()
     }
 
     @objc private func appFilterDidUpdate() {
@@ -297,6 +463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             secureFocus: current.secureFocus
         )
         inputEngine?.updateContext(context)
+        refreshRuntimeReadiness()
     }
 
     private func publishUnknownFocus(for pid: pid_t) -> UInt64? {
@@ -306,6 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let context = state.invalidateFocus()
         inputEngine?.updateContext(context)
+        refreshRuntimeReadiness()
         return context.epoch
     }
 
@@ -349,6 +517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         SwitchFixLog.app.debug("focus resolved pid=\(resolution.pid) state=\(String(describing: secureFocus))")
         inputEngine?.updateContext(context)
+        refreshRuntimeReadiness()
     }
 
     private func updateDetectionConfiguration(allowedLayouts: Set<Layout>) {
@@ -359,6 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : preferredVariant
         inputEngine?.updateDetectionConfiguration(
             allowedLayouts: allowedLayouts,
+            activeSourceSupportedLayouts: inputSourceManager.activeSourceSupportedLayouts(),
             ukrainianFromVariant: currentVariant,
             ukrainianToVariant: preferredVariant
         )

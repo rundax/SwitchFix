@@ -46,6 +46,10 @@ public struct InputStateMachine {
     public private(set) var context: InputContextSnapshot
     public private(set) var preferences: InputPreferencesSnapshot
 
+    private var committedWord: String?
+    private var committedBoundary: String?
+    private var untrackedDeleteCount = 0
+
     public init(context: InputContextSnapshot, preferences: InputPreferencesSnapshot) {
         self.context = context
         self.preferences = preferences
@@ -56,6 +60,9 @@ public struct InputStateMachine {
         self.context = context
         guard changed else { return [] }
         currentBuffer = ""
+        committedWord = nil
+        committedBoundary = nil
+        untrackedDeleteCount = 0
         isInvalidUntilBoundary = false
         return [.invalidate(.contextChanged)]
     }
@@ -67,12 +74,20 @@ public struct InputStateMachine {
     }
 
     public mutating func updatePreferences(_ preferences: InputPreferencesSnapshot) -> [InputStateCommand] {
-        let wasEnabled = self.preferences.isEnabled
+        let previous = self.preferences
         self.preferences = preferences
-        guard wasEnabled && !preferences.isEnabled else { return [] }
+        guard previous != preferences else { return [] }
+
         currentBuffer = ""
+        committedWord = nil
+        committedBoundary = nil
+        untrackedDeleteCount = 0
         isInvalidUntilBoundary = false
-        return [.invalidate(.disabled)]
+
+        if previous.isEnabled && !preferences.isEnabled {
+            return [.invalidate(.disabled)]
+        }
+        return [.invalidate(.contextChanged)]
     }
 
     public mutating func consume(_ input: CapturedInput) -> [InputStateCommand] {
@@ -94,7 +109,11 @@ public struct InputStateMachine {
             invalidate(untilBoundary: true)
             return [.invalidate(.queueOverflow)]
         case .navigation:
-            invalidate(untilBoundary: false)
+            // Once the caret moves, the buffer no longer identifies the text at
+            // the caret. Ignore input until a boundary re-establishes a safe
+            // word boundary.
+            untrackedDeleteCount = 0
+            invalidate(untilBoundary: true)
             return [.invalidate(.navigation)]
         case .focusMayChange:
             invalidate(untilBoundary: false)
@@ -108,6 +127,8 @@ public struct InputStateMachine {
             // so the buffer must drop them; keeping them desyncs the buffer from
             // the screen and makes the next flush delete already-corrected text.
             currentBuffer = ""
+            committedWord = nil
+            committedBoundary = nil
             return [.requestManualCorrection(word: word, sequence: input.sequence, context: input.context)]
         case .revertHotkey:
             let word = currentBuffer.isEmpty ? nil : currentBuffer
@@ -115,22 +136,56 @@ public struct InputStateMachine {
             // restored) or falls back to a manual correction, the on-screen word
             // is rewritten without buffer-visible events.
             currentBuffer = ""
+            committedWord = nil
+            committedBoundary = nil
             return [.requestRevert(word: word, sequence: input.sequence, context: input.context)]
         case .delete:
             guard canBuffer(input.context) else {
+                committedWord = nil
+                committedBoundary = nil
+                untrackedDeleteCount = 0
                 return invalidateForContext(input.context)
             }
-            guard !currentBuffer.isEmpty, !isInvalidUntilBoundary else {
-                invalidate(untilBoundary: true)
-                return [.invalidate(.navigation)]
+            if !currentBuffer.isEmpty && !isInvalidUntilBoundary {
+                currentBuffer.removeLast()
+                untrackedDeleteCount = 0
+                return [.deleteLast]
             }
-            currentBuffer.removeLast()
-            return [.deleteLast]
+            if !isInvalidUntilBoundary, var boundary = committedBoundary, !boundary.isEmpty {
+                boundary.removeLast()
+                committedBoundary = boundary
+                untrackedDeleteCount = 0
+                if boundary.isEmpty {
+                    currentBuffer = committedWord ?? ""
+                    committedWord = nil
+                    committedBoundary = nil
+                    isInvalidUntilBoundary = false
+                }
+                return [.deleteLast]
+            }
+            committedWord = nil
+            committedBoundary = nil
+            if !isInvalidUntilBoundary {
+                // One delete beyond the tracked buffer can still be the normal
+                // "delete then type" flow. Repeated untracked deletes imply
+                // that the caret has entered existing text, so correction must
+                // stay disabled until a boundary. ponytail: keep this small
+                // two-delete ceiling until editors expose reliable caret context.
+                untrackedDeleteCount += 1
+                invalidate(untilBoundary: untrackedDeleteCount >= 2)
+            }
+            return [.invalidate(.navigation)]
         case .character(let text):
             guard canBuffer(input.context) else {
+                committedWord = nil
+                committedBoundary = nil
+                untrackedDeleteCount = 0
                 return invalidateForContext(input.context)
             }
             guard !isInvalidUntilBoundary else { return [] }
+            untrackedDeleteCount = 0
+            committedWord = nil
+            committedBoundary = nil
             let nextCount = currentBuffer.count + text.count
             guard nextCount <= 64 else {
                 invalidate(untilBoundary: true)
@@ -139,9 +194,18 @@ public struct InputStateMachine {
             currentBuffer += text
             return [.append(text)]
         case .boundary(let boundary):
+            let flushedWord = (!isInvalidUntilBoundary && !currentBuffer.isEmpty) ? currentBuffer : nil
             defer {
+                if let flushedWord {
+                    committedWord = flushedWord
+                    committedBoundary = boundary
+                } else {
+                    committedWord = nil
+                    committedBoundary = nil
+                }
                 currentBuffer = ""
                 isInvalidUntilBoundary = false
+                untrackedDeleteCount = 0
             }
             guard canBuffer(input.context) else {
                 return invalidateForContext(input.context)
@@ -175,6 +239,8 @@ public struct InputStateMachine {
 
     private mutating func invalidate(untilBoundary: Bool) {
         currentBuffer = ""
+        committedWord = nil
+        committedBoundary = nil
         isInvalidUntilBoundary = untilBoundary
     }
 }

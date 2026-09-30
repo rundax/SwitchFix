@@ -29,8 +29,6 @@ def is_cyrillic_char(ch: str) -> bool:
 def is_valid_word(word: str) -> bool:
     if not word:
         return False
-    if WHITESPACE_RE.search(word):
-        return False
     if any(ch.isdigit() for ch in word):
         return False
     if any(ord(ch) < 32 for ch in word):
@@ -67,8 +65,12 @@ def load_words(path: Path, *, filter_phrases: bool) -> tuple[set[str], dict[str,
                 stats["empty"] += 1
                 continue
 
-            if filter_phrases and WHITESPACE_RE.search(normalized):
-                stats["phrases"] += 1
+            has_whitespace = WHITESPACE_RE.search(normalized) is not None
+            if has_whitespace:
+                if filter_phrases:
+                    stats["phrases"] += 1
+                else:
+                    stats["invalid"] += 1
                 continue
 
             if not is_valid_word(normalized):

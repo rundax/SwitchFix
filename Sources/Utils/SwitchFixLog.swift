@@ -17,8 +17,8 @@ public enum SwitchFixLog {
 }
 
 /// Every message is prefixed "[SwitchFix]" so it survives filtering with
-/// `eventMessage CONTAINS "[SwitchFix]"`, and all dynamic values are logged
-/// public so they are readable in Console.app and `log stream`.
+/// `eventMessage CONTAINS "[SwitchFix]"`. Callers should log metadata only;
+/// captured text must never be passed to this public-message logger.
 public struct SwitchFixLogger {
     private let logger: Logger
 

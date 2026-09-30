@@ -16,7 +16,6 @@ public class PreferencesManager {
 
     private enum Keys {
         static let isEnabled = "SwitchFix_isEnabled"
-        static let launchAtLogin = "SwitchFix_launchAtLogin"
         static let correctionMode = "SwitchFix_correctionMode"
         static let hotkeyKeyCode = "SwitchFix_hotkeyKeyCode"
         static let hotkeyModifiers = "SwitchFix_hotkeyModifiers"
@@ -34,23 +33,46 @@ public class PreferencesManager {
     }
 
     public var launchAtLogin: Bool {
-        get { defaults.bool(forKey: Keys.launchAtLogin) }
-        set {
-            defaults.set(newValue, forKey: Keys.launchAtLogin)
-            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
-            
-            if #available(macOS 13.0, *) {
-                do {
-                    if newValue {
-                        try SMAppService.mainApp.register()
-                    } else {
-                        try SMAppService.mainApp.unregister()
-                    }
-                } catch {
-                    SwitchFixLog.preferences.error("Failed to toggle launch at login: \(error)")
-                }
-            }
+        if #available(macOS 13.0, *) { return SMAppService.mainApp.status == .enabled }
+        return false
+    }
+
+    public var launchAtLoginMessage: String? {
+        guard #available(macOS 13.0, *) else { return "Launch at Login requires macOS 13 or later." }
+        switch SMAppService.mainApp.status {
+        case .requiresApproval:
+            return "Allow SwitchFix under System Settings > General > Login Items."
+        case .notFound:
+            return "Move SwitchFix to Applications before enabling Launch at Login."
+        default:
+            return launchAtLoginError
         }
+    }
+
+    public private(set) var launchAtLoginError: String?
+
+    public var launchAtLoginStatus: SMAppService.Status {
+        if #available(macOS 13.0, *) { return SMAppService.mainApp.status }
+        return .notRegistered
+    }
+
+    public func setLaunchAtLogin(_ enabled: Bool) {
+        guard #available(macOS 13.0, *) else {
+            launchAtLoginError = "Launch at Login requires macOS 13 or later."
+            return
+        }
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = error.localizedDescription
+            SwitchFixLog.preferences.error("Failed to toggle launch at login: \(error)")
+        }
+        NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
     }
 
     public var correctionMode: CorrectionMode {
@@ -124,8 +146,4 @@ public class PreferencesManager {
     }
 
     private init() {}
-}
-
-public extension Notification.Name {
-    static let preferencesDidChange = Notification.Name("SwitchFix_PreferencesDidChange")
 }

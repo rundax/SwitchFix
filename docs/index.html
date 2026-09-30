@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwitchFix — Automatic Keyboard Layout Switcher for macOS</title>
+  <meta name="description" content="Native, lightweight, private macOS menu bar utility that automatically detects and fixes wrong keyboard layout mistakes on the fly.">
+  <link rel="icon" type="image/svg+xml" href="images/app_icon.svg">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="SwitchFix — Smart Keyboard Layout Switcher for macOS">
+  <meta property="og:description" content="Never retype mistyped words again. SwitchFix detects wrong layout input and fixes it instantly. 100% offline, native Swift, zero lag.">
+  <meta property="og:image" content="images/SwitchFix.gif">
+  <meta property="og:type" content="website">
+
+  <style>
+    :root {
+      --bg: #fbfbfd;
+      --bg-alt: #f5f5f7;
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.08);
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+      --text-main: #1d1d1f;
+      --text-muted: #6e6e73;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --accent-soft: #e8f2fc;
+      --success: #34c759;
+      --success-soft: #eafaf1;
+      --border: #d2d2d7;
+      --code-bg: #1c1c1e;
+      --code-text: #f5f5f7;
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-mono: "SF Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 22px;
+      --radius-full: 9999px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c0c0e;
+        --bg-alt: #161618;
+        --card-bg: #1c1c1e;
+        --card-border: rgba(255, 255, 255, 0.08);
+        --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        --text-main: #f5f5f7;
+        --text-muted: #a1a1a6;
+        --accent: #2997ff;
+        --accent-hover: #47a3ff;
+        --accent-soft: rgba(41, 151, 255, 0.15);
+        --success: #30d158;
+        --success-soft: rgba(48, 209, 88, 0.15);
+        --border: #333336;
+        --code-bg: #141416;
+        --code-text: #f5f5f7;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    a:hover {
+      color: var(--accent-hover);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Navigation */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(251, 251, 253, 0.8);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .navbar {
+        background: rgba(12, 12, 14, 0.8);
+      }
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 19px;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+
+    .nav-brand img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .nav-links a:hover {
+      color: var(--text-main);
+    }
+
+    .btn-nav-cta {
+      background: var(--text-main);
+      color: var(--bg) !important;
+      padding: 7px 15px;
+      border-radius: var(--radius-full);
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      transition: opacity 0.2s ease, transform 0.1s ease;
+    }
+
+    .btn-nav-cta:hover {
+      opacity: 0.88;
+      transform: translateY(-1px);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .badge-pill .dot {
+      width: 8px;
+      height: 8px;
+      background: var(--success);
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 0 3px var(--success-soft);
+    }
+
+    .hero-title {
+      font-size: clamp(38px, 6vw, 62px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.08;
+      max-width: 840px;
+      margin: 0 auto 20px;
+    }
+
+    .hero-title .gradient-text {
+      background: linear-gradient(135deg, var(--accent) 0%, #a259ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-desc {
+      font-size: clamp(18px, 2.5vw, 21px);
+      color: var(--text-muted);
+      max-width: 660px;
+      margin: 0 auto 36px;
+      line-height: 1.45;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 36px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: #ffffff !important;
+      padding: 13px 26px;
+      border-radius: var(--radius-full);
+      font-size: 15px;
+      font-weight: 600;
+      box-shadow: 0 4px 14px rgba(0, 113, 227, 0.3);
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card-bg);
+      color: var(--text-main) !important;
+      border: 1px solid var(--border);
+      padding: 13px 24px;
+      border-radius: var(--radius-full);
+      font-size: 15px;
+      font-weight: 600;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-alt);
+      border-color: var(--text-muted);
+    }
+
+    /* Live Interactive Demo */
+    .demo-wrapper {
+      max-width: 780px;
+      margin: 0 auto 80px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .mac-window-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .mac-dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .mac-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot-close { background: #ff5f56; }
+    .dot-min { background: #ffbd2e; }
+    .dot-max { background: #27c93f; }
+
+    .mac-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: -0.01em;
+    }
+
+    .demo-content {
+      padding: 30px;
+    }
+
+    .demo-label {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .interactive-input-box {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    .interactive-input {
+      width: 100%;
+      font-family: var(--font-mono);
+      font-size: 20px;
+      padding: 16px 20px;
+      border-radius: var(--radius-md);
+      border: 2px solid var(--border);
+      background: var(--bg);
+      color: var(--text-main);
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .interactive-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    .demo-hint {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    .pill-samples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .sample-chip {
+      background: var(--bg-alt);
+      border: 1px solid var(--card-border);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: var(--font-mono);
+    }
+
+    .sample-chip:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .demo-result-box {
+      background: var(--bg-alt);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .demo-status-text {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .demo-badge-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    /* Fast Quick Install Section */
+    .install-section {
+      padding: 70px 0;
+      border-top: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--card-border);
+      background: var(--bg-alt);
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .section-title {
+      font-size: clamp(26px, 4vw, 36px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+
+    .section-subtitle {
+      font-size: 17px;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .terminal-box {
+      max-width: 780px;
+      margin: 0 auto 24px;
+      background: var(--code-bg);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      background: rgba(255, 255, 255, 0.05);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .terminal-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .terminal-body {
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .terminal-code {
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      color: var(--code-text);
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .btn-copy:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .install-callout {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .install-callout a {
+      font-weight: 600;
+    }
+
+    /* Features Grid */
+    .features-section {
+      padding: 90px 0 70px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      margin-top: 40px;
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 30px;
+      box-shadow: var(--card-shadow);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 18px;
+    }
+
+    .feature-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 8px;
+    }
+
+    .feature-desc {
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* How It Works */
+    .workflow-section {
+      padding: 80px 0;
+      background: var(--bg-alt);
+      border-top: 1px solid var(--card-border);
+    }
+
+    .workflow-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-top: 40px;
+    }
+
+    .step-card {
+      background: var(--card-bg);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      border: 1px solid var(--card-border);
+      position: relative;
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .step-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .step-desc {
+      font-size: 14.5px;
+      color: var(--text-muted);
+    }
+
+    /* Comparison / Highlights */
+    .comparison-section {
+      padding: 80px 0;
+    }
+
+    .comparison-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      box-shadow: var(--card-shadow);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: center;
+    }
+
+    @media (max-width: 768px) {
+      .comparison-box {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .comparison-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .comparison-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 15px;
+    }
+
+    .check-icon {
+      color: var(--success);
+      font-weight: bold;
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .visual-preview {
+      text-align: center;
+    }
+
+    .visual-preview img {
+      max-width: 100%;
+      border-radius: var(--radius-md);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      border: 1px solid var(--card-border);
+    }
+
+    /* Setup Banner Card */
+    .tutorial-banner-card {
+      margin: 60px 0 80px;
+      background: linear-gradient(135deg, var(--card-bg) 0%, var(--accent-soft) 100%);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 30px;
+      box-shadow: var(--card-shadow);
+    }
+
+    @media (max-width: 768px) {
+      .tutorial-banner-card {
+        flex-direction: column;
+        text-align: center;
+      }
+    }
+
+    .tutorial-banner-text h3 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+
+    .tutorial-banner-text p {
+      font-size: 15.5px;
+      color: var(--text-muted);
+      max-width: 540px;
+    }
+
+    /* Footer */
+    footer {
+      padding: 50px 0 60px;
+      border-top: 1px solid var(--card-border);
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+      list-style: none;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+    }
+
+    .footer-links a:hover {
+      color: var(--text-main);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header class="navbar">
+    <div class="container nav-inner">
+      <a href="#" class="nav-brand">
+        <img src="images/app_icon.svg" alt="SwitchFix Logo" width="32" height="32">
+        <span>SwitchFix</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#demo">Try Demo</a></li>
+          <li><a href="#install">Install</a></li>
+          <li><a href="tutorial/">Setup Guide</a></li>
+          <li><a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="#install" class="btn-nav-cta">Get SwitchFix</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge-pill">
+        <span class="dot"></span>
+        <span>Free & Open Source macOS Utility • v0.0.10</span>
+      </div>
+      <h1 class="hero-title">
+        Never retype <br class="mobile-hide">
+        <span class="gradient-text">mistyped keyboard layout</span> again.
+      </h1>
+      <p class="hero-desc">
+        Type in English instead of Ukrainian or Russian? SwitchFix automatically detects the mistake on space, deletes the wrong characters, switches your layout, and retypes the right words.
+      </p>
+      <div class="hero-actions">
+        <a href="#install" class="btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Quick Install
+        </a>
+        <a href="tutorial/" class="btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+          Interactive Setup Guide
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Demo Box -->
+  <section id="demo" class="container">
+    <div class="demo-wrapper">
+      <div class="mac-window-bar">
+        <div class="mac-dots">
+          <div class="mac-dot dot-close"></div>
+          <div class="mac-dot dot-min"></div>
+          <div class="mac-dot dot-max"></div>
+        </div>
+        <div class="mac-title">Interactive Typo Simulator — Press Space or Try a sample</div>
+        <div style="width: 52px;"></div>
+      </div>
+      <div class="demo-content">
+        <div class="demo-label">
+          <span>Type a mistyped word + Space:</span>
+          <span style="font-weight: normal; font-size: 12px;">Simulates SwitchFix Core Engine</span>
+        </div>
+        <div class="interactive-input-box">
+          <input type="text" id="demo-input" class="interactive-input" placeholder="Type 'ghbdsn ' or 'руддщ ' here..." value="ghbdsn " autocomplete="off" spellcheck="false">
+        </div>
+        <div class="demo-result-box" id="demo-result-card">
+          <div>
+            <div class="demo-status-text" id="demo-status">
+              ✨ Auto-corrected: <strong>"ghbdsn"</strong> → <strong style="color: var(--success);">"привіт"</strong> (Layout switched to Ukrainian)
+            </div>
+            <div class="demo-hint">
+              <span>💡 Press <kbd style="background: var(--card-bg); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono);">Cmd+Z</kbd> anytime to undo the last correction.</span>
+            </div>
+          </div>
+          <span class="demo-badge-indicator" id="demo-badge">Auto-Switched</span>
+        </div>
+
+        <div style="margin-top: 18px;">
+          <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">Or click an example to test:</span>
+          <div class="pill-samples">
+            <button class="sample-chip" data-sample="ghjuhfvf ">ghjuhfvf [програма]</button>
+            <button class="sample-chip" data-sample="ghbdsn ">ghbdsn [привіт]</button>
+            <button class="sample-chip" data-sample="eRhf]yf ">eRhf]yf [Україна]</button>
+            <button class="sample-chip" data-sample="руддщ ">руддщ [hello]</button>
+            <button class="sample-chip" data-sample="ghjtrn ">ghjtrn [проект]</button>
+            <button class="sample-chip" data-sample="вщсу ">вщсу [docs]</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Fast Install Section -->
+  <section id="install" class="install-section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">One-Line Terminal Install</h2>
+        <p class="section-subtitle">Downloads verified native app, installs into /Applications, and guides you through instant setup.</p>
+      </div>
+
+      <div class="terminal-box">
+        <div class="terminal-bar">
+          <span class="terminal-title">Terminal — macOS 13.0+</span>
+          <button id="btn-copy-install" class="btn-copy" onclick="copyInstallCmd()">
+            <svg id="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span id="copy-text" aria-live="polite">Copy Command</span>
+          </button>
+        </div>
+        <div class="terminal-body">
+          <code class="terminal-code" id="install-cmd">/bin/bash -o pipefail -c 'curl --fail --location --silent --show-error https://raw.githubusercontent.com/rundax/SwitchFix/master/install.sh | /bin/bash'</code>
+        </div>
+      </div>
+
+      <div class="install-callout">
+        Need assistance with macOS System Settings? Visit the <a href="tutorial/">Interactive Visual Permissions Guide →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="features-section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Built for Speed, Privacy & Precision</h2>
+        <p class="section-subtitle">Like Punto Switcher, but completely reimagined as a modern, lightweight, native macOS citizen.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡️</div>
+          <h3 class="feature-title">Instant & Seamless</h3>
+          <p class="feature-desc">Engineered in pure Swift with Carbon Text Input Services. Detects layout mismatches in sub-milliseconds without key lag or typing stutter.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3 class="feature-title">100% Private & Offline</h3>
+          <p class="feature-desc">Zero telemetry, zero analytics, zero network requests. All dictionary lookups run locally. Secure password fields and tokens are automatically ignored.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">↩️</div>
+          <h3 class="feature-title">Effortless Revert</h3>
+          <p class="feature-desc">Accidental trigger? Press <kbd>Cmd+Z</kbd> within 5 seconds to instantly restore what you typed. Or configure CapsLock as a one-tap layout revert key.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⌨️</div>
+          <h3 class="feature-title">Selection Hotkey</h3>
+          <p class="feature-desc">Selected a block of text in the wrong layout? Press <kbd>Ctrl+Shift+Space</kbd> to convert it into the correct language without retyping.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3 class="feature-title">Three Layout Systems</h3>
+          <p class="feature-desc">Full dictionary and phonetic layout mapping for English (US, British, ABC, Dvorak, Colemak), Ukrainian, and Russian.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🎯</div>
+          <h3 class="feature-title">Smart App Exclusion</h3>
+          <p class="feature-desc">Automatically stays quiet in Terminals, IDEs, code editors, and command prompts so code identifiers and shell flags are never mangled.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="workflow-section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">How SwitchFix Works Under the Hood</h2>
+        <p class="section-subtitle">Simple, reliable, deterministic keyboard layout switching.</p>
+      </div>
+
+      <div class="workflow-steps">
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <h4 class="step-title">Non-blocking Buffer</h4>
+          <p class="step-desc">Keystrokes pass through untouched to the active app while a lightweight buffer watches for word boundaries (space, enter, punctuation).</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <h4 class="step-title">Dictionary Verification</h4>
+          <p class="step-desc">When a boundary is hit, the word is tested against local bloom filters and frequency dictionaries across configured alternate layouts.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <h4 class="step-title">Atomic Replacement</h4>
+          <p class="step-desc">If a match is found in an alternate language, SwitchFix switches the macOS input source, deletes mistyped letters, and outputs the correct text.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison & GIF Demo -->
+  <section class="comparison-section">
+    <div class="container">
+      <div class="comparison-box">
+        <div>
+          <h3 style="font-size: 26px; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.02em;">
+            Why users switch to SwitchFix
+          </h3>
+          <p style="color: var(--text-muted); font-size: 15.5px; margin-bottom: 20px;">
+            Legacy tools are bloated, abandoned, or constantly send telemetry. SwitchFix was created to do one job with surgical precision.
+          </p>
+          <ul class="comparison-list">
+            <li><span class="check-icon">✓</span> <strong>Native Swift app:</strong> < 15MB RAM usage, negligible CPU footprint.</li>
+            <li><span class="check-icon">✓</span> <strong>No electron or heavy runtimes:</strong> launches instantaneously.</li>
+            <li><span class="check-icon">✓</span> <strong>Clean macOS Menu Bar interface:</strong> live status, quick toggles, zero clutter.</li>
+            <li><span class="check-icon">✓</span> <strong>Free, open source & ad-free:</strong> transparent code hosted on GitHub.</li>
+          </ul>
+        </div>
+        <div class="visual-preview">
+          <img src="images/SwitchFix.gif" alt="SwitchFix Live Demo Animation" width="460">
+        </div>
+      </div>
+
+      <!-- Tutorial Banner -->
+      <div class="tutorial-banner-card">
+        <div class="tutorial-banner-text">
+          <h3>Need help granting macOS permissions?</h3>
+          <p>macOS requires Accessibility and Input Monitoring permissions to perform seamless text corrections. We built a visual, animated guide with an interactive simulator so you're ready in under 60 seconds.</p>
+        </div>
+        <a href="tutorial/" class="btn-primary" style="white-space: nowrap;">
+          Open Setup Tutorial →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <div>
+        <p style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">SwitchFix for macOS</p>
+        <p>Open-source keyboard layout corrector. Released under the MIT License.</p>
+      </div>
+      <ul class="footer-links">
+        <li><a href="#install">Install</a></li>
+        <li><a href="tutorial/">Permissions Guide</a></li>
+        <li><a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener">GitHub Repo</a></li>
+        <li><a href="https://github.com/rundax/SwitchFix/releases" target="_blank" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/rundax/SwitchFix/issues" target="_blank" rel="noopener">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script>
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[c] || c));
+    }
+
+    function fallbackCopy(text) {
+      const textarea = document.createElement('textarea');
+      const previousFocus = document.activeElement;
+      try {
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus({ preventScroll: true });
+        textarea.select();
+        return document.execCommand('copy');
+      } catch (e) {
+        return false;
+      } finally {
+        textarea.remove();
+        if (previousFocus) previousFocus.focus({ preventScroll: true });
+      }
+    }
+
+    let copyFeedbackTimer;
+    let isCopyingInstallCommand = false;
+
+    // Copy install command, including browsers without the Clipboard API.
+    async function copyInstallCmd() {
+      if (isCopyingInstallCommand) return;
+      isCopyingInstallCommand = true;
+      const command = document.getElementById('install-cmd');
+      const text = command.innerText.trim();
+      const label = document.getElementById('copy-text');
+      const button = document.getElementById('btn-copy-install');
+      let copied = false;
+
+      try {
+        if (window.isSecureContext && typeof navigator.clipboard?.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (e) {
+        // Permission denied or unavailable: try the legacy clipboard path.
+      }
+      if (!copied) copied = fallbackCopy(text);
+      isCopyingInstallCommand = false;
+
+      if (!copied) {
+        // Select the actual command so the keyboard-copy hint is actionable.
+        const range = document.createRange();
+        range.selectNodeContents(command);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      clearTimeout(copyFeedbackTimer);
+      label.textContent = copied ? 'Copied to Clipboard! ✓' : 'Press Cmd+C to copy';
+      button.style.background = copied ? 'var(--success)' : 'var(--accent)';
+      copyFeedbackTimer = setTimeout(() => {
+        label.textContent = 'Copy Command';
+        button.style.background = '';
+      }, copied ? 2200 : 2500);
+    }
+
+    // Mini Demo Typo Simulator
+    const typoDictionary = {
+      "ghbdsn": { to: "привіт", lang: "Ukrainian" },
+      "ghjuhfvf": { to: "програма", lang: "Ukrainian" },
+      "eRhf]yf": { to: "Україна", lang: "Ukrainian" },
+      "ghjtrn": { to: "проект", lang: "Ukrainian" },
+      "руддщ": { to: "hello", lang: "English" },
+      "цщкдв": { to: "world", lang: "English" },
+      "вщсу": { to: "docs", lang: "English" },
+      "ghbdtn": { to: "привет", lang: "Russian" },
+      "cthdsn": { to: "сервис", lang: "Russian" }
+    };
+
+    const demoInput = document.getElementById('demo-input');
+    const demoStatus = document.getElementById('demo-status');
+    const demoBadge = document.getElementById('demo-badge');
+
+    function simulateTypoCheck(val) {
+      if (!val) {
+        demoStatus.innerHTML = "Type a mistyped word and end with a <strong>Space</strong>.";
+        demoBadge.textContent = "Waiting";
+        demoBadge.style.color = "var(--text-muted)";
+        demoBadge.style.background = "var(--bg-alt)";
+        return;
+      }
+
+      if (val.endsWith(' ')) {
+        const rawWord = val.trim();
+        if (Object.hasOwn(typoDictionary, rawWord)) {
+          const match = typoDictionary[rawWord];
+          const safeWord = escapeHtml(rawWord);
+          const safeTo = escapeHtml(match.to);
+          const safeLang = escapeHtml(match.lang);
+          demoInput.value = match.to + " ";
+          demoStatus.innerHTML = `✨ Auto-corrected: <strong>"${safeWord}"</strong> → <strong style="color: var(--success);">"${safeTo}"</strong> (Layout switched to ${safeLang})`;
+          demoBadge.textContent = `Switched to ${match.lang}`;
+          demoBadge.style.color = "var(--success)";
+          demoBadge.style.background = "var(--success-soft)";
+        } else if (rawWord.length > 2) {
+          const safeWord = escapeHtml(rawWord);
+          demoStatus.innerHTML = `Word <strong>"${safeWord}"</strong> didn't match sample list. Try: <em>ghjuhfvf</em>, <em>ghbdsn</em>, or <em>руддщ</em>.`;
+          demoBadge.textContent = "No Switch";
+          demoBadge.style.color = "var(--text-muted)";
+          demoBadge.style.background = "var(--bg-alt)";
+        }
+      } else {
+        const safeVal = escapeHtml(val);
+        demoStatus.innerHTML = `Typing: <strong>"${safeVal}"</strong> — press Space to trigger layout check...`;
+        demoBadge.textContent = "Buffering";
+        demoBadge.style.color = "var(--accent)";
+        demoBadge.style.background = "var(--accent-soft)";
+      }
+    }
+
+    demoInput.addEventListener('input', (e) => {
+      simulateTypoCheck(e.target.value);
+    });
+
+    document.querySelectorAll('.sample-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sample = btn.getAttribute('data-sample');
+        demoInput.value = sample;
+        simulateTypoCheck(sample);
+        demoInput.focus();
+      });
+    });
+  </script>
+</body>
+</html>

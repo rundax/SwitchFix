@@ -7,23 +7,49 @@ public class SettingsWindowController: NSObject {
     private var windowController: NSWindowController?
 
     public func showSettings() {
+        present(
+            NSHostingController(rootView: SettingsView()),
+            title: "SwitchFix Settings",
+            contentSize: NSSize(width: 500, height: 720),
+            minimumSize: NSSize(width: 480, height: 560)
+        )
+    }
+
+    public func showSetup() {
+        present(
+            NSHostingController(rootView: ReadinessSetupView()),
+            title: "Finish setting up SwitchFix",
+            contentSize: NSSize(width: 520, height: 720),
+            minimumSize: NSSize(width: 500, height: 560)
+        )
+    }
+
+    private func present(
+        _ hostingController: NSHostingController<some View>,
+        title: String,
+        contentSize: NSSize,
+        minimumSize: NSSize
+    ) {
         if let existing = windowController, let window = existing.window {
+            window.title = title
+            window.contentViewController = hostingController
+            window.contentMinSize = minimumSize
+            window.setContentSize(contentSize)
+            window.center()
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let settingsView = SettingsView()
-        let hostingController = NSHostingController(rootView: settingsView)
-
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 700),
+            contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
+        window.contentMinSize = minimumSize
         window.center()
-        window.title = "SwitchFix Settings"
+        window.title = title
         window.contentViewController = hostingController
         // Ensure window is released when closed so we can recreate it cleanly or handle shouldClose logic
         window.isReleasedWhenClosed = false

@@ -33,10 +33,18 @@ compile_bin_if_needed "uk_UA"
 
 echo "Building $APP_NAME in release mode..."
 cd "$PROJECT_DIR"
-swift build -c release
+
+# Target the physical Mac architecture, even when Terminal is running in Rosetta.
+if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then
+    ARCH=arm64
+    /usr/bin/arch -arm64 swift build -c release
+else
+    ARCH=$(uname -m)
+    [ "$ARCH" = "x86_64" ] || { echo "ERROR: unsupported Mac architecture: $ARCH" >&2; exit 1; }
+    swift build -c release
+fi
 
 # Determine the build products directory
-ARCH=$(uname -m)
 if [ "$ARCH" = "arm64" ]; then
     PRODUCTS_DIR="$BUILD_DIR/arm64-apple-macosx/release"
 else
@@ -46,6 +54,11 @@ fi
 # Fallback: check which directory exists
 if [ ! -d "$PRODUCTS_DIR" ]; then
     PRODUCTS_DIR="$BUILD_DIR/release"
+fi
+
+if [ ! -d "$PRODUCTS_DIR" ]; then
+    echo "ERROR: products directory not found: $PRODUCTS_DIR" >&2
+    exit 1
 fi
 
 echo "Products directory: $PRODUCTS_DIR"
@@ -124,7 +137,7 @@ IDENTITY_FILE="$PROJECT_DIR/.codesign-identity"
 if [ -z "$IDENTITY" ] && [ -f "$IDENTITY_FILE" ]; then
     IDENTITY="$(cat "$IDENTITY_FILE")"
     # Verify the identity still exists in the keychain
-    if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY"; then
+    if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$IDENTITY\""; then
         echo "WARNING: Certificate \"$IDENTITY\" from .codesign-identity not found in keychain."
         echo "         Run scripts/setup-codesign.sh to recreate it."
         IDENTITY=""
@@ -133,7 +146,11 @@ fi
 
 if [ -n "$IDENTITY" ]; then
     echo "Signing with identity: $IDENTITY"
-    codesign --force --deep --sign "$IDENTITY" "$APP_BUNDLE"
+    if [[ "$IDENTITY" == Developer\ ID\ Application:* ]]; then
+        codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
+    else
+        codesign --force --deep --sign "$IDENTITY" "$APP_BUNDLE"
+    fi
 else
     echo "Signing with ad-hoc identity..."
     codesign --force --deep --sign - "$APP_BUNDLE"

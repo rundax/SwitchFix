@@ -214,10 +214,12 @@ REPLACED=0
 # Reset stale permissions from previous installations so System Settings
 # does not retain invalid ad-hoc signatures for SwitchFix.
 echo "Clearing previous permissions for SwitchFix…"
-tccutil reset Accessibility com.switchfix.app >/dev/null 2>&1 || true
-tccutil reset ListenEvent com.switchfix.app >/dev/null 2>&1 || true
-tccutil reset PostEvent com.switchfix.app >/dev/null 2>&1 || true
-tccutil reset All com.switchfix.app >/dev/null 2>&1 || true
+PERMISSIONS_RESET=0
+if tccutil reset All com.switchfix.app; then
+    PERMISSIONS_RESET=1
+else
+    echo "SwitchFix: permission reset failed. Remove stale SwitchFix entries in Privacy & Security and add the installed app if access checks fail." >&2
+fi
 
 # Force LaunchServices to refresh registration for the new app bundle
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
@@ -237,13 +239,16 @@ if open "$APP_DEST"; then
     done
 fi
 if [ -n "$(app_pids)" ]; then
-    echo "SwitchFix is open. Follow its setup window to grant Accessibility and Input Monitoring, then run Try a correction."
+    echo "SwitchFix is open. Follow its setup window to grant Accessibility, check Input Monitoring in Settings if needed, then run Try a correction."
 else
     echo "SwitchFix is installed. If macOS blocked it, click Done, then open System Settings > Privacy & Security, scroll to Security, click Open Anyway for SwitchFix, confirm Open, and launch it from Applications."
 fi
-if [ "$HAD_PREVIOUS_APP" -eq 1 ]; then
-    echo "Stale permissions from the previous installation have been removed automatically. Follow the setup window to grant Accessibility and Input Monitoring for the new version."
+if [ "$HAD_PREVIOUS_APP" -eq 1 ] && [ "$PERMISSIONS_RESET" -eq 1 ]; then
+    echo "Previous SwitchFix permissions were reset. Follow the setup window to restore access for the new version."
 fi
+# A successful ListenEvent preflight can come from Accessibility alone, without
+# a separate Input Monitoring row. Setup checks effective runtime access; it must
+# not claim that both System Settings toggles were enabled.
 echo "Easy setup guide (with interactive visuals): https://rundax.github.io/SwitchFix/tutorial/"
 echo "Project website & documentation: https://rundax.github.io/SwitchFix/"
 

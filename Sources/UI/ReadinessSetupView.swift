@@ -53,17 +53,23 @@ public struct ReadinessSetupView: View {
 
     private var setupContent: some View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            Text(compact ? "SwitchFix status" : "Finish setting up SwitchFix")
-                .font(.title2.weight(.semibold))
+            Label(
+                snapshot.setupComplete ? "Setup complete" : (compact ? "SwitchFix status" : "Finish setting up SwitchFix"),
+                systemImage: snapshot.setupComplete ? "checkmark.circle.fill" : "gearshape"
+            )
+            .font(.title2.weight(.semibold))
+            .foregroundStyle(snapshot.setupComplete ? Color.green : Color.primary)
             VStack(alignment: .leading, spacing: 4) {
                 Text(compact
                      ? snapshot.message
-                     : "Grant each permission below in System Settings, then return here. SwitchFix checks access automatically and will guide you through a typing test.")
+                     : (snapshot.setupComplete
+                        ? "Keyboard monitoring and text replacement are ready. Use Try a correction below to test SwitchFix."
+                        : "Allow Accessibility in System Settings. If keyboard input access remains unavailable, enable Input Monitoring too. Return here to check access and try a correction."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if !compact && (!snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted) {
+                if !compact && (!snapshot.accessibilityGranted || !snapshot.keyboardListeningAvailable) {
                     Button("Open Interactive Setup Guide ↗") {
                         openWebGuide()
                     }
@@ -74,18 +80,27 @@ public struct ReadinessSetupView: View {
 
             permissionRow(
                 title: "Accessibility",
-                granted: snapshot.accessibilityGranted,
+                status: snapshot.accessibilityGranted ? "Allowed" : "Not allowed",
+                symbol: snapshot.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                tint: snapshot.accessibilityGranted ? .green : .orange,
                 explanation: "Allows SwitchFix to replace text and switch layouts.",
+                showSettings: !snapshot.accessibilityGranted,
                 open: openAccessibility
             )
             permissionRow(
-                title: "Input Monitoring",
-                granted: snapshot.inputMonitoringGranted,
-                explanation: "Allows SwitchFix to detect keyboard input.",
+                title: "Keyboard input access",
+                status: snapshot.keyboardListeningStatus.label,
+                symbol: snapshot.keyboardListeningStatus.symbolName,
+                tint: snapshot.keyboardListeningStatus == .available ? .green
+                    : (snapshot.keyboardListeningStatus == .unavailable ? .orange : .secondary),
+                explanation: snapshot.keyboardListeningAvailable
+                    ? "Keyboard listening is available through Accessibility or Input Monitoring. This verifies runtime access, not a separate System Settings toggle."
+                    : "Enable Input Monitoring in System Settings to allow SwitchFix to detect keyboard input.",
+                showSettings: true,
                 open: openInputMonitoring
             )
 
-            if !snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted {
+            if !snapshot.accessibilityGranted || !snapshot.keyboardListeningAvailable {
                 Label {
                     Text("Grant each permission below in System Settings. If an old SwitchFix entry from an earlier version is still listed or checked, use Reset Permissions below to remove it, or remove the old entry with −.")
                 } icon: {
@@ -101,7 +116,7 @@ public struct ReadinessSetupView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if snapshot.checked && snapshot.accessibilityGranted && snapshot.inputMonitoringGranted {
+            if snapshot.checked && snapshot.accessibilityGranted && snapshot.keyboardListeningAvailable {
                 Label(snapshot.message, systemImage: snapshot.status == .working ? "checkmark.circle" : "exclamationmark.circle")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
@@ -114,12 +129,10 @@ public struct ReadinessSetupView: View {
             HStack(spacing: 10) {
                 Button("Check Again") { store.refresh(retry: true) }
                 Button("Show SwitchFix in Finder") { revealCurrentAppInFinder() }
-                if !snapshot.accessibilityGranted || !snapshot.inputMonitoringGranted {
-                    Button("Reset Permissions") { resetPermissions() }
-                }
+                Button("Reset Permissions") { resetPermissions() }
                 Button("Web Guide") { openWebGuide() }
             }
-            if snapshot.accessibilityGranted && snapshot.inputMonitoringGranted &&
+            if snapshot.accessibilityGranted && snapshot.keyboardListeningAvailable &&
                 (!snapshot.postingGranted || snapshot.monitor != .active) {
                 Button("Restart SwitchFix") { restartSwitchFix() }
             }
@@ -191,20 +204,23 @@ public struct ReadinessSetupView: View {
     }
 
     @ViewBuilder
-    private func permissionRow(title: String, granted: Bool, explanation: String, open: @escaping () -> Void) -> some View {
+    private func permissionRow(
+        title: String, status: String, symbol: String, tint: Color,
+        explanation: String, showSettings: Bool, open: @escaping () -> Void
+    ) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundStyle(granted ? .green : .orange)
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(title).fontWeight(.medium)
                     Spacer()
-                    Text(granted ? "Allowed" : "Not allowed")
+                    Text(status)
                         .foregroundStyle(.secondary)
                 }
                 Text(explanation).font(.caption).foregroundStyle(.secondary)
-                if !granted {
+                if showSettings {
                     Button("Open Settings + Show App") { open() }
                         .buttonStyle(.link)
                         .padding(.top, 2)
@@ -227,7 +243,7 @@ public struct ReadinessSetupView: View {
     }
 
     private func openInputMonitoring() {
-        if !snapshot.inputMonitoringGranted { _ = Permissions.requestInputMonitoring() }
+        if !snapshot.keyboardListeningAvailable { _ = Permissions.requestKeyboardListeningAccess() }
         if !Permissions.openInputMonitoringSettings() {
             settingsError = "System Settings could not be opened. Open System Settings > Privacy & Security > Input Monitoring manually."
         } else {
@@ -248,8 +264,10 @@ public struct ReadinessSetupView: View {
     }
 
     private func resetPermissions() {
-        Permissions.resetPermissions()
-        settingsError = "Stale permissions were reset. Use Open Settings to grant permissions."
+        let reset = Permissions.resetPermissions()
+        settingsError = reset
+            ? "SwitchFix permissions were reset. Use Open Settings to restore access, then restart SwitchFix."
+            : "Permission reset failed. Remove the old SwitchFix entry in System Settings and add the installed app manually."
         store.refresh(retry: true)
     }
 
@@ -290,7 +308,9 @@ public struct ReadinessSetupView: View {
             "App path: \(Bundle.main.bundleURL.path)",
             "Signing: \(signing)",
             "Accessibility: \(snapshot.accessibilityGranted)",
-            "Input Monitoring: \(snapshot.inputMonitoringGranted)",
+            "Keyboard-listening access (effective): \(snapshot.keyboardListeningAvailable)",
+            "Input Monitoring toggle: not independently verified by public macOS APIs",
+            "Setup complete (runtime readiness): \(snapshot.setupComplete)",
             "Event posting: \(snapshot.postingGranted)",
             "Monitor: \(snapshot.monitor.rawValue)",
             "Installed layouts: \(snapshot.installedLayouts.map(\.rawValue).sorted().joined(separator: ", "))",

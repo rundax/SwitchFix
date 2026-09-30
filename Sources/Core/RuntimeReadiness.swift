@@ -10,11 +10,34 @@ public enum MonitorHealth: String {
     case stopped, starting, active, failed
 }
 
+/// Effective keyboard-listening capability, not the separate Input Monitoring toggle.
+/// Accessibility can satisfy ListenEvent without an Input Monitoring settings row.
+public enum KeyboardListeningStatus: String {
+    case checking, unavailable, available
+
+    public var label: String {
+        switch self {
+        case .checking: return "Checking…"
+        case .unavailable: return "Unavailable"
+        case .available: return "Available"
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .checking: return "clock"
+        case .unavailable: return "exclamationmark.circle.fill"
+        case .available: return "checkmark.circle.fill"
+        }
+    }
+}
+
 /// Current process facts, never a saved onboarding-complete flag.
 public struct RuntimeReadinessSnapshot: Equatable {
     public var checked = false
     public var accessibilityGranted = false
-    public var inputMonitoringGranted = false
+    /// Effective listening capability; this does not confirm a separate Input Monitoring grant.
+    public var keyboardListeningAvailable = false
     public var postingGranted = false
     public var monitor: MonitorHealth = .stopped
     public var installedLayouts: Set<Layout> = []
@@ -31,10 +54,15 @@ public struct RuntimeReadinessSnapshot: Equatable {
 
     public init() {}
 
+    public var keyboardListeningStatus: KeyboardListeningStatus {
+        guard checked else { return .checking }
+        return keyboardListeningAvailable ? .available : .unavailable
+    }
+
     public var missingPermissions: [String] {
         var missing: [String] = []
         if !accessibilityGranted { missing.append("Accessibility") }
-        if !inputMonitoringGranted { missing.append("Input Monitoring") }
+        if !keyboardListeningAvailable { missing.append("Input Monitoring") }
         return missing
     }
 
@@ -47,7 +75,7 @@ public struct RuntimeReadinessSnapshot: Equatable {
     }
 
     public var hasRequiredAccess: Bool {
-        accessibilityGranted && inputMonitoringGranted && postingGranted
+        accessibilityGranted && keyboardListeningAvailable && postingGranted
     }
 
     public var prerequisitesReady: Bool {
@@ -55,9 +83,15 @@ public struct RuntimeReadinessSnapshot: Equatable {
             (mode != .automatic || (dictionariesLoaded && dictionaryLayouts.intersection(installedLayouts).count >= 2))
     }
 
+    /// Live setup readiness, not a saved acknowledgment of System Settings toggles.
+    /// Pausing correction or focusing another app does not undo completed setup.
+    public var setupComplete: Bool {
+        checked && hasRequiredAccess && monitor == .active && prerequisitesReady && runtimeFailure == nil
+    }
+
     /// Context is checked again after the exercise takes focus.
     public var canTryCorrection: Bool {
-        checked && hasRequiredAccess && monitor == .active && prerequisitesReady && isEnabled && runtimeFailure == nil
+        setupComplete && isEnabled
     }
 
     public var status: ReadinessStatus {

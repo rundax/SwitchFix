@@ -182,9 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if retry { retryBudget.reset() }
 
         let accessibility = Permissions.isAccessibilityGranted()
-        let inputMonitoring = Permissions.isInputMonitoringGranted()
+        let listening = Permissions.isKeyboardListeningAvailable()
         let posting = Permissions.isEventPostingGranted()
-        let requiredAccess = accessibility && inputMonitoring && posting
+        let requiredAccess = accessibility && listening && posting
         let accessChanged = lastRequiredAccess != requiredAccess
         if accessChanged {
             retryBudget.reset()
@@ -229,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var snapshot = RuntimeReadinessSnapshot()
         snapshot.checked = true
         snapshot.accessibilityGranted = accessibility
-        snapshot.inputMonitoringGranted = inputMonitoring
+        snapshot.keyboardListeningAvailable = listening
         snapshot.postingGranted = posting
         snapshot.monitor = currentMonitor
         snapshot.installedLayouts = installedLayouts

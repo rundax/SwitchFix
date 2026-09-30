@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import IOKit.hidsystem
 import os
 
 public class Permissions {
@@ -13,13 +14,24 @@ public class Permissions {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    public static func isInputMonitoringGranted() -> Bool {
-        return CGPreflightListenEventAccess()
+    /// Effective keyboard-listening access, NOT the separate System Settings toggle.
+    /// TCC can authorize ListenEvent through Accessibility even with no ListenEvent
+    /// record. Both IOHID and CoreGraphics report that effective authorization.
+    /// Public preflights cannot verify membership in the Input Monitoring list.
+    public static func isKeyboardListeningAvailable(
+        checkAccess: (IOHIDRequestType) -> IOHIDAccessType = IOHIDCheckAccess
+    ) -> Bool {
+        checkAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     }
 
     @discardableResult
-    public static func requestInputMonitoring() -> Bool {
-        return CGRequestListenEventAccess()
+    public static func requestKeyboardListeningAccess(
+        requestAccess: (IOHIDRequestType) -> Bool = IOHIDRequestAccess
+    ) -> Bool {
+        // Even this direct ListenEvent request can succeed through Accessibility
+        // without adding an Input Monitoring row. Never treat success as proof
+        // that the user enabled the separate System Settings toggle.
+        requestAccess(kIOHIDRequestTypeListenEvent)
     }
 
     public static func isEventPostingGranted() -> Bool {
@@ -28,7 +40,7 @@ public class Permissions {
 
     /// Read at each correction boundary; cached UI readiness is not authorization.
     public static func hasRequiredAccess() -> Bool {
-        isAccessibilityGranted() && isInputMonitoringGranted() && isEventPostingGranted()
+        isAccessibilityGranted() && isKeyboardListeningAvailable() && isEventPostingGranted()
     }
 
     @discardableResult
@@ -52,7 +64,9 @@ public class Permissions {
     @discardableResult
     public static func resetPermissions(bundleID: String? = nil) -> Bool {
         let targetID = bundleID ?? Bundle.main.bundleIdentifier ?? "com.switchfix.app"
-        let services = ["Accessibility", "ListenEvent", "PostEvent", "All"]
+        // All is scoped to this bundle, and covers Accessibility and ListenEvent.
+        // PostEvent is not a separate user-facing permission on supported macOS.
+        let services = ["All"]
         var allSucceeded = true
         for service in services {
             let process = Process()

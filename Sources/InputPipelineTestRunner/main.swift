@@ -3,6 +3,7 @@ import Core
 import CoreGraphics
 import Darwin
 import Foundation
+import IOKit.hidsystem
 import Utils
 
 private var passed = 0
@@ -841,6 +842,53 @@ run("access revocation invalidates queued corrections") {
     check(correctionCalled.wait(timeout: .now() + 0.2) == .timedOut, "a detection queued before access loss must not emit after recovery")
 }
 
+run("effective listening access does not verify the Input Monitoring toggle") {
+    check(RuntimeReadinessSnapshot().keyboardListeningStatus == .checking, "unchecked keyboard access must remain checking")
+    // Real macOS reproduction: only the Accessibility TCC row exists, yet even
+    // IOHIDCheckAccess(ListenEvent) returns Granted. Mock that actual result below,
+    // not the incorrect assumption that a missing ListenEvent row returns Unknown.
+    for access in [kIOHIDAccessTypeUnknown, kIOHIDAccessTypeDenied, kIOHIDAccessTypeGranted] {
+        var checkedListenEvent = false
+        let granted = Permissions.isKeyboardListeningAvailable { requestType in
+            checkedListenEvent = requestType == kIOHIDRequestTypeListenEvent
+            return access
+        }
+        check(checkedListenEvent, "listening capability must query ListenEvent")
+        check(granted == (access == kIOHIDAccessTypeGranted), "only Granted indicates effective listening capability")
+
+        var readiness = RuntimeReadinessSnapshot()
+        readiness.checked = true
+        readiness.accessibilityGranted = true
+        readiness.postingGranted = true
+        readiness.keyboardListeningAvailable = granted
+        if !granted {
+            check(readiness.missingPermissions == ["Input Monitoring"], "unavailable listening access must retain Input Monitoring guidance")
+            check(readiness.status == .setupNeeded && readiness.needsSetup, "unavailable listening capability must keep setup open")
+            check(!readiness.hasRequiredAccess && !readiness.canTryCorrection, "unavailable listening capability must block correction")
+            check(readiness.keyboardListeningStatus == .unavailable, "unavailable keyboard access must retain Settings guidance")
+        } else {
+            check(readiness.missingPermissions.isEmpty, "effective access clears runtime permission blockers")
+            check(readiness.hasRequiredAccess, "effective authorization can support correction without a separate ListenEvent row")
+            check(readiness.keyboardListeningStatus == .available, "effective keyboard access must not be permanently marked unverified")
+            check(readiness.keyboardListeningStatus.label == "Available", "capability label must describe access, not claim the Input Monitoring toggle is Allowed")
+            check(readiness.keyboardListeningStatus.symbolName == "checkmark.circle.fill", "verified runtime access must show its completed capability state")
+            readiness.accessibilityGranted = false
+            check(readiness.keyboardListeningStatus == .available, "keyboard access remains a separate capability from Accessibility")
+            check(!readiness.setupComplete, "keyboard access alone cannot complete setup")
+        }
+    }
+
+    for result in [false, true] {
+        var requestedListenEvent = false
+        let granted = Permissions.requestKeyboardListeningAccess { requestType in
+            requestedListenEvent = requestType == kIOHIDRequestTypeListenEvent
+            return result
+        }
+        check(requestedListenEvent, "listening requests must address ListenEvent")
+        check(granted == result, "requests must preserve the effective authorization result, not assert toggle membership")
+    }
+}
+
 run("readiness states reflect permission and mode prerequisites") {
     var readiness = RuntimeReadinessSnapshot()
     check(readiness.status == .checking, "unknown runtime state must remain checking")
@@ -850,7 +898,7 @@ run("readiness states reflect permission and mode prerequisites") {
     check(readiness.status == .setupNeeded, "missing Input Monitoring keeps setup blocked")
     check(readiness.missingPermissions == ["Input Monitoring"], "only the missing required grant is listed")
 
-    readiness.inputMonitoringGranted = true
+    readiness.keyboardListeningAvailable = true
     readiness.postingGranted = false
     check(readiness.status == .needsAttention, "posting capability failure is not a third permission category")
 
@@ -862,7 +910,10 @@ run("readiness states reflect permission and mode prerequisites") {
     readiness.appAllowed = true
     readiness.secureFocus = .notSecure
     readiness.sourceSupported = true
-    check(readiness.status == .working, "working requires permissions, monitor, dictionaries, and a supported context")
+    check(readiness.status == .working, "working requires effective access, monitor, dictionaries, and a supported context")
+    check(readiness.canTryCorrection, "an unverified separate toggle must not block an operational typing test")
+    check(readiness.setupComplete, "a working runtime must show Setup complete rather than perpetual Check in Settings")
+    check(readiness.keyboardListeningStatus == .available, "a working runtime must show keyboard input access as Available")
 
     readiness.runtimeFailure = "Keyboard monitoring keeps stopping."
     check(readiness.status == .needsAttention && readiness.message == readiness.runtimeFailure, "persistent runtime failures remain visible")
@@ -882,6 +933,50 @@ run("readiness states reflect permission and mode prerequisites") {
     check(!retries.canAttempt, "monitor retries stop after three failures")
     retries.reset()
     check(retries.canAttempt, "explicit recovery resets the retry budget")
+}
+
+run("setup completion follows live access and survives temporary pauses") {
+    var readiness = RuntimeReadinessSnapshot()
+    check(!readiness.setupComplete, "unchecked setup cannot be complete")
+    readiness.checked = true
+    readiness.accessibilityGranted = true
+    readiness.keyboardListeningAvailable = true
+    readiness.installedLayouts = [.english, .russian]
+    readiness.dictionaryLayouts = [.english, .russian]
+    readiness.dictionariesLoaded = true
+    check(!readiness.setupComplete, "Accessibility with listening access but no posting must not complete setup")
+
+    // Match the reported relaunch: permissions authorized, posting ready, tap active.
+    readiness.postingGranted = true
+    check(!readiness.setupComplete, "authorized permissions with a stopped monitor are not complete")
+    readiness.monitor = .active
+    check(readiness.setupComplete, "authorized access plus a live monitor and prerequisites completes setup")
+    check(!readiness.needsSetup, "completed setup must not reopen missing-permission guidance")
+    check(readiness.status == .paused, "a disallowed frontmost context only pauses correction")
+    check(readiness.setupComplete, "a temporary app/focus pause must not undo completed setup")
+
+    readiness.isEnabled = false
+    check(readiness.setupComplete && !readiness.canTryCorrection, "user-disabled correction retains setup completion but blocks the exercise")
+    readiness.isEnabled = true
+    readiness.runtimeFailure = "Monitor stopped"
+    check(!readiness.setupComplete, "a runtime failure clears completion")
+    readiness.runtimeFailure = nil
+    readiness.monitor = .failed
+    check(!readiness.setupComplete, "monitor failure clears completion")
+    readiness.monitor = .active
+    readiness.keyboardListeningAvailable = false
+    check(!readiness.setupComplete && readiness.keyboardListeningStatus == .unavailable, "Check Again must reflect live access revocation")
+    readiness.keyboardListeningAvailable = true
+    check(readiness.setupComplete, "Check Again must restore completion after access returns")
+    readiness.accessibilityGranted = false
+    check(!readiness.setupComplete, "revoked Accessibility clears completion even with input access")
+    readiness.accessibilityGranted = true
+    readiness.dictionariesLoaded = false
+    check(!readiness.setupComplete, "automatic mode waits for dictionaries")
+    readiness.mode = .hotkey
+    check(readiness.setupComplete, "manual mode does not require automatic dictionaries")
+    readiness.installedLayouts = [.english]
+    check(!readiness.setupComplete, "setup still requires two supported layouts")
 }
 
 run("100,000 event stress") {
@@ -1031,7 +1126,7 @@ run("blocked collaborators") {
 }
 
 private func runIntegrationSmoke() {
-    guard Permissions.isAccessibilityGranted(), Permissions.isInputMonitoringGranted() else {
+    guard Permissions.isAccessibilityGranted(), Permissions.isKeyboardListeningAvailable() else {
         print("SKIP: integration smoke requires Accessibility and Input Monitoring")
         return
     }

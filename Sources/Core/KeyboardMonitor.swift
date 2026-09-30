@@ -167,9 +167,9 @@ public final class KeyboardMonitor {
         guard let tapResult = createEventTap(eventMask: eventMask, userInfo: userInfo),
               let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tapResult.tap, 0) else {
             let accessibility = Permissions.isAccessibilityGranted()
-            let inputMonitoring = Permissions.isInputMonitoringGranted()
+            let listening = Permissions.isKeyboardListeningAvailable()
             SwitchFixLog.monitor.error(
-                "KeyboardMonitor: failed to create event tap (Accessibility: \(accessibility ? "granted" : "missing"), Input Monitoring: \(inputMonitoring ? "granted" : "missing"))"
+                "KeyboardMonitor: failed to create event tap (Accessibility: \(accessibility ? "granted" : "missing"), effective keyboard listening: \(listening ? "available" : "unavailable"))"
             )
             return false
         }

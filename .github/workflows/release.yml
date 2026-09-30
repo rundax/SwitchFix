@@ -27,10 +27,11 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      - name: Run input pipeline and dictionary checks
+      - name: Run optimized input pipeline and dictionary checks
+        # Keep performance assertions meaningful by avoiding debug-build overhead.
         run: |
-          swift run InputPipelineTestRunner
-          swift run TestRunner
+          swift run -c release InputPipelineTestRunner
+          swift run -c release TestRunner
 
       - name: Determine architecture label
         run: |

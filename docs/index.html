@@ -840,7 +840,7 @@
           <span class="terminal-title">Terminal — macOS 13.0+</span>
           <button id="btn-copy-install" class="btn-copy" onclick="copyInstallCmd()">
             <svg id="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            <span id="copy-text">Copy Command</span>
+            <span id="copy-text" aria-live="polite">Copy Command</span>
           </button>
         </div>
         <div class="terminal-body">
@@ -984,21 +984,75 @@
   </footer>
 
   <script>
-    // Copy Command to clipboard with feedback
-    function copyInstallCmd() {
-      const cmd = document.getElementById('install-cmd').innerText.trim();
-      navigator.clipboard.writeText(cmd).then(() => {
-        const copyText = document.getElementById('copy-text');
-        const originalText = copyText.textContent;
-        copyText.textContent = "Copied to Clipboard! ✓";
-        document.getElementById('btn-copy-install').style.background = "var(--success)";
-        setTimeout(() => {
-          copyText.textContent = originalText;
-          document.getElementById('btn-copy-install').style.background = "";
-        }, 2200);
-      }).catch(err => {
-        console.error('Clipboard copy failed:', err);
-      });
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[c] || c));
+    }
+
+    function fallbackCopy(text) {
+      const textarea = document.createElement('textarea');
+      const previousFocus = document.activeElement;
+      try {
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus({ preventScroll: true });
+        textarea.select();
+        return document.execCommand('copy');
+      } catch (e) {
+        return false;
+      } finally {
+        textarea.remove();
+        if (previousFocus) previousFocus.focus({ preventScroll: true });
+      }
+    }
+
+    let copyFeedbackTimer;
+    let isCopyingInstallCommand = false;
+
+    // Copy install command, including browsers without the Clipboard API.
+    async function copyInstallCmd() {
+      if (isCopyingInstallCommand) return;
+      isCopyingInstallCommand = true;
+      const command = document.getElementById('install-cmd');
+      const text = command.innerText.trim();
+      const label = document.getElementById('copy-text');
+      const button = document.getElementById('btn-copy-install');
+      let copied = false;
+
+      try {
+        if (window.isSecureContext && typeof navigator.clipboard?.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (e) {
+        // Permission denied or unavailable: try the legacy clipboard path.
+      }
+      if (!copied) copied = fallbackCopy(text);
+      isCopyingInstallCommand = false;
+
+      if (!copied) {
+        // Select the actual command so the keyboard-copy hint is actionable.
+        const range = document.createRange();
+        range.selectNodeContents(command);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      clearTimeout(copyFeedbackTimer);
+      label.textContent = copied ? 'Copied to Clipboard! ✓' : 'Press Cmd+C to copy';
+      button.style.background = copied ? 'var(--success)' : 'var(--accent)';
+      copyFeedbackTimer = setTimeout(() => {
+        label.textContent = 'Copy Command';
+        button.style.background = '';
+      }, copied ? 2200 : 2500);
     }
 
     // Mini Demo Typo Simulator
@@ -1029,21 +1083,26 @@
 
       if (val.endsWith(' ')) {
         const rawWord = val.trim();
-        if (typoDictionary[rawWord]) {
+        if (Object.hasOwn(typoDictionary, rawWord)) {
           const match = typoDictionary[rawWord];
+          const safeWord = escapeHtml(rawWord);
+          const safeTo = escapeHtml(match.to);
+          const safeLang = escapeHtml(match.lang);
           demoInput.value = match.to + " ";
-          demoStatus.innerHTML = `✨ Auto-corrected: <strong>"${rawWord}"</strong> → <strong style="color: var(--success);">"${match.to}"</strong> (Layout switched to ${match.lang})`;
+          demoStatus.innerHTML = `✨ Auto-corrected: <strong>"${safeWord}"</strong> → <strong style="color: var(--success);">"${safeTo}"</strong> (Layout switched to ${safeLang})`;
           demoBadge.textContent = `Switched to ${match.lang}`;
           demoBadge.style.color = "var(--success)";
           demoBadge.style.background = "var(--success-soft)";
         } else if (rawWord.length > 2) {
-          demoStatus.innerHTML = `Word <strong>"${rawWord}"</strong> didn't match sample list. Try: <em>ghjuhfvf</em>, <em>ghbdsn</em>, or <em>руддщ</em>.`;
+          const safeWord = escapeHtml(rawWord);
+          demoStatus.innerHTML = `Word <strong>"${safeWord}"</strong> didn't match sample list. Try: <em>ghjuhfvf</em>, <em>ghbdsn</em>, or <em>руддщ</em>.`;
           demoBadge.textContent = "No Switch";
           demoBadge.style.color = "var(--text-muted)";
           demoBadge.style.background = "var(--bg-alt)";
         }
       } else {
-        demoStatus.innerHTML = `Typing: <strong>"${val}"</strong> — press Space to trigger layout check...`;
+        const safeVal = escapeHtml(val);
+        demoStatus.innerHTML = `Typing: <strong>"${safeVal}"</strong> — press Space to trigger layout check...`;
         demoBadge.textContent = "Buffering";
         demoBadge.style.color = "var(--accent)";
         demoBadge.style.background = "var(--accent-soft)";

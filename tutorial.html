@@ -921,7 +921,7 @@
         <span class="code-text" id="install-cmd">/bin/bash -o pipefail -c 'curl --fail --location --silent --show-error https://raw.githubusercontent.com/rundax/SwitchFix/master/install.sh | /bin/bash'</span>
         <button class="copy-btn" onclick="copyInstallCommand()">
           <span id="copy-icon">📋</span>
-          <span id="copy-label">Copy</span>
+          <span id="copy-label" aria-live="polite">Copy</span>
         </button>
       </div>
 
@@ -978,7 +978,7 @@
                 </div>
                 <div class="switch-interactive-wrapper">
                   <div class="switch-beacon" id="beacon-input"></div>
-                  <div class="macos-switch" id="switch-input" onclick="togglePermission('input')" tabindex="0" role="switch" aria-checked="false">
+                  <div class="macos-switch" id="switch-input" onclick="togglePermission('input')" tabindex="0" role="switch" aria-checked="false" aria-label="Toggle SwitchFix Input Monitoring permission">
                     <div class="macos-switch-thumb"></div>
                   </div>
                   <div class="hand-pointer-guide" id="pointer-input">
@@ -1060,7 +1060,7 @@
                 </div>
                 <div class="switch-interactive-wrapper">
                   <div class="switch-beacon" id="beacon-acc"></div>
-                  <div class="macos-switch" id="switch-acc" onclick="togglePermission('acc')" tabindex="0" role="switch" aria-checked="false">
+                  <div class="macos-switch" id="switch-acc" onclick="togglePermission('acc')" tabindex="0" role="switch" aria-checked="false" aria-label="Toggle SwitchFix Accessibility permission">
                     <div class="macos-switch-thumb"></div>
                   </div>
                   <div class="hand-pointer-guide" id="pointer-acc">
@@ -1317,18 +1317,76 @@
       document.getElementById('screenshot-acc').style.display = isSim ? 'none' : 'block';
     }
 
-    // Copy install command
-    function copyInstallCommand() {
-      const text = document.getElementById('install-cmd').innerText;
-      navigator.clipboard.writeText(text).then(() => {
-        document.getElementById('copy-label').innerText = 'Copied! ✓';
-        document.getElementById('copy-icon').innerText = '✅';
-        playClickSound(900);
-        setTimeout(() => {
-          document.getElementById('copy-label').innerText = 'Copy';
-          document.getElementById('copy-icon').innerText = '📋';
-        }, 3000);
-      });
+    function fallbackCopyCommand(text) {
+      const textarea = document.createElement('textarea');
+      const previousFocus = document.activeElement;
+      try {
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus({ preventScroll: true });
+        textarea.select();
+        return document.execCommand('copy');
+      } catch (e) {
+        return false;
+      } finally {
+        textarea.remove();
+        if (previousFocus) previousFocus.focus({ preventScroll: true });
+      }
+    }
+
+    let copyFeedbackTimer;
+    let isCopyingInstallCommand = false;
+
+    // Copy install command, including browsers without the Clipboard API.
+    async function copyInstallCommand() {
+      if (isCopyingInstallCommand) return;
+      isCopyingInstallCommand = true;
+      const command = document.getElementById('install-cmd');
+      const text = command.innerText.trim();
+      const label = document.getElementById('copy-label');
+      const icon = document.getElementById('copy-icon');
+      let copied = false;
+
+      try {
+        if (window.isSecureContext && typeof navigator.clipboard?.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (e) {
+        // Permission denied or unavailable: try the legacy clipboard path.
+      }
+      if (!copied) copied = fallbackCopyCommand(text);
+      isCopyingInstallCommand = false;
+
+      if (!copied) {
+        // Select the actual command so the keyboard-copy hint is actionable.
+        const range = document.createRange();
+        range.selectNodeContents(command);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      clearTimeout(copyFeedbackTimer);
+      label.textContent = copied ? 'Copied! ✓' : 'Cmd+C to copy';
+      icon.textContent = copied ? '✅' : '⚠️';
+      if (copied) playClickSound(900);
+      copyFeedbackTimer = setTimeout(() => {
+        label.textContent = 'Copy';
+        icon.textContent = '📋';
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[c] || c));
     }
 
     // Interactive Typing Simulator
@@ -1343,10 +1401,51 @@
       'ntcn': 'тест'
     };
 
+    const activePlaygroundTimers = new Set();
+    let isCorrectionAnimating = false;
+
+    function clearActivePlaygroundTimers() {
+      activePlaygroundTimers.forEach(id => clearInterval(id));
+      activePlaygroundTimers.clear();
+      isCorrectionAnimating = false;
+      playgroundInput.readOnly = false;
+    }
+
+    function removePlaygroundTimer(timerId) {
+      clearInterval(timerId);
+      activePlaygroundTimers.delete(timerId);
+    }
+
+    function addPlaygroundTimer(callback, delay, repeat = false) {
+      const timerId = repeat ? setInterval(callback, delay) : setTimeout(() => {
+        activePlaygroundTimers.delete(timerId);
+        callback();
+      }, delay);
+      activePlaygroundTimers.add(timerId);
+      return timerId;
+    }
+
+    // A real edit takes ownership from sample playback, including paste/IME.
+    playgroundInput.addEventListener('beforeinput', e => {
+      if (isCorrectionAnimating) {
+        e.preventDefault();
+      } else {
+        clearActivePlaygroundTimers();
+        playgroundFeedback.textContent = '';
+      }
+    });
+    playgroundInput.addEventListener('input', () => {
+      clearActivePlaygroundTimers();
+      playgroundFeedback.textContent = '';
+    });
+
     playgroundInput.addEventListener('keydown', function(e) {
+      // readOnly blocks edits during correction without trapping Tab or arrows.
+      if (isCorrectionAnimating) return;
       if (e.key === ' ' || e.key === 'Enter') {
         const val = this.value.trim().toLowerCase();
-        if (dictionary[val]) {
+        clearActivePlaygroundTimers();
+        if (Object.hasOwn(dictionary, val)) {
           e.preventDefault();
           const target = dictionary[val];
           animateCorrection(val, target);
@@ -1355,57 +1454,76 @@
     });
 
     function simulateTyping(fromText, toText) {
+      clearActivePlaygroundTimers();
       playgroundInput.value = '';
       playgroundFeedback.textContent = '';
       let idx = 0;
-      const interval = setInterval(() => {
+      const interval = addPlaygroundTimer(() => {
         if (idx < fromText.length) {
           playgroundInput.value += fromText[idx];
           playClickSound(400 + idx * 30, 0.03);
           idx++;
         } else {
-          clearInterval(interval);
-          setTimeout(() => {
+          removePlaygroundTimer(interval);
+          addPlaygroundTimer(() => {
             animateCorrection(fromText, toText);
           }, 350);
         }
-      }, 90);
+      }, 90, true);
     }
 
     function animateCorrection(fromText, toText) {
+      clearActivePlaygroundTimers();
+      isCorrectionAnimating = true;
+      playgroundInput.readOnly = true;
       playgroundFeedback.innerHTML = `<span style="color:var(--warning)">⚡ Typo detected! Correcting layout...</span>`;
       playClickSound(700, 0.08);
 
       // Backspace animation
       let len = playgroundInput.value.length;
-      const delInterval = setInterval(() => {
+      const delInterval = addPlaygroundTimer(() => {
         if (len > 0) {
           playgroundInput.value = playgroundInput.value.slice(0, -1);
           len--;
         } else {
-          clearInterval(delInterval);
+          removePlaygroundTimer(delInterval);
           // Retype correct word
           let retypeIdx = 0;
-          const retypeInterval = setInterval(() => {
+          const retypeInterval = addPlaygroundTimer(() => {
             if (retypeIdx < toText.length) {
               playgroundInput.value += toText[retypeIdx];
               retypeIdx++;
             } else {
-              clearInterval(retypeInterval);
+              removePlaygroundTimer(retypeInterval);
+              isCorrectionAnimating = false;
+              playgroundInput.readOnly = false;
               playgroundInput.value += ' ';
-              playgroundFeedback.innerHTML = `✨ <strong>Corrected:</strong> "${fromText}" ➔ <strong style="color:var(--success); font-size:18px;">${toText}</strong> 🎉`;
+              const safeFrom = escapeHtml(fromText);
+              const safeTo = escapeHtml(toText);
+              playgroundFeedback.innerHTML = `✨ <strong>Corrected:</strong> "${safeFrom}" ➔ <strong style="color:var(--success); font-size:18px;">${safeTo}</strong> 🎉`;
               playClickSound(1000, 0.1);
             }
-          }, 70);
+          }, 70, true);
         }
-      }, 50);
+      }, 50, true);
     }
 
     function clearPlayground() {
+      clearActivePlaygroundTimers();
       playgroundInput.value = '';
       playgroundFeedback.textContent = '';
       playgroundInput.focus();
     }
+
+    // Keyboard accessibility for macOS switches
+    document.querySelectorAll('.macos-switch').forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          if (!e.repeat) el.click();
+        }
+      });
+    });
 
     // Confetti engine
     function fireConfetti() {

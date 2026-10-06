@@ -57,17 +57,24 @@ public struct InputSourceDiscoveryEngine {
                 layouts.insert(.russian)
             }
 
-            // Probe Option / AltGr state (modifierKeyState: 0x08)
-            let optS = provider.translatedCharacter(keyCode: 1, modifierKeyState: 0x08).map { String($0).lowercased() }
-            let optQuote = provider.translatedCharacter(keyCode: 39, modifierKeyState: 0x08).map { String($0).lowercased() }
-            let optCloseBracket = provider.translatedCharacter(keyCode: 30, modifierKeyState: 0x08).map { String($0).lowercased() }
-            let optG = provider.translatedCharacter(keyCode: 5, modifierKeyState: 0x08).map { String($0).lowercased() }
+            // Probe Option / AltGr state for third-party custom hybrid layouts (e.g., typography layouts).
+            // Apple native layouts and single-language layouts provide secondary characters via Option
+            // for convenience, which should not classify them as full hybrid layouts.
+            let isAppleNative = provider.id.hasPrefix("com.apple.keylayout.")
+            let allowsOptionProbing = !isAppleNative && (provider.languages == nil || provider.languages?.isEmpty == true)
 
-            if optS == "і" || optQuote == "є" || optCloseBracket == "ї" || optG == "ґ" {
-                layouts.insert(.ukrainian)
-            }
-            if optS == "ы" || optQuote == "э" || optCloseBracket == "ъ" {
-                layouts.insert(.russian)
+            if allowsOptionProbing {
+                let optS = provider.translatedCharacter(keyCode: 1, modifierKeyState: 0x08).map { String($0).lowercased() }
+                let optQuote = provider.translatedCharacter(keyCode: 39, modifierKeyState: 0x08).map { String($0).lowercased() }
+                let optCloseBracket = provider.translatedCharacter(keyCode: 30, modifierKeyState: 0x08).map { String($0).lowercased() }
+                let optG = provider.translatedCharacter(keyCode: 5, modifierKeyState: 0x08).map { String($0).lowercased() }
+
+                if optS == "і" || optQuote == "є" || optCloseBracket == "ї" || optG == "ґ" {
+                    layouts.insert(.ukrainian)
+                }
+                if optS == "ы" || optQuote == "э" || optCloseBracket == "ъ" {
+                    layouts.insert(.russian)
+                }
             }
 
             if layouts.isEmpty {

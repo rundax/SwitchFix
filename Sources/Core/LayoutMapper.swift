@@ -18,6 +18,13 @@ public enum Layout: String, CaseIterable, Equatable, Sendable {
         }
     }
 
+    public var isCyrillic: Bool {
+        switch self {
+        case .ukrainian, .russian: return true
+        case .english: return false
+        }
+    }
+
     /// The primary macOS input source identifier for this layout.
     public var inputSourceID: String {
         return inputSourceIDs[0]

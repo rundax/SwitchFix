@@ -444,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         captureState?.updateHotkeys(currentHotkeyConfiguration())
         inputEngine?.updatePreferences(currentPreferencesSnapshot())
+        updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }
 
@@ -521,13 +522,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateDetectionConfiguration(allowedLayouts: Set<Layout>) {
+        let userEnabled = PreferencesManager.shared.enabledLayouts
+        let effectiveAllowed = allowedLayouts.filter { userEnabled.contains($0) }
         let currentLayout = inputSourceManager.currentLayout()
         let preferredVariant = inputSourceManager.preferredUkrainianVariant()
         let currentVariant = currentLayout == .ukrainian
             ? inputSourceManager.currentUkrainianVariant() ?? preferredVariant
             : preferredVariant
         inputEngine?.updateDetectionConfiguration(
-            allowedLayouts: allowedLayouts,
+            allowedLayouts: effectiveAllowed,
+            allowCyrillicToCyrillic: PreferencesManager.shared.allowCyrillicToCyrillic,
             activeSourceSupportedLayouts: inputSourceManager.activeSourceSupportedLayouts(),
             ukrainianFromVariant: currentVariant,
             ukrainianToVariant: preferredVariant

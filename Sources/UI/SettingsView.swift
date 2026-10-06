@@ -64,22 +64,34 @@ class SettingsViewModel: ObservableObject {
 
     @Published var sourcesByLayout: [KeyboardLayout: [DiscoveredInputSourceDescriptor]] = [:]
     @Published var preferredSourceIDs: [KeyboardLayout: String] = [:]
+    @Published var enabledLayouts: Set<KeyboardLayout> = PreferencesManager.shared.enabledLayouts {
+        didSet { PreferencesManager.shared.enabledLayouts = enabledLayouts }
+    }
+    @Published var allowCyrillicToCyrillic: Bool = PreferencesManager.shared.allowCyrillicToCyrillic {
+        didSet { PreferencesManager.shared.allowCyrillicToCyrillic = allowCyrillicToCyrillic }
+    }
 
     init() {
         reloadLayouts()
         NotificationCenter.default.addObserver(self, selector: #selector(syncFromPreferences), name: .preferencesDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(syncFromPreferences), name: NSApplication.didBecomeActiveNotification, object: nil)
     }
-    
+
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
-    
+
     @objc private func syncFromPreferences() {
         syncLaunchAtLogin()
         // Sync back only if different to avoid loops
         if self.correctionMode != PreferencesManager.shared.correctionMode {
             self.correctionMode = PreferencesManager.shared.correctionMode
+        }
+        if self.enabledLayouts != PreferencesManager.shared.enabledLayouts {
+            self.enabledLayouts = PreferencesManager.shared.enabledLayouts
+        }
+        if self.allowCyrillicToCyrillic != PreferencesManager.shared.allowCyrillicToCyrillic {
+            self.allowCyrillicToCyrillic = PreferencesManager.shared.allowCyrillicToCyrillic
         }
         reloadLayouts()
     }
@@ -117,6 +129,21 @@ class SettingsViewModel: ObservableObject {
 
     var availableLayouts: [KeyboardLayout] {
         KeyboardLayout.allCases.filter { !(sourcesByLayout[$0]?.isEmpty ?? true) }
+    }
+
+    func isLayoutEnabled(_ layout: KeyboardLayout) -> Bool {
+        enabledLayouts.contains(layout)
+    }
+
+    func setLayoutEnabled(_ enabled: Bool, for layout: KeyboardLayout) {
+        if enabled {
+            enabledLayouts.insert(layout)
+        } else {
+            // Keep at least one layout enabled
+            if enabledLayouts.count > 1 {
+                enabledLayouts.remove(layout)
+            }
+        }
     }
 }
 
@@ -439,10 +466,18 @@ struct KeyboardLayoutRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            Toggle("", isOn: Binding(
+                get: { model.isLayoutEnabled(layout) },
+                set: { model.setLayoutEnabled($0, for: layout) }
+            ))
+            .labelsHidden()
+            .disabled(model.isLayoutEnabled(layout) && model.enabledLayouts.count <= 1)
+
             Text(layout.displayName)
                 .frame(width: 85, alignment: .leading)
                 .font(.subheadline)
                 .fontWeight(.medium)
+                .foregroundColor(model.isLayoutEnabled(layout) ? .primary : .secondary)
 
             if sources.count > 1 {
                 Picker("", selection: selectedID) {
@@ -451,6 +486,7 @@ struct KeyboardLayoutRow: View {
                     }
                 }
                 .pickerStyle(MenuPickerStyle())
+                .disabled(!model.isLayoutEnabled(layout))
             } else if let source = sources.first {
                 Text(sourceDisplayName(source))
                     .foregroundColor(.secondary)
@@ -495,6 +531,16 @@ struct KeyboardLayoutsView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Allow Cyrillic-to-Cyrillic correction (Ukrainian ↔ Russian)", isOn: $model.allowCyrillicToCyrillic)
+                        .font(.subheadline)
+
+                    Text("Disabled by default to avoid unintended corrections between similar Cyrillic alphabets.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
             }
         }
     }

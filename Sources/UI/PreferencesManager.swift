@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ServiceManagement
+import Core
 import Utils
 
 public enum CorrectionMode: String {
@@ -21,6 +22,33 @@ public class PreferencesManager {
         static let hotkeyModifiers = "SwitchFix_hotkeyModifiers"
         static let revertHotkeyKeyCode = "SwitchFix_revertHotkeyKeyCode"
         static let revertHotkeyModifiers = "SwitchFix_revertHotkeyModifiers"
+        static let enabledLayouts = "SwitchFix_enabledLayouts"
+        static let allowCyrillicToCyrillic = "SwitchFix_allowCyrillicToCyrillic"
+    }
+
+    public var enabledLayouts: Set<Layout> {
+        get {
+            guard let rawArray = defaults.stringArray(forKey: Keys.enabledLayouts) else {
+                return Set(Layout.allCases)
+            }
+            let parsed = Set(rawArray.compactMap { Layout(rawValue: $0) })
+            return parsed.isEmpty ? Set(Layout.allCases) : parsed
+        }
+        set {
+            let sanitized = newValue.isEmpty ? Set(Layout.allCases) : newValue
+            guard sanitized != self.enabledLayouts else { return }
+            defaults.set(sanitized.map(\.rawValue).sorted(), forKey: Keys.enabledLayouts)
+            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        }
+    }
+
+    public var allowCyrillicToCyrillic: Bool {
+        get { defaults.object(forKey: Keys.allowCyrillicToCyrillic) as? Bool ?? false }
+        set {
+            guard newValue != self.allowCyrillicToCyrillic else { return }
+            defaults.set(newValue, forKey: Keys.allowCyrillicToCyrillic)
+            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        }
     }
 
     public var isEnabled: Bool {

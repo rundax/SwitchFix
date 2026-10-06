@@ -36,6 +36,7 @@ public final class InputEngine {
 
     private struct DetectionConfiguration {
         var allowedLayouts = Set(Layout.allCases)
+        var allowCyrillicToCyrillic: Bool = false
         var activeSourceSupportedLayouts: Set<Layout> = [.english]
         var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
         var ukrainianToVariant: UkrainianKeyboardVariant = .standard
@@ -157,6 +158,11 @@ public final class InputEngine {
                 return
             }
 
+            let configuration = self.detectionConfiguration.withLock { $0 }
+            guard !oldLayout.isCyrillic || !newLayout.isCyrillic || configuration.allowCyrillicToCyrillic else {
+                return
+            }
+
             let latest = self.captureState.snapshot()
             let requestCorrectionEpoch = self.correctionEpoch
             let applyBufferedCorrection = {
@@ -241,12 +247,14 @@ public final class InputEngine {
 
     public func updateDetectionConfiguration(
         allowedLayouts: Set<Layout>,
+        allowCyrillicToCyrillic: Bool = false,
         activeSourceSupportedLayouts: Set<Layout> = [.english],
         ukrainianFromVariant: UkrainianKeyboardVariant,
         ukrainianToVariant: UkrainianKeyboardVariant
     ) {
         detectionConfiguration.withLock { value in
             value.allowedLayouts = allowedLayouts
+            value.allowCyrillicToCyrillic = allowCyrillicToCyrillic
             value.activeSourceSupportedLayouts = activeSourceSupportedLayouts
             value.ukrainianFromVariant = ukrainianFromVariant
             value.ukrainianToVariant = ukrainianToVariant
@@ -360,6 +368,7 @@ public final class InputEngine {
                 self.detector.currentInputSourceID = request.context.inputSourceID
                 self.detector.activeSourceSupportedLayouts = configuration.activeSourceSupportedLayouts
                 self.detector.allowedLayouts = configuration.allowedLayouts
+                self.detector.allowCyrillicToCyrillic = configuration.allowCyrillicToCyrillic
                 self.detector.ukrainianFromVariant = configuration.ukrainianFromVariant
                 self.detector.ukrainianToVariant = configuration.ukrainianToVariant
                 self.detector.discardBuffer()

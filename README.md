@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Resources/Assets.xcassets/AppIcon.svg" alt="SwitchFix Logo" width="100" height="100">
+</p>
+
 # SwitchFix
 
 A macOS menu bar utility that automatically corrects keyboard layout mistakes. Type in the wrong layout (e.g., English instead of Ukrainian/Russian) and SwitchFix detects it, deletes the mistyped word, switches the layout, and retypes the correct text — like PuntoSwitcher, but native, lightweight, and modern.
@@ -16,7 +20,6 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 </p>
 
 ![SwitchFix Demo](SwitchFix.gif)
-![SwitchFix App Icon](Resources/Assets.xcassets/AppIcon.svg)
 
 ## Features
 

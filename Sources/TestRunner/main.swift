@@ -1342,6 +1342,72 @@ runSuite("Hybrid Layout: Self-switch suppression") {
     assertEqual(detector.currentInputSourceID, detector.preferredSourceIDProvider?(.ukrainian))
 }
 
+runSuite("InputSourceDiscoveryEngine: Apple native Ukrainian layout ignores Option probing for Russian") {
+    let appleUkProvider = MockInputSourcePropertyReader(
+        id: "com.apple.keylayout.Ukrainian",
+        localizedName: "Ukrainian",
+        languages: ["uk"],
+        unshiftedKeys: [0: "ф", 1: "і", 11: "и", 12: "й", 30: "ї", 39: "є"],
+        optionKeys: [1: "ы", 5: "ґ", 30: "ъ", 39: "э"]
+    )
+    let desc = InputSourceDiscoveryEngine.classify(provider: appleUkProvider)
+    assert(desc != nil, "should classify Apple Ukrainian layout")
+    assertEqual(desc?.supportedLayouts, Set([.ukrainian]), "native Ukrainian must not claim Russian layout via Option probing")
+    assertEqual(desc?.isCustom, false, "Apple native layout is not custom")
+}
+
+runSuite("WordValidator: 'блін' is recognized as a valid Ukrainian word via allow override") {
+    let result = WordValidator.shared.validate("блін", language: .ukrainian)
+    assert(result.isValid, "'блін' should be a valid word in Ukrainian")
+}
+
+runSuite("LayoutDetector: Cyrillic-to-Cyrillic cross-conversion is disabled by default") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+    detector.allowedLayouts = [.english, .ukrainian, .russian]
+    assertEqual(detector.allowCyrillicToCyrillic, false, "allowCyrillicToCyrillic must default to false")
+
+    for char in "блін" {
+        detector.addCharacter(String(char))
+    }
+    let result = detector.flushBuffer(boundaryCharacter: " ")
+    assertEqual(mockDelegate.results.count, 0, "no Russian correction should be emitted for 'блін'")
+    assert(result == nil, "'блін' must not be converted to Russian 'блин'")
+}
+
+runSuite("LayoutDetector: Cyrillic-to-Cyrillic conversion respects allowCyrillicToCyrillic setting") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+    detector.allowedLayouts = [.english, .ukrainian, .russian]
+    detector.allowCyrillicToCyrillic = false
+
+    // In legacy Ukrainian mapping: "єто" converts to Russian "это"
+    for char in "єто" {
+        detector.addCharacter(String(char))
+    }
+    let suppressedResult = detector.flushBuffer(boundaryCharacter: " ")
+    assertEqual(mockDelegate.results.count, 0, "Cyrillic cross-conversion must be suppressed when disabled")
+    assert(suppressedResult == nil, "result should be nil when allowCyrillicToCyrillic is false")
+
+    // Now enable Cyrillic-to-Cyrillic
+    detector.allowCyrillicToCyrillic = true
+    for char in "єто" {
+        detector.addCharacter(String(char))
+    }
+    let allowedResult = detector.flushBuffer(boundaryCharacter: " ")
+    assert(allowedResult != nil, "conversion should be allowed when allowCyrillicToCyrillic is true")
+    if let allowedResult {
+        assertEqual(allowedResult.targetLayout, .russian, "target layout should be Russian")
+        assertEqual(allowedResult.convertedWord, "это", "converted word should be Russian 'это'")
+    }
+}
+
 // =============================================================================
 // Synthetic Coverage Tests (EN ↔︎ UK)
 // =============================================================================

@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SwitchFix — Easy Setup Guide</title>
+  <title>SwitchFix — Install &amp; First Launch Guide</title>
+  <meta name="description" content="Install SwitchFix, find macOS Open Anyway with real screenshots, and enable typing access. A short visual setup guide for Mac.">
   <link rel="icon" type="image/svg+xml" href="images/app_icon.svg">
   <style>
     :root {
@@ -111,50 +112,6 @@
       margin: 0 auto 28px;
     }
 
-    /* Progress tracker */
-    .progress-bar-container {
-      max-width: 680px;
-      margin: 0 auto 36px;
-      background: var(--card-bg);
-      padding: 16px 24px;
-      border-radius: var(--radius-full);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
-      border: 1px solid var(--card-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    .progress-label {
-      font-size: 14px;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
-    .progress-track {
-      flex: 1;
-      height: 10px;
-      background: rgba(0, 0, 0, 0.06);
-      border-radius: 5px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .progress-track {
-        background: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .progress-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent), var(--success));
-      border-radius: 5px;
-      transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-
     /* Container */
     .container {
       max-width: 780px;
@@ -172,11 +129,6 @@
       border: 1px solid var(--card-border);
       position: relative;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .card.completed {
-      border-color: var(--success);
-      box-shadow: 0 10px 30px rgba(52, 199, 89, 0.12);
     }
 
     .step-header {
@@ -200,12 +152,6 @@
       justify-content: center;
       box-shadow: 0 4px 10px rgba(0, 113, 227, 0.3);
       transition: background 0.3s, transform 0.3s;
-    }
-
-    .card.completed .step-num {
-      background: var(--success);
-      box-shadow: 0 4px 10px rgba(52, 199, 89, 0.35);
-      transform: scale(1.05);
     }
 
     .step-info h2 {
@@ -237,8 +183,9 @@
     }
 
     .code-text {
-      overflow-x: auto;
-      white-space: nowrap;
+      min-width: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
       color: #5ac8fa;
     }
 
@@ -264,80 +211,6 @@
 
     .copy-btn:active {
       transform: scale(0.97);
-    }
-
-    /* Explanation boxes */
-    .tip-box {
-      background: var(--accent-light);
-      border-radius: var(--radius-md);
-      padding: 16px 20px;
-      margin-top: 16px;
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-      font-size: 15px;
-      line-height: 1.5;
-    }
-
-    .tip-box .emoji {
-      font-size: 24px;
-      line-height: 1;
-    }
-
-    /* Golden Principle Card */
-    .principle-box {
-      background: linear-gradient(135deg, #fef6e4 0%, #fffbf0 100%);
-      border: 2px dashed #f4c430;
-      border-radius: var(--radius-lg);
-      padding: 24px 28px;
-      margin: 36px 0;
-      color: #5c4400;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .principle-box {
-        background: linear-gradient(135deg, #2b220d 0%, #201a08 100%);
-        border-color: #947113;
-        color: #f7df94;
-      }
-    }
-
-    .principle-title {
-      font-size: 19px;
-      font-weight: 700;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .principle-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      font-size: 15px;
-    }
-
-    .principle-list li {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
-    .principle-list .icon-bullet {
-      background: #f4c430;
-      color: #000;
-      border-radius: var(--radius-full);
-      width: 22px;
-      height: 22px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: bold;
-      flex-shrink: 0;
-      margin-top: 2px;
     }
 
     /* Interactive Simulation Stage */
@@ -752,70 +625,61 @@
       color: var(--success);
     }
 
-    /* Confetti Canvas */
-    #confetti-canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      pointer-events: none;
-      z-index: 9999;
-    }
+    .guide-header { position: sticky; top: 0; z-index: 10; background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 16px; }
+    .guide-header-inner { max-width: 820px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .guide-home { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-main); text-decoration: none; font-size: 14px; }
+    .guide-home img { border-radius: 6px; }
+    .guide-header-links { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+    .guide-header-links a { color: var(--text-muted); text-decoration: none; font-weight: 500; }
 
-    /* What if popups / FAQ */
-    .faq-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 16px;
-      margin-top: 20px;
+    /* Installation guide: one action at a time. */
+    html { scroll-behavior: smooth; }
+    section[id] { scroll-margin-top: 90px; }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    a:hover { color: var(--accent-hover); }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0;
+      margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
     }
-
-    .faq-item {
-      background: var(--bg);
-      border-radius: var(--radius-md);
-      padding: 18px 22px;
-      border: 1px solid var(--card-border);
+    .setup-nav { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 24px; }
+    .setup-nav a { font-size: 14px; font-weight: 600; text-decoration: none; }
+    .guide-note { color: var(--text-muted); font-size: 14px; margin-top: 16px; }
+    .launch-note { border-left: 3px solid var(--accent); padding-left: 16px; margin-bottom: 24px; }
+    .launch-note p + p { margin-top: 6px; }
+    .guide-list { padding-left: 22px; }
+    .guide-list > li { padding-left: 6px; margin-bottom: 22px; }
+    .guide-list > li:last-child { margin-bottom: 0; }
+    .settings-location { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 20px; align-items: center; }
+    .settings-location img { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); }
+    .settings-location p { margin-bottom: 12px; }
+    .settings-link { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border-radius: var(--radius-sm); background: var(--accent-light); font-weight: 600; text-decoration: none; font-size: 14px; }
+    .approval-screenshot { margin-top: 16px; }
+    .approval-screenshot img { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); }
+    .approval-screenshot figcaption { font-size: 13px; color: var(--text-muted); margin-top: 10px; }
+    .guide-details { border-top: 1px solid var(--card-border); margin-top: 24px; padding-top: 16px; }
+    .guide-details summary { cursor: pointer; font-weight: 600; min-height: 44px; padding: 10px 0; }
+    .guide-details summary:hover { color: var(--accent); }
+    .guide-details > p { margin: 8px 0 12px; color: var(--text-muted); font-size: 14px; }
+    .ready-note { background: var(--accent-light); border-radius: var(--radius-sm); padding: 16px; margin-top: 22px; }
+    .guide-extras { margin: 40px 0; }
+    .guide-extras h2 { font-size: 20px; margin-bottom: 6px; }
+    .guide-extras > p { font-size: 14px; color: var(--text-muted); }
+    .practice-example .simulation-box { margin-top: 8px; }
+    .guide-footer { margin-top: 28px; font-size: 14px; color: var(--text-muted); }
+    @media (max-width: 600px) {
+      .settings-location { grid-template-columns: minmax(0, 1fr); }
+      .settings-location img { max-width: 280px; }
+      .guide-list { padding-left: 18px; }
+      .guide-list > li { padding-left: 2px; }
+      .mock-row { gap: 12px; flex-wrap: wrap; }
+      .switch-control-group { margin-left: auto; }
+      .hero-section { padding-top: 32px; }
     }
-
-    .faq-item h4 {
-      font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
-
-    .faq-item p {
-      font-size: 14px;
-      color: var(--text-muted);
-    }
-
-    /* Sound indicator */
-    .sound-toggle {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-full);
-      padding: 8px 16px;
-      font-size: 13px;
-      font-weight: 600;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      z-index: 100;
-      transition: transform 0.2s;
-    }
-
-    .sound-toggle:hover {
-      transform: scale(1.05);
-    }
-
     /* Responsive */
     @media (max-width: 600px) {
       .card {
@@ -833,20 +697,17 @@
 </head>
 <body>
 
-  <canvas id="confetti-canvas"></canvas>
-
-  <!-- Top Navigation Header -->
-  <header style="position: sticky; top: 0; z-index: 90; background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
-    <div style="max-width: 820px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between;">
-      <a href="docs/index.html" style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-main); text-decoration: none; font-size: 14px;">
-        <span style="font-size: 16px;">←</span>
-        <img src="images/app_icon.svg" alt="SwitchFix" style="width: 24px; height: 24px; border-radius: 6px;">
+  <header class="guide-header">
+    <div class="guide-header-inner">
+      <a class="guide-home" href="docs/index.html">
+        <span aria-hidden="true">←</span>
+        <img src="images/app_icon.svg" alt="" width="24" height="24">
         <span>SwitchFix Home</span>
       </a>
-      <div style="display: flex; align-items: center; gap: 16px; font-size: 14px;">
-        <a href="docs/index.html#install" style="color: var(--text-muted); text-decoration: none; font-weight: 500;">Quick Install</a>
-        <a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener" style="color: var(--text-muted); text-decoration: none; font-weight: 500;">GitHub</a>
-      </div>
+      <nav class="guide-header-links" aria-label="Site navigation">
+        <a href="docs/index.html#install">Install</a>
+        <a href="https://github.com/rundax/SwitchFix" target="_blank" rel="noopener">GitHub</a>
+      </nav>
     </div>
   </header>
 
@@ -855,184 +716,105 @@
       <img src="images/app_icon.svg" alt="SwitchFix Logo">
       <span>SwitchFix for Mac</span>
     </div>
-    <h1 class="hero-title">Quick &amp; Easy Setup Guide</h1>
-    <p class="hero-subtitle">
-      Fix mistyped keyboard layouts automatically. Follow these 3 simple steps to get SwitchFix up and running in less than a minute.
-    </p>
-
-    <!-- Progress tracker -->
-    <div class="progress-bar-container">
-      <span class="progress-label" id="progress-text">Setup: 0 of 2 permissions granted</span>
-      <div class="progress-track">
-        <div class="progress-fill" id="progress-bar"></div>
-      </div>
-    </div>
+    <h1 class="hero-title">Install. Open. Allow access.</h1>
+    <p class="hero-subtitle">Three steps, with the exact macOS screens to look for.</p>
+    <nav class="setup-nav" aria-label="Setup steps">
+      <a href="#install">1. Install</a>
+      <a href="#open-app">2. Open the app</a>
+      <a href="#allow-access">3. Allow typing access</a>
+    </nav>
   </div>
 
-  <div class="container">
-
-    <!-- The Universal Golden Principle -->
-    <div class="principle-box">
-      <div class="principle-title">
-        <span>💡</span> The Universal Principle (Works on Any macOS Version)
-      </div>
-      <p style="margin-bottom: 14px; font-size: 15px;">
-        Apple changes the look of Mac settings from time to time. <strong>Don’t worry!</strong> The rule is always the same:
-      </p>
-      <ul class="principle-list">
-        <li>
-          <span class="icon-bullet">1</span>
-          <div>
-            <strong>Look for the Blue Icon:</strong> Find the blue square labeled <strong>SwitchFix</strong> with the letters <strong>Ab</strong> / <strong>Aб</strong>.
-          </div>
-        </li>
-        <li>
-          <span class="icon-bullet">2</span>
-          <div>
-            <strong>Turn the Switch from Gray to Blue:</strong> Gray means sleeping (OFF). Blue or green means awake (ON). Flip it to ON!
-          </div>
-        </li>
-        <li>
-          <span class="icon-bullet">3</span>
-          <div>
-            <strong>Why 2 permissions?</strong>
-            <br>• <strong>Input Monitoring</strong> gives SwitchFix <em>"Eyes"</em> (to see when you make a typo).
-            <br>• <strong>Accessibility</strong> gives SwitchFix <em>"Hands"</em> (to erase the typo and type the correct word).
-          </div>
-        </li>
-      </ul>
-    </div>
-
-    <!-- STEP 1: Installation -->
-    <div class="card" id="card-step-1">
+  <main class="container">
+    <section class="card" id="install" aria-labelledby="install-title">
       <div class="step-header">
-        <div class="step-num">1</div>
+        <div class="step-num" aria-hidden="true">1</div>
         <div class="step-info">
-          <h2>Run the Installer in Terminal</h2>
-          <p>This downloads the latest SwitchFix app safely to your Applications folder.</p>
+          <h2 id="install-title">Install SwitchFix</h2>
+          <p>Free. macOS 13 or later. Apple Silicon and Intel.</p>
         </div>
       </div>
-
-      <p style="font-size: 15px; margin-bottom: 10px;">
-        Open <strong>Terminal</strong> (press <kbd style="background:var(--border); padding:2px 6px; border-radius:4px; font-size:13px;">Command ⌘ + Space</kbd>, type <em>Terminal</em>, press Enter), then paste this:
-      </p>
-
+      <p>Open <strong>Terminal</strong> with <kbd>Command + Space</kbd>. Paste the command and press <strong>Return</strong>.</p>
       <div class="code-box">
         <span class="code-text" id="install-cmd">/bin/bash -o pipefail -c 'curl --fail --location --silent --show-error https://raw.githubusercontent.com/rundax/SwitchFix/master/install.sh | /bin/bash'</span>
         <button class="copy-btn" onclick="copyInstallCommand()">
-          <span id="copy-icon">📋</span>
+          <svg id="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>
           <span id="copy-label" aria-live="polite">Copy</span>
         </button>
       </div>
+      <p class="guide-note">Run without <code>sudo</code>. The installer puts the app in Applications. <strong>macOS may block the first launch</strong> because this free build is not notarized by Apple. Follow step 2 instead of reinstalling.</p>
+      <p class="guide-note">Prefer a download? Get the <a href="https://github.com/rundax/SwitchFix/releases/latest">latest ZIP for your Mac</a>, extract it, and move SwitchFix to Applications.</p>
+    </section>
 
-      <div class="tip-box">
-        <span class="emoji">💡</span>
-        <div>
-          <strong>Helpful Tip:</strong> After pasting the command and pressing <kbd style="background:var(--border); padding:2px 6px; border-radius:4px; font-size:13px;">Enter ↵</kbd>, the installer downloads, verifies, and installs SwitchFix automatically. Once complete, SwitchFix will open to guide you through permissions.
-        </div>
-      </div>
-    </div>
-
-    <!-- STEP 2: Input Monitoring (Eyes) -->
-    <div class="card" id="card-step-2">
+    <section class="card" id="open-app" aria-labelledby="open-title">
       <div class="step-header">
-        <div class="step-num" id="step-num-2">2</div>
+        <div class="step-num" aria-hidden="true">2</div>
         <div class="step-info">
-          <h2>Give SwitchFix "Eyes" (Input Monitoring)</h2>
-          <p>This lets SwitchFix notice when you accidentally type in the wrong language.</p>
+          <h2 id="open-title">Let macOS open the app</h2>
+          <p>Already open? Skip to <a href="#allow-access">typing access</a>.</p>
         </div>
       </div>
+      <div class="launch-note">
+        <p><strong>“SwitchFix” Not Opened?</strong> Click <strong>Done</strong>, not <strong>Move to Bin</strong>.</p>
+        <p class="guide-note">Approve only the SwitchFix release you intentionally downloaded and trust.</p>
+      </div>
+      <ol class="guide-list">
+        <li>
+          <div class="settings-location">
+            <div>
+              <p>Open <strong>System Settings</strong>. Choose <strong>Privacy &amp; Security</strong> in the <strong>left sidebar</strong>.</p>
+              <a class="settings-link" href="x-apple.systempreferences:com.apple.preference.security">Open Privacy &amp; Security</a>
+              <p class="guide-note">Shortcut for your Mac. You can also open it manually.</p>
+            </div>
+            <img src="images/privacy-security-sidebar.jpg" alt="System Settings sidebar with Privacy &amp; Security selected in blue" width="406" height="258">
+          </div>
+        </li>
+        <li>
+          <p>In the <strong>right pane, scroll down</strong> past the permission lists to <strong>Security</strong>. Find the SwitchFix warning and click <strong>Open Anyway</strong>.</p>
+          <figure class="approval-screenshot">
+            <img src="images/gatekeeper-open-anyway.png" alt="Security section showing SwitchFix was blocked, with the Open Anyway button on the right" width="952" height="380">
+            <figcaption>Leave “Allow applications from” unchanged. Click only <strong>Open Anyway</strong> beside SwitchFix. <a href="images/gatekeeper-open-anyway.png" target="_blank" rel="noopener">View full-size screenshot</a>.</figcaption>
+          </figure>
+        </li>
+        <li><p>Authenticate if asked, then click <strong>Open</strong> in the confirmation. If needed, open <strong>Finder → Applications → SwitchFix</strong> again.</p></li>
+      </ol>
+      <details class="guide-details" id="launch-help">
+        <summary>Can't find Open Anyway?</summary>
+        <p>Open SwitchFix from Applications again, click <strong>Done</strong>, then return here and scroll down to <strong>Security</strong>. The approval option is available for about an hour after a blocked launch.</p>
+        <p>If you chose <strong>Move to Bin</strong>, install it again first. On a managed work or school Mac, ask your administrator if approval is disabled.</p>
+        <p>Do not disable Gatekeeper. These steps are for an unverified-app warning, not a malware detection. <a href="https://support.apple.com/en-us/102445" target="_blank" rel="noopener">Apple's guidance</a>.</p>
+      </details>
+    </section>
 
-      <p style="font-size: 15px; margin-bottom: 16px;">
-        In <strong>System Settings → Privacy & Security → Input Monitoring</strong>, flip the switch next to <strong>SwitchFix</strong> to <strong>Blue (ON)</strong>.
-      </p>
+    <section class="card" id="allow-access" aria-labelledby="access-title">
+      <div class="step-header">
+        <div class="step-num" aria-hidden="true">3</div>
+        <div class="step-info">
+          <h2 id="access-title">Allow typing access</h2>
+          <p>Now use SwitchFix's setup window, not this webpage.</p>
+        </div>
+      </div>
+      <ol class="guide-list">
+        <li>For <strong>Accessibility</strong>, click <strong>Open Settings + Show App</strong>. Enable SwitchFix in the Settings pane that opens. If it is missing, click <strong>+</strong> and add it from Applications.</li>
+        <li><strong>Only if Keyboard input access is Unavailable:</strong> use the setup window's Input Monitoring button and enable SwitchFix there. If access already says <strong>Available</strong>, skip this—even if there is no Input Monitoring entry.</li>
+        <li>Restart SwitchFix if macOS asks. Return to the app and click <strong>Check Again</strong>. If prompted, add two supported layouts in <strong>System Settings → Keyboard → Text Input → Edit</strong>.</li>
+      </ol>
+      <div class="ready-note"><strong>Setup complete?</strong> Click <strong>Try a correction</strong> in the app to confirm it works. Look for the <strong>Ab</strong> icon in your menu bar, near the clock—not in the Dock.</div>
+      <details class="guide-details">
+        <summary>Permission is on, but access is still unavailable?</summary>
+        <p>Updates can leave a stale entry. In the affected permission pane, remove the old SwitchFix with <strong>−</strong>, add the current app from Applications with <strong>+</strong>, and enable it. Restart if asked, then click <strong>Check Again</strong> in SwitchFix.</p>
+      </details>
+    </section>
 
+    <section class="guide-extras" aria-labelledby="practice-title">
+      <h2 id="practice-title">Need a visual example?</h2>
+      <p>Optional practice. This page cannot read or change your Mac's permissions.</p>
+      <details class="guide-details practice-example" id="practice-acc">
+        <summary>See the Accessibility switch</summary>
       <!-- Interactive Switch Simulator -->
       <div class="simulation-box">
         <div class="sim-header">
-          <span>🎮 Interactive Practice Simulator</span>
-        </div>
-
-        <div class="macos-window-mock">
-          <div class="window-titlebar">
-            <div class="window-dots">
-              <div class="dot red"></div>
-              <div class="dot yellow"></div>
-              <div class="dot green"></div>
-            </div>
-            <span>System Settings — Input Monitoring</span>
-          </div>
-          <div class="window-content">
-            <div class="mock-row" id="row-input">
-              <div class="app-meta">
-                <img src="images/app_icon.svg" alt="SwitchFix Icon">
-                <div class="app-name-block">
-                  <span class="app-name">SwitchFix</span>
-                  <span class="app-desc">Allow keyboard detection</span>
-                </div>
-              </div>
-              <div class="switch-control-group">
-                <div class="switch-callout" id="callout-input" onclick="togglePermission('input')">
-                  <span>Click to Turn ON</span>
-                  <span>👉</span>
-                </div>
-                <div class="switch-interactive-wrapper">
-                  <div class="switch-beacon" id="beacon-input"></div>
-                  <div class="macos-switch" id="switch-input" onclick="togglePermission('input')" tabindex="0" role="switch" aria-checked="false" aria-label="Toggle SwitchFix Input Monitoring permission">
-                    <div class="macos-switch-thumb"></div>
-                  </div>
-                  <div class="hand-pointer-guide" id="pointer-input">
-                    <svg viewBox="0 0 28 28" width="38" height="38" fill="none">
-                      <path d="M9.5 2C8.67 2 8 2.67 8 3.5V14.2L6.1 12.3C5.5 11.7 4.5 11.7 3.9 12.3C3.3 12.9 3.3 13.9 3.9 14.5L9.7 20.3C11.3 21.9 13.5 22.8 15.8 22.8H18C21.3 22.8 24 20.1 24 16.8V11.5C24 10.7 23.3 10 22.5 10C22.3 10 22.1 10.05 21.9 10.15C21.6 9.45 20.9 9 20 9C19.7 9 19.5 9.07 19.2 9.2C18.9 8.5 18.2 8 17.3 8C17.1 8 16.9 8.04 16.7 8.12C16.3 7.45 15.5 7 14.7 7C14.6 7 14.5 7.02 14.4 7.04V3.5C14.4 2.67 13.7 2 12.9 2H9.5Z" fill="#FFFFFF" stroke="#1D1D1F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="status-badge off" id="status-input">
-          <span>⚪ Switch is Gray (OFF) — Click the switch to turn it Blue</span>
-        </div>
-
-        <!-- Real Screenshot Toggle -->
-        <div class="view-toggle-row">
-          <button class="view-btn active" id="btn-toggle-input-sim" onclick="setInputView('sim')">Interactive Simulator</button>
-          <button class="view-btn" id="btn-toggle-input-real" onclick="setInputView('real')">Real Mac Screenshot</button>
-        </div>
-
-        <div class="screenshot-container" id="screenshot-input" style="display: none;">
-          <img id="img-input-screenshot" src="images/input_monitoring_off.png" alt="Clean Input Monitoring screenshot">
-        </div>
-      </div>
-
-      <div class="tip-box">
-        <span class="emoji">💡</span>
-        <div>
-          <strong>If macOS asks to "Quit &amp; Reopen":</strong> Click <strong>Quit &amp; Reopen</strong>. This allows SwitchFix to apply its new input monitoring permissions immediately.
-        </div>
-      </div>
-    </div>
-
-    <!-- STEP 3: Accessibility (Hands) -->
-    <div class="card" id="card-step-3">
-      <div class="step-header">
-        <div class="step-num" id="step-num-3">3</div>
-        <div class="step-info">
-          <h2>Give SwitchFix "Hands" (Accessibility)</h2>
-          <p>This allows SwitchFix to delete the mistyped letters and type the right ones.</p>
-        </div>
-      </div>
-
-      <p style="font-size: 15px; margin-bottom: 16px;">
-        In <strong>System Settings → Privacy & Security → Accessibility</strong>, flip the switch next to <strong>SwitchFix</strong> to <strong>Blue (ON)</strong>.
-      </p>
-
-      <!-- Interactive Switch Simulator -->
-      <div class="simulation-box">
-        <div class="sim-header">
-          <span>🎮 Interactive Practice Simulator</span>
+          <span>Practice only — not your Mac settings</span>
         </div>
 
         <div class="macos-window-mock">
@@ -1056,7 +838,7 @@
               <div class="switch-control-group">
                 <div class="switch-callout" id="callout-acc" onclick="togglePermission('acc')">
                   <span>Click to Turn ON</span>
-                  <span>👉</span>
+                  <span aria-hidden="true">→</span>
                 </div>
                 <div class="switch-interactive-wrapper">
                   <div class="switch-beacon" id="beacon-acc"></div>
@@ -1075,7 +857,7 @@
         </div>
 
         <div class="status-badge off" id="status-acc">
-          <span>⚪ Switch is Gray (OFF) — Click the switch to turn it Blue</span>
+          <span>Practice switch is OFF — click to try it</span>
         </div>
 
         <!-- Real Screenshot Toggle -->
@@ -1089,40 +871,83 @@
         </div>
       </div>
 
-      <div class="tip-box">
-        <span class="emoji">🔒</span>
-        <div>
-          <strong>If macOS asks for your Password or Touch ID:</strong> This is standard macOS security when changing system settings. Simply authenticate with Touch ID or enter your Mac password.
+
+      </details>
+      <details class="guide-details practice-example" id="practice-input">
+        <summary>See Input Monitoring, if needed</summary>
+      <!-- Interactive Switch Simulator -->
+      <div class="simulation-box">
+        <div class="sim-header">
+          <span>Practice only — not your Mac settings</span>
+        </div>
+
+        <div class="macos-window-mock">
+          <div class="window-titlebar">
+            <div class="window-dots">
+              <div class="dot red"></div>
+              <div class="dot yellow"></div>
+              <div class="dot green"></div>
+            </div>
+            <span>System Settings — Input Monitoring</span>
+          </div>
+          <div class="window-content">
+            <div class="mock-row" id="row-input">
+              <div class="app-meta">
+                <img src="images/app_icon.svg" alt="SwitchFix Icon">
+                <div class="app-name-block">
+                  <span class="app-name">SwitchFix</span>
+                  <span class="app-desc">Allow keyboard detection</span>
+                </div>
+              </div>
+              <div class="switch-control-group">
+                <div class="switch-callout" id="callout-input" onclick="togglePermission('input')">
+                  <span>Click to Turn ON</span>
+                  <span aria-hidden="true">→</span>
+                </div>
+                <div class="switch-interactive-wrapper">
+                  <div class="switch-beacon" id="beacon-input"></div>
+                  <div class="macos-switch" id="switch-input" onclick="togglePermission('input')" tabindex="0" role="switch" aria-checked="false" aria-label="Toggle SwitchFix Input Monitoring permission">
+                    <div class="macos-switch-thumb"></div>
+                  </div>
+                  <div class="hand-pointer-guide" id="pointer-input">
+                    <svg viewBox="0 0 28 28" width="38" height="38" fill="none">
+                      <path d="M9.5 2C8.67 2 8 2.67 8 3.5V14.2L6.1 12.3C5.5 11.7 4.5 11.7 3.9 12.3C3.3 12.9 3.3 13.9 3.9 14.5L9.7 20.3C11.3 21.9 13.5 22.8 15.8 22.8H18C21.3 22.8 24 20.1 24 16.8V11.5C24 10.7 23.3 10 22.5 10C22.3 10 22.1 10.05 21.9 10.15C21.6 9.45 20.9 9 20 9C19.7 9 19.5 9.07 19.2 9.2C18.9 8.5 18.2 8 17.3 8C17.1 8 16.9 8.04 16.7 8.12C16.3 7.45 15.5 7 14.7 7C14.6 7 14.5 7.02 14.4 7.04V3.5C14.4 2.67 13.7 2 12.9 2H9.5Z" fill="#FFFFFF" stroke="#1D1D1F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="status-badge off" id="status-input">
+          <span>Practice switch is OFF — click to try it</span>
+        </div>
+
+        <!-- Real Screenshot Toggle -->
+        <div class="view-toggle-row">
+          <button class="view-btn active" id="btn-toggle-input-sim" onclick="setInputView('sim')">Interactive Simulator</button>
+          <button class="view-btn" id="btn-toggle-input-real" onclick="setInputView('real')">Real Mac Screenshot</button>
+        </div>
+
+        <div class="screenshot-container" id="screenshot-input" style="display: none;">
+          <img id="img-input-screenshot" src="images/input_monitoring_off.png" alt="Clean Input Monitoring screenshot">
         </div>
       </div>
-    </div>
 
-    <!-- STEP 4: Success & Typing Playground -->
-    <div class="card" id="card-step-4">
-      <div class="step-header">
-        <div class="step-num" id="step-num-4">4</div>
-        <div class="step-info">
-          <h2>All Done! Look for the Menu Bar Icon</h2>
-          <p>SwitchFix is now running quietly in the background.</p>
-        </div>
-      </div>
 
-      <p style="font-size: 15px; margin-bottom: 16px;">
-        Look at your Mac's top menu bar (near the clock). You will see the <strong style="color:var(--accent);">Ab</strong> icon. Click it to see both green checkmarks:
-      </p>
-
-      <div style="text-align: center; margin: 20px 0;">
-        <img src="images/switchfix_status.png" alt="SwitchFix All Allowed Status" style="max-width: 480px; width: 100%; border-radius: var(--radius-md); box-shadow: 0 6px 20px rgba(0,0,0,0.08); border: 1px solid var(--border);">
-      </div>
-
+      </details>
+      <details class="guide-details" id="practice-correction">
+        <summary>Preview a text correction</summary>
       <!-- Live Typing Playground -->
       <div class="playground-box">
-        <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 6px;">🎉 Try the Magic Simulator!</h3>
+        <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 6px;">Preview a correction</h3>
         <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 16px;">
-          Type a wrong-layout word below (or click a quick button) and hit <kbd style="background:var(--border); padding:2px 6px; border-radius:4px; font-size:12px;">Space</kbd> to see SwitchFix automatically correct it!
+          This browser demo does not test your installed app. Type a sample and press <kbd style="background:var(--border); padding:2px 6px; border-radius:4px; font-size:12px;">Space</kbd> to preview a correction.
         </p>
 
         <div class="demo-input-container">
+          <label class="sr-only" for="playground-input">Wrong-layout word to preview</label>
           <input type="text" id="playground-input" class="demo-input" placeholder="Type ghbdtn and press Space..." autocomplete="off">
         </div>
 
@@ -1135,105 +960,18 @@
 
         <div id="playground-feedback" class="demo-result-badge"></div>
       </div>
-    </div>
 
-    <!-- Frequently Asked Questions -->
-    <div style="margin-top: 50px;">
-      <h3 style="font-size: 22px; font-weight: 700; margin-bottom: 8px; text-align: center;">💬 Frequently Asked Questions</h3>
-      <p style="text-align: center; color: var(--text-muted); font-size: 15px; margin-bottom: 24px;">
-        Quick answers to common questions about permissions and settings.
-      </p>
-
-      <div class="faq-grid">
-        <div class="faq-item">
-          <h4><span>❓</span> What if I don't see SwitchFix in the list?</h4>
-          <p style="margin-bottom: 12px;">
-            Look at the bottom of the list for a small <strong>plus sign (+)</strong>. Click <strong>+</strong>, then go to your <strong>Applications</strong> folder, click <strong>SwitchFix</strong>, and click <strong>Open</strong>. Now flip its switch to Blue!
-          </p>
-          <div style="border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: 520px;">
-            <img src="images/finder_applications.png" alt="SwitchFix in Applications Folder" style="width: 100%; display: block;">
-          </div>
-        </div>
-
-        <div class="faq-item">
-          <h4><span>🔄</span> What if the switch is already ON, but SwitchFix says "Not allowed"?</h4>
-          <p>
-            This can happen after an update. In the SwitchFix window, click <strong>Reset Permissions</strong>, or in System Settings, click SwitchFix, click the minus sign <strong>(−)</strong> to remove it, and add it back with <strong>(+)</strong>.
-          </p>
-        </div>
-
-        <div class="faq-item">
-          <h4><span>↩️</span> What if it corrects something I didn't want?</h4>
-          <p>
-            Just press <kbd style="background:var(--border); padding:2px 6px; border-radius:4px; font-size:12px;">Command ⌘ + Z</kbd> (Undo) within 5 seconds, or tap the <kbd style="background:var(--border); padding:2px 6px; border-radius:4px; font-size:12px;">Caps Lock</kbd> key to instantly restore what you originally typed.
-          </p>
-        </div>
-
-        <div class="faq-item">
-          <h4><span>🔒</span> Does SwitchFix save my passwords?</h4>
-          <p>
-            <strong>Never!</strong> SwitchFix automatically turns itself completely off in password fields, code editors, and browsers when typing sensitive information. It runs 100% locally on your Mac with no internet required.
-          </p>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Sound effect toggle button -->
-  <button class="sound-toggle" onclick="toggleAudioMute()">
-    <span id="sound-icon">🔊</span>
-    <span id="sound-label">Sound Effects: On</span>
-  </button>
+      </details>
+    </section>
+    <p class="guide-footer">Free, open-source, and local to your Mac. <a href="docs/index.html">Back to SwitchFix</a> · <a href="https://github.com/rundax/SwitchFix/issues" target="_blank" rel="noopener">Get help</a></p>
+  </main>
 
   <script>
     // State management
     const state = {
       inputGranted: false,
-      accGranted: false,
-      soundEnabled: true,
-      audioCtx: null
+      accGranted: false
     };
-
-    // Web Audio Synthesizer for tactile feedback
-    function playClickSound(frequency = 600, duration = 0.05) {
-      if (!state.soundEnabled) return;
-      try {
-        if (!state.audioCtx) {
-          state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (state.audioCtx.state === 'suspended') {
-          state.audioCtx.resume();
-        }
-        const osc = state.audioCtx.createOscillator();
-        const gain = state.audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(frequency, state.audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(150, state.audioCtx.currentTime + duration);
-        gain.gain.setValueAtTime(0.25, state.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, state.audioCtx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(state.audioCtx.destination);
-        osc.start();
-        osc.stop(state.audioCtx.currentTime + duration);
-      } catch (e) {
-        // AudioContext not allowed or not supported
-      }
-    }
-
-    function playCelebrationFanfare() {
-      if (!state.soundEnabled) return;
-      const notes = [440, 554.37, 659.25, 880];
-      notes.forEach((freq, idx) => {
-        setTimeout(() => playClickSound(freq, 0.12), idx * 120);
-      });
-    }
-
-    function toggleAudioMute() {
-      state.soundEnabled = !state.soundEnabled;
-      document.getElementById('sound-icon').textContent = state.soundEnabled ? '🔊' : '🔇';
-      document.getElementById('sound-label').textContent = state.soundEnabled ? 'Sound Effects: On' : 'Sound Effects: Off';
-    }
 
     // Toggle permissions
     function togglePermission(type) {
@@ -1244,15 +982,12 @@
         state.accGranted = !state.accGranted;
         updateUI('acc', state.accGranted);
       }
-      playClickSound(state.inputGranted || state.accGranted ? 800 : 350);
-      updateOverallProgress();
     }
 
     function updateUI(type, isGranted) {
       const switchEl = document.getElementById(`switch-${type}`);
       const rowEl = document.getElementById(`row-${type}`);
       const statusEl = document.getElementById(`status-${type}`);
-      const cardEl = document.getElementById(type === 'input' ? 'card-step-2' : 'card-step-3');
       const calloutEl = document.getElementById(`callout-${type}`);
       const beaconEl = document.getElementById(`beacon-${type}`);
       const pointerEl = document.getElementById(`pointer-${type}`);
@@ -1262,41 +997,22 @@
         switchEl.classList.add('checked');
         switchEl.setAttribute('aria-checked', 'true');
         rowEl.classList.add('is-active');
-        cardEl.classList.add('completed');
         if (calloutEl) calloutEl.classList.add('hidden');
         if (beaconEl) beaconEl.classList.add('hidden');
         if (pointerEl) pointerEl.classList.add('hidden');
         statusEl.className = 'status-badge on';
-        statusEl.innerHTML = '<span>✅ Allowed (Blue) — Great job! Permission is active!</span>';
+        statusEl.innerHTML = '<span>Practice switch is ON — enable it in System Settings too</span>';
         if (imgEl) imgEl.src = `images/${type === 'input' ? 'input_monitoring' : 'accessibility'}_on.png`;
       } else {
         switchEl.classList.remove('checked');
         switchEl.setAttribute('aria-checked', 'false');
         rowEl.classList.remove('is-active');
-        cardEl.classList.remove('completed');
         if (calloutEl) calloutEl.classList.remove('hidden');
         if (beaconEl) beaconEl.classList.remove('hidden');
         if (pointerEl) pointerEl.classList.remove('hidden');
         statusEl.className = 'status-badge off';
-        statusEl.innerHTML = '<span>⚪ Switch is Gray (OFF) — Click the switch to turn it Blue</span>';
+        statusEl.innerHTML = '<span>Practice switch is OFF — click to try it</span>';
         if (imgEl) imgEl.src = `images/${type === 'input' ? 'input_monitoring' : 'accessibility'}_off.png`;
-      }
-    }
-
-    function updateOverallProgress() {
-      const count = (state.inputGranted ? 1 : 0) + (state.accGranted ? 1 : 0);
-      const percent = (count / 2) * 100;
-      document.getElementById('progress-bar').style.width = percent + '%';
-      document.getElementById('progress-text').textContent = `Setup: ${count} of 2 permissions granted (${percent}%)`;
-
-      if (count === 2) {
-        document.getElementById('card-step-4').classList.add('completed');
-        document.getElementById('step-num-4').style.background = 'var(--success)';
-        fireConfetti();
-        playCelebrationFanfare();
-      } else {
-        document.getElementById('card-step-4').classList.remove('completed');
-        document.getElementById('step-num-4').style.background = 'var(--accent)';
       }
     }
 
@@ -1305,7 +1021,7 @@
       const isSim = mode === 'sim';
       document.getElementById('btn-toggle-input-sim').classList.toggle('active', isSim);
       document.getElementById('btn-toggle-input-real').classList.toggle('active', !isSim);
-      document.querySelector('#card-step-2 .macos-window-mock').style.display = isSim ? 'block' : 'none';
+      document.querySelector('#practice-input .macos-window-mock').style.display = isSim ? 'block' : 'none';
       document.getElementById('screenshot-input').style.display = isSim ? 'none' : 'block';
     }
 
@@ -1313,7 +1029,7 @@
       const isSim = mode === 'sim';
       document.getElementById('btn-toggle-acc-sim').classList.toggle('active', isSim);
       document.getElementById('btn-toggle-acc-real').classList.toggle('active', !isSim);
-      document.querySelector('#card-step-3 .macos-window-mock').style.display = isSim ? 'block' : 'none';
+      document.querySelector('#practice-acc .macos-window-mock').style.display = isSim ? 'block' : 'none';
       document.getElementById('screenshot-acc').style.display = isSim ? 'none' : 'block';
     }
 
@@ -1347,7 +1063,6 @@
       const command = document.getElementById('install-cmd');
       const text = command.innerText.trim();
       const label = document.getElementById('copy-label');
-      const icon = document.getElementById('copy-icon');
       let copied = false;
 
       try {
@@ -1370,12 +1085,9 @@
         selection.addRange(range);
       }
       clearTimeout(copyFeedbackTimer);
-      label.textContent = copied ? 'Copied! ✓' : 'Cmd+C to copy';
-      icon.textContent = copied ? '✅' : '⚠️';
-      if (copied) playClickSound(900);
+      label.textContent = copied ? 'Copied' : 'Cmd+C to copy';
       copyFeedbackTimer = setTimeout(() => {
         label.textContent = 'Copy';
-        icon.textContent = '📋';
       }, 3000);
     }
 
@@ -1461,7 +1173,6 @@
       const interval = addPlaygroundTimer(() => {
         if (idx < fromText.length) {
           playgroundInput.value += fromText[idx];
-          playClickSound(400 + idx * 30, 0.03);
           idx++;
         } else {
           removePlaygroundTimer(interval);
@@ -1476,8 +1187,7 @@
       clearActivePlaygroundTimers();
       isCorrectionAnimating = true;
       playgroundInput.readOnly = true;
-      playgroundFeedback.innerHTML = `<span style="color:var(--warning)">⚡ Typo detected! Correcting layout...</span>`;
-      playClickSound(700, 0.08);
+      playgroundFeedback.innerHTML = `<span style="color:var(--warning)">Correcting the sample layout…</span>`;
 
       // Backspace animation
       let len = playgroundInput.value.length;
@@ -1500,8 +1210,7 @@
               playgroundInput.value += ' ';
               const safeFrom = escapeHtml(fromText);
               const safeTo = escapeHtml(toText);
-              playgroundFeedback.innerHTML = `✨ <strong>Corrected:</strong> "${safeFrom}" ➔ <strong style="color:var(--success); font-size:18px;">${safeTo}</strong> 🎉`;
-              playClickSound(1000, 0.1);
+              playgroundFeedback.innerHTML = `<strong>Corrected:</strong> "${safeFrom}" ➔ <strong style="color:var(--success); font-size:18px;">${safeTo}</strong>`;
             }
           }, 70, true);
         }
@@ -1525,69 +1234,6 @@
       });
     });
 
-    // Confetti engine
-    function fireConfetti() {
-      const canvas = document.getElementById('confetti-canvas');
-      const ctx = canvas.getContext('2d');
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-
-      const particles = [];
-      const colors = ['#007aff', '#34c759', '#ff9500', '#ff2d55', '#5856d6', '#af52de'];
-
-      for (let i = 0; i < 90; i++) {
-        particles.push({
-          x: canvas.width / 2,
-          y: canvas.height / 2,
-          r: Math.random() * 6 + 4,
-          dx: (Math.random() - 0.5) * 14,
-          dy: (Math.random() - 0.7) * 16,
-          color: colors[Math.floor(Math.random() * colors.length)],
-          tilt: Math.random() * 10,
-          tiltAngle: 0,
-          tiltAngleInc: Math.random() * 0.1 + 0.05,
-          alpha: 1
-        });
-      }
-
-      let animationFrame;
-      function render() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        let alive = false;
-        for (let p of particles) {
-          p.x += p.dx;
-          p.y += p.dy;
-          p.dy += 0.35; // gravity
-          p.tiltAngle += p.tiltAngleInc;
-          p.tilt = Math.sin(p.tiltAngle) * 12;
-          p.alpha -= 0.008;
-
-          if (p.alpha > 0) {
-            alive = true;
-            ctx.save();
-            ctx.globalAlpha = p.alpha;
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.ellipse(p.x, p.y, p.r, Math.abs(p.tilt), 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-          }
-        }
-        if (alive) {
-          animationFrame = requestAnimationFrame(render);
-        } else {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          cancelAnimationFrame(animationFrame);
-        }
-      }
-      render();
-    }
-
-    window.addEventListener('resize', () => {
-      const canvas = document.getElementById('confetti-canvas');
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    });
   </script>
 </body>
 </html>

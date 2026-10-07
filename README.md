@@ -13,7 +13,7 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 
 <p align="center">
   <a href="https://rundax.github.io/SwitchFix/#video">
-    <img src="images/SwitchFix-video-poster.jpg" alt="SwitchFix 20s Launch Overview" width="800" style="border-radius: 12px; max-width: 100%;">
+    <img src="docs/images/SwitchFix-video-poster.jpg" alt="SwitchFix 20s Launch Overview" width="800" style="border-radius: 12px; max-width: 100%;">
   </a>
   <br>
   <em>🎬 <strong><a href="https://rundax.github.io/SwitchFix/#video">Watch the 20-second video demo</a></strong> with sound and narration on the website.</em>

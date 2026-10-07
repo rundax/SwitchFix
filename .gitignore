@@ -23,3 +23,5 @@ Sources/Dictionary/Resources/uk_full.txt
 .playwright-cli/
 temp.txt
 *.key
+brag-output/
+brag-output-*/

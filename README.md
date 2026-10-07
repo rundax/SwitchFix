@@ -3,8 +3,17 @@
 A macOS menu bar utility that automatically corrects keyboard layout mistakes. Type in the wrong layout (e.g., English instead of Ukrainian/Russian) and SwitchFix detects it, deletes the mistyped word, switches the layout, and retypes the correct text — like PuntoSwitcher, but native, lightweight, and modern.
 
 [![Website](https://img.shields.io/badge/Website-rundax.github.io%2FSwitchFix-blue?style=flat-square)](https://rundax.github.io/SwitchFix/)
+[![Watch Demo Video](https://img.shields.io/badge/Demo-20s%20Video-purple?style=flat-square)](https://rundax.github.io/SwitchFix/#video)
 [![Setup Guide](https://img.shields.io/badge/Guide-Interactive%20Setup-green?style=flat-square)](https://rundax.github.io/SwitchFix/tutorial/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+
+<p align="center">
+  <a href="https://rundax.github.io/SwitchFix/#video">
+    <img src="images/SwitchFix-video-poster.jpg" alt="SwitchFix 20s Launch Overview" width="800" style="border-radius: 12px; max-width: 100%;">
+  </a>
+  <br>
+  <em>🎬 <strong><a href="https://rundax.github.io/SwitchFix/#video">Watch the 20-second video demo</a></strong> with sound and narration on the website.</em>
+</p>
 
 ![SwitchFix Demo](SwitchFix.gif)
 ![SwitchFix App Icon](Resources/Assets.xcassets/AppIcon.svg)

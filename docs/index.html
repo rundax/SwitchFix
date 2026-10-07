@@ -266,6 +266,25 @@
       border-color: var(--text-muted);
     }
 
+    /* Video Showcase */
+    .video-wrapper {
+      max-width: 860px;
+      margin: 0 auto 50px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .video-wrapper video {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #0c0c0e;
+    }
+
     /* Live Interactive Demo */
     .demo-wrapper {
       max-width: 780px;
@@ -738,7 +757,7 @@
       color: var(--text-main);
     }
     :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
-    #install { scroll-margin-top: 80px; }
+    #install, #video, #demo, #features { scroll-margin-top: 80px; }
     @media (max-width: 600px) {
       .nav-secondary { display: none; }
       .nav-links { gap: 12px; }
@@ -762,6 +781,7 @@
       </a>
       <nav>
         <ul class="nav-links">
+          <li class="nav-secondary"><a href="#video">Watch Video</a></li>
           <li class="nav-secondary"><a href="#features">Features</a></li>
           <li class="nav-secondary"><a href="#demo">Try Demo</a></li>
           <li><a href="#install">Install</a></li>
@@ -792,11 +812,40 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           Quick Install
         </a>
+        <a href="#video" class="btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Watch 20s Demo
+        </a>
         <a href="tutorial/" class="btn-secondary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
           Interactive Setup Guide
         </a>
       </div>
+    </div>
+  </section>
+
+  <!-- Video Showcase Section -->
+  <section id="video" class="container">
+    <div class="video-wrapper">
+      <div class="mac-window-bar">
+        <div class="mac-dots">
+          <div class="mac-dot dot-close"></div>
+          <div class="mac-dot dot-min"></div>
+          <div class="mac-dot dot-max"></div>
+        </div>
+        <div class="mac-title">SwitchFix in Action — 20s Launch Overview</div>
+        <div style="width: 52px;"></div>
+      </div>
+      <video
+        id="switchfix-video"
+        controls
+        playsinline
+        preload="metadata"
+        poster="images/SwitchFix-video-poster.jpg"
+      >
+        <source src="SwitchFix-demo.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+      </video>
     </div>
   </section>
 

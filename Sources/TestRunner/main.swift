@@ -1361,51 +1361,66 @@ runSuite("WordValidator: 'блін' is recognized as a valid Ukrainian word via 
     assert(result.isValid, "'блін' should be a valid word in Ukrainian")
 }
 
-runSuite("LayoutDetector: Cyrillic-to-Cyrillic cross-conversion is disabled by default") {
-    let detector = LayoutDetector()
-    let mockDelegate = MockDetectorDelegate()
-    detector.delegate = mockDelegate
-    detector.currentLayout = .ukrainian
-    detector.ukrainianFromVariant = .legacy
-    detector.allowedLayouts = [.english, .ukrainian, .russian]
-    assertEqual(detector.allowCyrillicToCyrillic, false, "allowCyrillicToCyrillic must default to false")
-
-    for char in "блін" {
+func flushWord(_ detector: LayoutDetector, _ word: String) -> DetectionResult? {
+    detector.discardBuffer()
+    for char in word {
         detector.addCharacter(String(char))
     }
-    let result = detector.flushBuffer(boundaryCharacter: " ")
-    assertEqual(mockDelegate.results.count, 0, "no Russian correction should be emitted for 'блін'")
-    assert(result == nil, "'блін' must not be converted to Russian 'блин'")
+    return detector.flushBuffer(boundaryCharacter: " ")
 }
 
-runSuite("LayoutDetector: Cyrillic-to-Cyrillic conversion respects allowCyrillicToCyrillic setting") {
+runSuite("LayoutDetector: Cyrillic source is never converted to another Cyrillic layout") {
     let detector = LayoutDetector()
-    let mockDelegate = MockDetectorDelegate()
-    detector.delegate = mockDelegate
     detector.currentLayout = .ukrainian
     detector.ukrainianFromVariant = .legacy
     detector.allowedLayouts = [.english, .ukrainian, .russian]
-    detector.allowCyrillicToCyrillic = false
+    assert(flushWord(detector, "блін") == nil, "'блін' must not be converted to Russian 'блин'")
+    assert(flushWord(detector, "єто") == nil, "'єто' must not be converted to Russian 'это'")
+    detector.currentLayout = .russian
+    assert(flushWord(detector, "вы") == nil || flushWord(detector, "вы")?.targetLayout == .english,
+           "Russian text must never become Ukrainian")
+}
 
-    // In legacy Ukrainian mapping: "єто" converts to Russian "это"
-    for char in "єто" {
-        detector.addCharacter(String(char))
-    }
-    let suppressedResult = detector.flushBuffer(boundaryCharacter: " ")
-    assertEqual(mockDelegate.results.count, 0, "Cyrillic cross-conversion must be suppressed when disabled")
-    assert(suppressedResult == nil, "result should be nil when allowCyrillicToCyrillic is false")
+runSuite("LayoutMapper: Ukrainian <-> Russian conversion is the identity") {
+    assertEqual(LayoutMapper.convert("єто", from: .ukrainian, to: .russian), "єто", "UK→RU must not convert")
+    assertEqual(LayoutMapper.convert("вы", from: .russian, to: .ukrainian), "вы", "RU→UK must not convert")
+    let targets = LayoutMapper.convertToAlternatives("вы", from: .russian).map { $0.0 }
+    assertEqual(targets, [.english], "a Cyrillic source may only convert to English")
+}
 
-    // Now enable Cyrillic-to-Cyrillic
-    detector.allowCyrillicToCyrillic = true
-    for char in "єто" {
-        detector.addCharacter(String(char))
-    }
-    let allowedResult = detector.flushBuffer(boundaryCharacter: " ")
-    assert(allowedResult != nil, "conversion should be allowed when allowCyrillicToCyrillic is true")
-    if let allowedResult {
-        assertEqual(allowedResult.targetLayout, .russian, "target layout should be Russian")
-        assertEqual(allowedResult.convertedWord, "это", "converted word should be Russian 'это'")
-    }
+runSuite("LayoutDetector: Latin typed under Ukrainian layout is never replaced by Russian") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+    detector.currentInputSourceID = "com.apple.keylayout.Ukrainian"
+    detector.activeSourceSupportedLayouts = [.ukrainian]
+    detector.allowedLayouts = [.english, .ukrainian, .russian]
+    detector.preferredSourceIDProvider = { layout in layout == .ukrainian ? "com.apple.keylayout.Ukrainian" : nil }
+    detector.preferredCyrillicLayout = .ukrainian
+    assert(flushWord(detector, "ds") == nil, "'ds' under Ukrainian must not become Russian 'вы'")
+    detector.preferredCyrillicLayout = nil
+    assert(flushWord(detector, "ds") == nil, "'ds' under Ukrainian must not become Russian even without history")
+}
+
+runSuite("LayoutDetector: Latin text converts only to the last-used Cyrillic layout") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+    detector.currentInputSourceID = "com.apple.keylayout.ABC"
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian, .russian]
+    detector.preferredSourceIDProvider = { _ in nil }
+
+    detector.preferredCyrillicLayout = .ukrainian
+    let ua = flushWord(detector, "ghbdsn")
+    assertEqual(ua?.targetLayout, .ukrainian, "Latin 'ghbdsn' should convert to Ukrainian when UA was last used")
+    assertEqual(ua?.convertedWord, "привіт", "converted word should be Ukrainian 'привіт'")
+
+    detector.preferredCyrillicLayout = .russian
+    let ru = flushWord(detector, "ghbdtn")
+    assertEqual(ru?.targetLayout, .russian, "Latin 'ghbdtn' should convert to Russian when RU was last used")
+    assertEqual(ru?.convertedWord, "привет", "converted word should be Russian 'привет'")
+
+    detector.preferredCyrillicLayout = .ukrainian
+    assert(flushWord(detector, "ds")?.targetLayout != .russian, "'ds' must not become Russian 'вы' when UA was last used")
 }
 
 // =============================================================================

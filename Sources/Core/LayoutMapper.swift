@@ -102,23 +102,10 @@ public class LayoutMapper {
         return map
     }()
 
-    // RU → UK mapping for characters that differ between Russian and Ukrainian layouts.
-    private static let ruToUkStandard: [Character: Character] = [
-        "ы": "і", "э": "є", "ъ": "ї", "ё": "ґ",
-        "Ы": "І", "Э": "Є", "Ъ": "Ї", "Ё": "Ґ",
-    ]
-
-    private static let ruToUkLegacy: [Character: Character] = [
-        "ы": "и", "и": "і", "э": "є", "ъ": "ї", "ё": "ґ",
-        "Ы": "И", "И": "І", "Э": "Є", "Ъ": "Ї", "Ё": "Ґ",
-    ]
-
     // Pre-built reverse mappings
     private static let ruToEn: [Character: Character] = buildReverse(enToRu)
     private static let ukStandardToEn: [Character: Character] = buildReverse(enToUkStandard)
     private static let ukLegacyToEn: [Character: Character] = buildReverse(enToUkLegacy)
-    private static let ukStandardToRu: [Character: Character] = buildReverse(ruToUkStandard)
-    private static let ukLegacyToRu: [Character: Character] = buildReverse(ruToUkLegacy)
 
     private static func buildReverse(_ map: [Character: Character]) -> [Character: Character] {
         var result = [Character: Character]()
@@ -142,10 +129,7 @@ public class LayoutMapper {
         case (.russian, .english):   return ruToEn
         case (.ukrainian, .english):
             return ukrainianFromVariant == .legacy ? ukLegacyToEn : ukStandardToEn
-        case (.russian, .ukrainian):
-            return ukrainianToVariant == .legacy ? ruToUkLegacy : ruToUkStandard
-        case (.ukrainian, .russian):
-            return ukrainianFromVariant == .legacy ? ukLegacyToRu : ukStandardToRu
+        // Cyrillic ↔ Cyrillic (Ukrainian ↔ Russian) conversion is intentionally unsupported.
         default: return nil
         }
     }
@@ -214,5 +198,29 @@ public class LayoutMapper {
             }
         }
         return results
+    }
+
+    /// Whether `target` may be used when correcting text typed on `source`.
+    /// Only Cyrillic ↔ Latin conversions are allowed. Latin text maps to exactly one Cyrillic
+    /// layout: `currentCyrillic` when the user is on a Cyrillic layout (plus the other Cyrillic
+    /// layouts of a hybrid active source), otherwise `preferredCyrillic`; with no history every
+    /// allowed Cyrillic layout is eligible.
+    public static func isEligibleTarget(
+        _ target: Layout,
+        source: Layout,
+        allowed: Set<Layout>,
+        current: Layout,
+        activeSourceSupported: Set<Layout>,
+        preferredCyrillic: Layout?
+    ) -> Bool {
+        guard allowed.contains(target) else { return false }
+        guard target.isCyrillic else { return true }
+        if source.isCyrillic { return false }
+        if current.isCyrillic {
+            if target == current { return true }
+            return activeSourceSupported.contains(current) && activeSourceSupported.contains(target)
+        }
+        guard let preferred = preferredCyrillic, allowed.contains(preferred) else { return true }
+        return target == preferred
     }
 }

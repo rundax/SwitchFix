@@ -69,8 +69,10 @@ public class LayoutDetector {
     /// Layouts that are allowed as correction targets (defaults to all).
     public var allowedLayouts: Set<Layout> = Set(Layout.allCases)
 
-    /// Whether to allow corrections between different Cyrillic layouts (e.g. Ukrainian ↔ Russian).
-    public var allowCyrillicToCyrillic: Bool = false
+    /// The Cyrillic layout the user is currently on, or was last on. Latin text is only ever
+    /// converted to this Cyrillic layout; `nil` means no history, so every allowed one is tried.
+    /// Cyrillic ↔ Cyrillic (Ukrainian ↔ Russian) conversion is intentionally unsupported.
+    public var preferredCyrillicLayout: Layout?
 
     private enum RecentOutcome {
         case valid(Layout)
@@ -294,7 +296,7 @@ public class LayoutDetector {
         // If the word is typed in a script not supported by active layouts, but is ALREADY valid
         // in an allowed alternative layout, switch layout without modifying the text (layout-only switch).
         if !activeLayouts.contains(sourceLayout), allowedLayouts.contains(sourceLayout) {
-            let isCyrillicCrossSwitch = !allowCyrillicToCyrillic && currentLayout.isCyrillic && sourceLayout.isCyrillic
+            let isCyrillicCrossSwitch = currentLayout.isCyrillic && sourceLayout.isCyrillic
             if !isCyrillicCrossSwitch {
                 let candidateLanguage = languageForLayout(sourceLayout)
                 if validator.validate(currentValidationInput, language: candidateLanguage, allowSuggestion: false).isValid {
@@ -392,11 +394,7 @@ public class LayoutDetector {
             ukrainianToVariant: ukrainianToVariant
         )
             .filter { targetLayout, _ in
-                guard allowedLayouts.contains(targetLayout) else { return false }
-                if !allowCyrillicToCyrillic && sourceLayout.isCyrillic && targetLayout.isCyrillic {
-                    return false
-                }
-                return true
+                isEligibleTarget(targetLayout, sourceLayout: sourceLayout)
             }
         for (targetLayout, converted) in alternatives {
             // Self-switch suppression: if target layout uses the exact same physical input source already active
@@ -622,7 +620,7 @@ public class LayoutDetector {
             ukrainianToVariant: ukrainianToVariant
         )
 
-        for (targetLayout, converted) in alternatives where allowedLayouts.contains(targetLayout) {
+        for (targetLayout, converted) in alternatives where isEligibleTarget(targetLayout, sourceLayout: sourceLayout) {
             guard targetLayout != sourceLayout,
                   !activeLayouts.contains(targetLayout),
                   !isSelfSwitch(targetLayout) else {
@@ -644,6 +642,17 @@ public class LayoutDetector {
         }
 
         return nil
+    }
+
+    private func isEligibleTarget(_ targetLayout: Layout, sourceLayout: Layout) -> Bool {
+        LayoutMapper.isEligibleTarget(
+            targetLayout,
+            source: sourceLayout,
+            allowed: allowedLayouts,
+            current: currentLayout,
+            activeSourceSupported: activeSourceSupportedLayouts,
+            preferredCyrillic: preferredCyrillicLayout
+        )
     }
 
     private func isSelfSwitch(_ targetLayout: Layout) -> Bool {

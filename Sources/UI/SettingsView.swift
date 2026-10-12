@@ -67,9 +67,6 @@ class SettingsViewModel: ObservableObject {
     @Published var enabledLayouts: Set<KeyboardLayout> = PreferencesManager.shared.enabledLayouts {
         didSet { PreferencesManager.shared.enabledLayouts = enabledLayouts }
     }
-    @Published var allowCyrillicToCyrillic: Bool = PreferencesManager.shared.allowCyrillicToCyrillic {
-        didSet { PreferencesManager.shared.allowCyrillicToCyrillic = allowCyrillicToCyrillic }
-    }
 
     init() {
         reloadLayouts()
@@ -89,9 +86,6 @@ class SettingsViewModel: ObservableObject {
         }
         if self.enabledLayouts != PreferencesManager.shared.enabledLayouts {
             self.enabledLayouts = PreferencesManager.shared.enabledLayouts
-        }
-        if self.allowCyrillicToCyrillic != PreferencesManager.shared.allowCyrillicToCyrillic {
-            self.allowCyrillicToCyrillic = PreferencesManager.shared.allowCyrillicToCyrillic
         }
         reloadLayouts()
     }
@@ -531,16 +525,6 @@ struct KeyboardLayoutsView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Allow Cyrillic-to-Cyrillic correction (Ukrainian ↔ Russian)", isOn: $model.allowCyrillicToCyrillic)
-                        .font(.subheadline)
-
-                    Text("Disabled by default to avoid unintended corrections between similar Cyrillic alphabets.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 4)
             }
         }
     }

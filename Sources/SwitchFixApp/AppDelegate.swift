@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SwitchFixLog.app.notice("launched, pid=\(ProcessInfo.processInfo.processIdentifier)")
+        PreferencesManager.shared.removeLegacySettings()
         statusBarController = StatusBarController()
         inputSourceManager.refreshCurrentInputSource()
         previousLayout = inputSourceManager.currentLayout()
@@ -529,9 +530,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let currentVariant = currentLayout == .ukrainian
             ? inputSourceManager.currentUkrainianVariant() ?? preferredVariant
             : preferredVariant
+        if currentLayout.isCyrillic {
+            PreferencesManager.shared.lastCyrillicLayout = currentLayout
+        }
         inputEngine?.updateDetectionConfiguration(
             allowedLayouts: effectiveAllowed,
-            allowCyrillicToCyrillic: PreferencesManager.shared.allowCyrillicToCyrillic,
+            preferredCyrillicLayout: PreferencesManager.shared.lastCyrillicLayout,
             activeSourceSupportedLayouts: inputSourceManager.activeSourceSupportedLayouts(),
             ukrainianFromVariant: currentVariant,
             ukrainianToVariant: preferredVariant

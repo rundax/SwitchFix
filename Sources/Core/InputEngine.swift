@@ -36,7 +36,7 @@ public final class InputEngine {
 
     private struct DetectionConfiguration {
         var allowedLayouts = Set(Layout.allCases)
-        var allowCyrillicToCyrillic: Bool = false
+        var preferredCyrillicLayout: Layout?
         var activeSourceSupportedLayouts: Set<Layout> = [.english]
         var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
         var ukrainianToVariant: UkrainianKeyboardVariant = .standard
@@ -158,8 +158,8 @@ public final class InputEngine {
                 return
             }
 
-            let configuration = self.detectionConfiguration.withLock { $0 }
-            guard !oldLayout.isCyrillic || !newLayout.isCyrillic || configuration.allowCyrillicToCyrillic else {
+            // Cyrillic ↔ Cyrillic (Ukrainian ↔ Russian) conversion is not supported.
+            guard !(oldLayout.isCyrillic && newLayout.isCyrillic) else {
                 return
             }
 
@@ -247,14 +247,14 @@ public final class InputEngine {
 
     public func updateDetectionConfiguration(
         allowedLayouts: Set<Layout>,
-        allowCyrillicToCyrillic: Bool = false,
+        preferredCyrillicLayout: Layout? = nil,
         activeSourceSupportedLayouts: Set<Layout> = [.english],
         ukrainianFromVariant: UkrainianKeyboardVariant,
         ukrainianToVariant: UkrainianKeyboardVariant
     ) {
         detectionConfiguration.withLock { value in
             value.allowedLayouts = allowedLayouts
-            value.allowCyrillicToCyrillic = allowCyrillicToCyrillic
+            value.preferredCyrillicLayout = preferredCyrillicLayout
             value.activeSourceSupportedLayouts = activeSourceSupportedLayouts
             value.ukrainianFromVariant = ukrainianFromVariant
             value.ukrainianToVariant = ukrainianToVariant
@@ -364,11 +364,16 @@ public final class InputEngine {
                 result = customDetection(request)
             } else {
                 let configuration = self.detectionConfiguration.withLock { $0 }
+                if request.context.layout.isCyrillic,
+                   request.word.unicodeScalars.contains(where: { $0.isASCII && $0.properties.isAlphabetic }),
+                   !request.word.unicodeScalars.contains(where: { (0x0400...0x04FF).contains($0.value) }) {
+                    self.logger.debug("capture mismatch: Latin characters captured under \(request.context.layout.rawValue) layout source=\(request.context.inputSourceID)")
+                }
                 self.detector.currentLayout = request.context.layout
                 self.detector.currentInputSourceID = request.context.inputSourceID
                 self.detector.activeSourceSupportedLayouts = configuration.activeSourceSupportedLayouts
                 self.detector.allowedLayouts = configuration.allowedLayouts
-                self.detector.allowCyrillicToCyrillic = configuration.allowCyrillicToCyrillic
+                self.detector.preferredCyrillicLayout = configuration.preferredCyrillicLayout
                 self.detector.ukrainianFromVariant = configuration.ukrainianFromVariant
                 self.detector.ukrainianToVariant = configuration.ukrainianToVariant
                 self.detector.discardBuffer()
@@ -502,7 +507,16 @@ public final class InputEngine {
                     from: context.layout,
                     ukrainianFromVariant: configuration.ukrainianFromVariant,
                     ukrainianToVariant: configuration.ukrainianToVariant
-                   ).first,
+                   ).first(where: { target, _ in
+                    LayoutMapper.isEligibleTarget(
+                        target,
+                        source: context.layout,
+                        allowed: configuration.allowedLayouts,
+                        current: context.layout,
+                        activeSourceSupported: configuration.activeSourceSupportedLayouts,
+                        preferredCyrillic: configuration.preferredCyrillicLayout
+                    )
+                   }),
                    converted != selectedText {
                     self.corrector.performSelectionCorrection(
                         selectedText: selectedText,

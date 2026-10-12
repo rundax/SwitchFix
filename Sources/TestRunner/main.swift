@@ -1356,6 +1356,11 @@ runSuite("InputSourceDiscoveryEngine: Apple native Ukrainian layout ignores Opti
     assertEqual(desc?.isCustom, false, "Apple native layout is not custom")
 }
 
+runSuite("WordValidator: 'VNC' and 'vnc' are recognized as valid English words via allow override") {
+    assert(WordValidator.shared.validate("vnc", language: .english).isValid, "'vnc' should be valid English")
+    assert(WordValidator.shared.validate("VNC", language: .english).isValid, "'VNC' should be valid English")
+}
+
 runSuite("WordValidator: 'блін' is recognized as a valid Ukrainian word via allow override") {
     let result = WordValidator.shared.validate("блін", language: .ukrainian)
     assert(result.isValid, "'блін' should be a valid word in Ukrainian")

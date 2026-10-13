@@ -1450,6 +1450,224 @@ runSuite("LayoutDetector: Latin text converts only to the last-used Cyrillic lay
 }
 
 // =============================================================================
+// Run-level context: words typed back-to-back share one layout
+// =============================================================================
+
+runSuite("LayoutDetector: Ambiguous word outlives a short neighbour until the run resolves") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+
+    assert(flushWord(detector, "філ") == nil, "valid Ukrainian 'філ' must not be rewritten in isolation")
+    let me = flushWord(detector, "ьу")
+    assertEqual(me?.originalWord, "ьу", "a lone two-letter word is too weak to drag the ambiguous word along")
+    assertEqual(me?.convertedWord, "me")
+
+    let more = flushWord(detector, "ьщку")
+    assertEqual(more?.originalWord, "філ me ьщку", "the confirming word must reach back over everything on screen since the run began")
+    assertEqual(more?.convertedWord, "ask me more")
+    assertEqual(more?.targetLayout, .english)
+    assert(more?.shouldSwitchLayout == true, "a resolved run switches the layout")
+}
+
+runSuite("LayoutDetector: Ambiguous words of any length are reachable") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+
+    assert(flushWord(detector, "туче") == nil, "valid Ukrainian 'туче' must not be rewritten in isolation")
+    let more = flushWord(detector, "ьщку")
+    assertEqual(more?.originalWord, "туче ьщку")
+    assertEqual(more?.convertedWord, "next more")
+}
+
+runSuite("LayoutDetector: Words already corrected are not retyped") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+
+    assertEqual(flushWord(detector, "фил")?.convertedWord, "ask", "'фил' is not Ukrainian, so it converts on its own")
+    let me = flushWord(detector, "ьу")
+    assertEqual(me?.originalWord, "ьу", "the second word must not delete and retype the first")
+    assert(me?.shouldSwitchLayout == true, "two agreeing short words switch the layout")
+
+    let mixed = LayoutDetector()
+    mixed.currentLayout = .ukrainian
+    mixed.ukrainianFromVariant = .legacy
+    assertEqual(flushWord(mixed, "фил")?.convertedWord, "ask")
+    assert(flushWord(mixed, "еру") == nil, "'еру' stands as typed")
+    let more = flushWord(mixed, "ьщку")
+    assertEqual(more?.originalWord, "еру ьщку", "the sweep starts at the first word that changes, not at one already corrected")
+    assertEqual(more?.convertedWord, "the more")
+}
+
+runSuite("LayoutDetector: Ambiguous word sides with the Ukrainian text before it") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+
+    assert(flushWord(detector, "лист") == nil, "'лист' is plain Ukrainian")
+    assert(flushWord(detector, "від") == nil, "'від' also reads as English 'dbl', but stands as typed")
+    let google = flushWord(detector, "пщщпду")
+    assertEqual(google?.originalWord, "пщщпду", "'від' follows a word that only makes sense in Ukrainian and must stay")
+    assertEqual(google?.convertedWord, "google")
+}
+
+runSuite("LayoutDetector: Ambiguous word sides with the English text before it") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+
+    assert(flushWord(detector, "check") == nil, "'check' is plain English")
+    assert(flushWord(detector, "the") == nil, "'the' also reads as Ukrainian 'еру', but stands as typed")
+    let hello = flushWord(detector, "ghbdsn")
+    assertEqual(hello?.originalWord, "ghbdsn", "'the' follows a word that only makes sense in English and must stay")
+    assertEqual(hello?.convertedWord, "привіт")
+}
+
+runSuite("LayoutDetector: Run sweep stops at Enter and at words it cannot place") {
+    do {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        detector.addCharacter("еру")
+        assert(detector.flushBuffer(boundaryCharacter: "\n") == nil, "'еру' stands as typed")
+        let middle = flushWord(detector, "ьшввду")
+        assertEqual(middle?.originalWord, "ьшввду", "text before Enter may already be submitted and must not be rewritten")
+        assertEqual(middle?.convertedWord, "middle")
+    }
+    do {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        assert(flushWord(detector, "еру") == nil, "'еру' stands as typed")
+        assert(flushWord(detector, "щщщщ") == nil, "'щщщщ' is a word in neither layout")
+        let middle = flushWord(detector, "ьшввду")
+        assertEqual(middle?.originalWord, "ьшввду", "the sweep must not jump over a word it cannot convert")
+    }
+}
+
+// The same rules through the real InputEngine, where the delete count decides what the app loses.
+
+final class CorrectionPlanLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var plans: [CorrectionPlan] = []
+    func add(_ plan: CorrectionPlan) { lock.lock(); plans.append(plan); lock.unlock() }
+    func all() -> [CorrectionPlan] { lock.lock(); defer { lock.unlock() }; return plans }
+}
+
+enum TypedKey {
+    case text(String)
+    case space
+    case backspace
+}
+
+func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant) -> [CorrectionPlan] {
+    let context = InputContextSnapshot(
+        epoch: 1,
+        frontmostPID: 100,
+        appAllowed: true,
+        layout: .ukrainian,
+        inputSourceID: "com.apple.keylayout.Ukrainian",
+        secureFocus: .notSecure
+    )
+    let store = CaptureStateStore(context: context, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let log = CorrectionPlanLog()
+    let detector = LayoutDetector()
+    detector.preferredSourceIDProvider = { _ in nil }
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: context,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        detector: detector,
+        correctionEmission: { plan in
+            log.add(plan)
+            return true
+        }
+    )
+    engine.updateDetectionConfiguration(
+        allowedLayouts: [.english, .ukrainian],
+        preferredCyrillicLayout: .ukrainian,
+        activeSourceSupportedLayouts: [.ukrainian],
+        ukrainianFromVariant: variant,
+        ukrainianToVariant: variant
+    )
+    func send(_ kind: CapturedInput.Kind) {
+        engine.enqueue(store.capture(
+            timestamp: 0,
+            kind: kind,
+            keyCode: 0,
+            flagsRawValue: 0,
+            isAutorepeat: false,
+            sourcePID: 1,
+            sourceUserData: 0
+        ))
+    }
+    // Detection and emission hop queues, and a correction is dropped if the next key beats it.
+    func settle() {
+        for _ in 0..<3 {
+            let drained = DispatchSemaphore(value: 0)
+            engine.drain { drained.signal() }
+            drained.wait()
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    }
+    for key in keys {
+        switch key {
+        case .text(let text):
+            for character in text { send(.character(String(character))) }
+        case .space:
+            send(.boundary(" "))
+            settle()
+        case .backspace:
+            send(.delete)
+        }
+    }
+    return log.all()
+}
+
+runSuite("InputEngine: First word typed after backspacing is corrected once the run resolves") {
+    let plans = typeOnUkrainianLayout(
+        [.backspace, .backspace, .text("фил"), .space, .text("ьу"), .space, .text("йгуиешщти"), .space],
+        variant: .legacy
+    )
+    assertEqual(plans.count, 2, "'ask' may be a fragment and must wait; 'me' and 'questions' each trigger a correction")
+    assertEqual(plans.first?.originalText, "ьу")
+    assertEqual(plans.last?.originalText, "фил me йгуиешщти")
+    assertEqual(plans.last?.correctedText, "ask me questions")
+    assertEqual(plans.last?.deleteCount, 17, "three words, two spaces between them and the trailing space")
+    assertEqual(plans.last?.targetLayout, .english)
+}
+
+runSuite("InputEngine: Run sweep deletes exactly what is on screen") {
+    let plans = typeOnUkrainianLayout(
+        [.text("філ"), .space, .text("ьу"), .space, .text("ьщку"), .space],
+        variant: .standard
+    )
+    assertEqual(plans.last?.correctedText, "ask me more")
+    assertEqual(plans.last?.replacementText, "ask me more ")
+    assertEqual(plans.last?.deleteCount, 12)
+}
+
+runSuite("InputEngine: Backspacing into a deferred word never deletes the text before it") {
+    // Screen after the last space: "еруь " — five characters.
+    let plans = typeOnUkrainianLayout(
+        [.text("еру"), .space, .backspace, .text("ь"), .space],
+        variant: .standard
+    )
+    assertEqual(plans.count, 1)
+    assertEqual(plans.first?.originalText, "еруь", "the reopened word must not also be counted as an earlier word")
+    assertEqual(plans.first?.correctedText, "them")
+    assertEqual(plans.first?.deleteCount, 5)
+}
+
+runSuite("InputEngine: A second space ends the run") {
+    // Screen after the last space: "еру  ьшввду " — the journal holds no token for the extra space.
+    let plans = typeOnUkrainianLayout(
+        [.text("еру"), .space, .space, .text("ьшввду"), .space],
+        variant: .standard
+    )
+    assertEqual(plans.count, 1)
+    assertEqual(plans.first?.originalText, "ьшввду", "a span that skips a character would delete one too few")
+    assertEqual(plans.first?.deleteCount, 7)
+}
+
+// =============================================================================
 // Synthetic Coverage Tests (EN ↔︎ UK)
 // =============================================================================
 

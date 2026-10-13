@@ -203,6 +203,179 @@ run("deleting previous word completely and typing new word") {
     check(flushes == ["Ш"], "Ш must flush cleanly after previous word deletion")
 }
 
+private func type(_ text: String, into machine: inout InputStateMachine, from sequence: inout UInt64, context: InputContextSnapshot) {
+    for character in text {
+        sequence += 1
+        _ = machine.consume(input(sequence: sequence, kind: .character(String(character)), context: context))
+    }
+}
+
+private func press(_ kind: CapturedInput.Kind, into machine: inout InputStateMachine, from sequence: inout UInt64, context: InputContextSnapshot) -> [InputStateCommand] {
+    sequence += 1
+    return machine.consume(input(sequence: sequence, kind: kind, context: context))
+}
+
+run("run keeps the words typed back-to-back") {
+    let current = context()
+    var machine = automaticMachine(current)
+    var sequence: UInt64 = 0
+    type("cat", into: &machine, from: &sequence, context: current)
+    _ = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    type("dog", into: &machine, from: &sequence, context: current)
+    _ = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    check(machine.run.map(\.text) == ["cat", "dog"], "each flushed word must join the run in order")
+    check(machine.run.allSatisfy { $0.boundary == " " && $0.isAnchored }, "flushed words are anchored and keep their boundary")
+    check(machine.run.map(\.id) == [4, 8], "a run token is identified by the boundary that committed it")
+
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    check(machine.currentBuffer == "dog" && machine.run.map(\.text) == ["cat"], "deleting the boundary reopens the last word and takes it off the run")
+    for _ in 0..<3 { _ = press(.delete, into: &machine, from: &sequence, context: current) }
+    check(machine.currentBuffer.isEmpty && machine.run.map(\.text) == ["cat"], "emptying the reopened word leaves the earlier run intact")
+    let reopened = press(.delete, into: &machine, from: &sequence, context: current)
+    check(reopened == [.deleteLast] && machine.currentBuffer == "cat" && machine.run.isEmpty, "the next delete reopens the word before it")
+}
+
+run("run ends wherever the screen and the journal may disagree") {
+    let current = context()
+    var sequence: UInt64 = 0
+
+    var machine = automaticMachine(current)
+    type("cat", into: &machine, from: &sequence, context: current)
+    _ = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    _ = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    check(machine.run.isEmpty, "a boundary with no word before it is on screen but in no token")
+
+    for kind in [CapturedInput.Kind.navigation, .focusMayChange, .undo, .hotkey, .revertHotkey, .tapReset, .queueOverflow] {
+        machine = automaticMachine(current)
+        type("cat", into: &machine, from: &sequence, context: current)
+        _ = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+        _ = press(kind, into: &machine, from: &sequence, context: current)
+        check(machine.run.isEmpty, "\(kind) must end the run")
+    }
+
+    machine = automaticMachine(current)
+    type("cat", into: &machine, from: &sequence, context: current)
+    _ = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    _ = machine.updateContext(context(epoch: 2))
+    check(machine.run.isEmpty, "a context change must end the run")
+}
+
+run("word typed after untracked deletes is held, not judged") {
+    let current = context()
+    var machine = automaticMachine(current)
+    var sequence: UInt64 = 0
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    type("asx", into: &machine, from: &sequence, context: current)
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    type("k", into: &machine, from: &sequence, context: current)
+    check(machine.currentBuffer.isEmpty, "a possible fragment must never enter the tracked buffer")
+    let held = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    check(held == [.untrackedWordHeld(length: 3)], "the fragment is held without a flush")
+    check(
+        machine.run == [RunToken(id: sequence, text: "ask", boundary: " ", isAnchored: false)],
+        "the held word starts the run unanchored, with in-fragment deletes applied"
+    )
+
+    type("me", into: &machine, from: &sequence, context: current)
+    let flushed = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    check(flushed.count == 1 && machine.run.map(\.text) == ["ask", "me"], "the next word flushes with the held word before it")
+
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    for _ in 0..<2 { _ = press(.delete, into: &machine, from: &sequence, context: current) }
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    check(
+        machine.isInvalidUntilBoundary && machine.currentBuffer.isEmpty && machine.run.isEmpty,
+        "reopening a held word must not promote it to a tracked word"
+    )
+    type("s", into: &machine, from: &sequence, context: current)
+    let reheld = press(.boundary(" "), into: &machine, from: &sequence, context: current)
+    check(reheld == [.untrackedWordHeld(length: 4)] && machine.run.map(\.text) == ["asks"], "a reopened held word keeps recording")
+}
+
+run("held words are limited to delete-caused gaps in automatic mode") {
+    let current = context()
+    var sequence: UInt64 = 0
+
+    var machine = automaticMachine(current)
+    _ = press(.navigation, into: &machine, from: &sequence, context: current)
+    type("ask", into: &machine, from: &sequence, context: current)
+    check(press(.boundary(" "), into: &machine, from: &sequence, context: current).isEmpty && machine.run.isEmpty, "typing after navigation stays unrecorded")
+
+    machine = automaticMachine(current)
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    _ = press(.queueOverflow, into: &machine, from: &sequence, context: current)
+    type("ask", into: &machine, from: &sequence, context: current)
+    check(press(.boundary(" "), into: &machine, from: &sequence, context: current).isEmpty && machine.run.isEmpty, "dropped events must stop the recording")
+
+    machine = InputStateMachine(
+        context: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .hotkey)
+    )
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    _ = press(.delete, into: &machine, from: &sequence, context: current)
+    type("ask", into: &machine, from: &sequence, context: current)
+    check(press(.boundary(" "), into: &machine, from: &sequence, context: current).isEmpty && machine.run.isEmpty, "hotkey mode holds nothing")
+}
+
+run("detection request carries the preceding run") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let lock = NSLock()
+    var requests: [DetectionRequest] = []
+    let detected = DispatchSemaphore(value: 0)
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            lock.lock()
+            requests.append(request)
+            lock.unlock()
+            detected.signal()
+            return nil
+        },
+        correctionEmission: { _ in true }
+    )
+    func send(_ kind: CapturedInput.Kind) {
+        engine.enqueue(store.capture(
+            timestamp: 0,
+            kind: kind,
+            keyCode: 0,
+            flagsRawValue: 0,
+            isAutorepeat: false,
+            sourcePID: 1,
+            sourceUserData: 0
+        ))
+    }
+    send(.delete)
+    send(.delete)
+    for character in ["a", "s", "k"] { send(.character(character)) }
+    send(.boundary(" "))
+    for character in ["m", "e"] { send(.character(character)) }
+    send(.boundary(" "))
+    check(detected.wait(timeout: .now() + 1) == .success, "the tracked word must reach detection")
+    for character in ["n", "o", "w"] { send(.character(character)) }
+    send(.boundary(" "))
+    check(detected.wait(timeout: .now() + 1) == .success, "the next word must reach detection")
+    send(.delete)
+    for character in ["s"] { send(.character(character)) }
+    send(.boundary(" "))
+    check(detected.wait(timeout: .now() + 1) == .success, "the reopened word must reach detection")
+
+    lock.lock()
+    let seen = requests
+    lock.unlock()
+    check(seen.map(\.word) == ["me", "now", "nows"], "the held word itself must never be detected on its own")
+    check(
+        seen.first?.precedingRun.map(\.text) == ["ask"] && seen.first?.precedingRun.first?.isAnchored == false,
+        "the first tracked word must be offered the held word before it"
+    )
+    check(seen.dropFirst().first?.precedingRun.map(\.text) == ["ask", "me"], "each request lists the words still on screen before it")
+    check(seen.last?.precedingRun.map(\.text) == ["ask", "me"], "a reopened word must not appear in its own preceding run")
+}
+
 run("manual hotkey resyncs buffer") {
     let current = context()
     var machine = automaticMachine(current)

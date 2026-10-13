@@ -9,6 +9,8 @@ public struct DetectionRequest: Equatable {
     public let editGeneration: UInt64
     public let correctionEpoch: UInt64
     public let context: InputContextSnapshot
+    /// Words still on screen right before `word`, typed in the same uninterrupted run.
+    public let precedingRun: [RunToken]
 
     public init(
         word: String,
@@ -16,7 +18,8 @@ public struct DetectionRequest: Equatable {
         sequence: UInt64,
         editGeneration: UInt64,
         correctionEpoch: UInt64,
-        context: InputContextSnapshot
+        context: InputContextSnapshot,
+        precedingRun: [RunToken] = []
     ) {
         self.word = word
         self.boundary = boundary
@@ -24,6 +27,7 @@ public struct DetectionRequest: Equatable {
         self.editGeneration = editGeneration
         self.correctionEpoch = correctionEpoch
         self.context = context
+        self.precedingRun = precedingRun
     }
 }
 
@@ -322,14 +326,19 @@ public final class InputEngine {
         case .flush(let word, let boundary, let sequence, let context):
             logger.notice("word flushed length=\(word.count) boundaryLength=\(boundary.count) seq=\(sequence) layout=\(context.layout.rawValue)")
             let latest = captureState.snapshot()
+            // The state machine has already appended this word as the run's last token.
+            let run = stateMachine.run
             runDetection(DetectionRequest(
                 word: word,
                 boundary: boundary,
                 sequence: sequence,
                 editGeneration: latest.editGeneration,
                 correctionEpoch: correctionEpoch,
-                context: context
+                context: context,
+                precedingRun: run.last?.id == sequence ? Array(run.dropLast()) : []
             ))
+        case .untrackedWordHeld(let length):
+            logger.debug("untracked word held length=\(length) until neighboring layout evidence")
         case .requestManualCorrection(let word, let sequence, let context):
             logger.notice("hotkey correction requested hasWord=\(word != nil) seq=\(sequence)")
             requestManualCorrection(word: word, sequence: sequence, context: context)
@@ -376,6 +385,7 @@ public final class InputEngine {
                 self.detector.preferredCyrillicLayout = configuration.preferredCyrillicLayout
                 self.detector.ukrainianFromVariant = configuration.ukrainianFromVariant
                 self.detector.ukrainianToVariant = configuration.ukrainianToVariant
+                self.detector.syncRun(request.precedingRun, currentTokenID: request.sequence)
                 self.detector.discardBuffer()
                 self.detector.addCharacter(request.word)
                 result = self.detector.flushBuffer(

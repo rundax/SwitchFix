@@ -38,6 +38,26 @@ public enum InputStateCommand: Equatable {
     case requestManualCorrection(word: String?, sequence: UInt64, context: InputContextSnapshot)
     case requestRevert(word: String?, sequence: UInt64, context: InputContextSnapshot)
     case nativeUndo
+    case untrackedWordHeld(length: Int)
+}
+
+/// A word typed back-to-back with its neighbours: `text` followed by `boundary` sits on screen
+/// immediately before the next token (or the caret). A correction may have replaced `text`
+/// on screen with its same-length conversion.
+public struct RunToken: Equatable {
+    public let id: UInt64
+    public let text: String
+    public let boundary: String
+    /// False when the word was typed after deletes the buffer could not follow, so it may be
+    /// only the tail of a longer on-screen word.
+    public let isAnchored: Bool
+
+    public init(id: UInt64, text: String, boundary: String, isAnchored: Bool) {
+        self.id = id
+        self.text = text
+        self.boundary = boundary
+        self.isAnchored = isAnchored
+    }
 }
 
 public struct InputStateMachine {
@@ -45,10 +65,15 @@ public struct InputStateMachine {
     public private(set) var isInvalidUntilBoundary = false
     public private(set) var context: InputContextSnapshot
     public private(set) var preferences: InputPreferencesSnapshot
+    /// Words committed back-to-back since the caret last jumped, oldest first.
+    public private(set) var run: [RunToken] = []
 
-    private var committedWord: String?
-    private var committedBoundary: String?
     private var untrackedDeleteCount = 0
+    /// Characters typed after repeated untracked deletes. They are never judged on their own,
+    /// but stay recorded so a later correction of the same run can still reach them.
+    private var untrackedFragment: String?
+
+    private static let maxRunLength = 16
 
     public init(context: InputContextSnapshot, preferences: InputPreferencesSnapshot) {
         self.context = context
@@ -60,8 +85,8 @@ public struct InputStateMachine {
         self.context = context
         guard changed else { return [] }
         currentBuffer = ""
-        committedWord = nil
-        committedBoundary = nil
+        run = []
+        untrackedFragment = nil
         untrackedDeleteCount = 0
         isInvalidUntilBoundary = false
         return [.invalidate(.contextChanged)]
@@ -79,8 +104,8 @@ public struct InputStateMachine {
         guard previous != preferences else { return [] }
 
         currentBuffer = ""
-        committedWord = nil
-        committedBoundary = nil
+        run = []
+        untrackedFragment = nil
         untrackedDeleteCount = 0
         isInvalidUntilBoundary = false
 
@@ -127,8 +152,8 @@ public struct InputStateMachine {
             // so the buffer must drop them; keeping them desyncs the buffer from
             // the screen and makes the next flush delete already-corrected text.
             currentBuffer = ""
-            committedWord = nil
-            committedBoundary = nil
+            run = []
+            untrackedFragment = nil
             return [.requestManualCorrection(word: word, sequence: input.sequence, context: input.context)]
         case .revertHotkey:
             let word = currentBuffer.isEmpty ? nil : currentBuffer
@@ -136,56 +161,64 @@ public struct InputStateMachine {
             // restored) or falls back to a manual correction, the on-screen word
             // is rewritten without buffer-visible events.
             currentBuffer = ""
-            committedWord = nil
-            committedBoundary = nil
+            run = []
+            untrackedFragment = nil
             return [.requestRevert(word: word, sequence: input.sequence, context: input.context)]
         case .delete:
             guard canBuffer(input.context) else {
-                committedWord = nil
-                committedBoundary = nil
                 untrackedDeleteCount = 0
                 return invalidateForContext(input.context)
             }
-            if !currentBuffer.isEmpty && !isInvalidUntilBoundary {
+            if isInvalidUntilBoundary {
+                // Still contiguous with the caret: forget the last recorded character, if any.
+                if untrackedFragment?.isEmpty == false {
+                    untrackedFragment?.removeLast()
+                }
+                return [.invalidate(.navigation)]
+            }
+            if !currentBuffer.isEmpty {
                 currentBuffer.removeLast()
                 untrackedDeleteCount = 0
                 return [.deleteLast]
             }
-            if !isInvalidUntilBoundary, var boundary = committedBoundary, !boundary.isEmpty {
-                boundary.removeLast()
-                committedBoundary = boundary
+            if let last = run.popLast() {
                 untrackedDeleteCount = 0
-                if boundary.isEmpty {
-                    currentBuffer = committedWord ?? ""
-                    committedWord = nil
-                    committedBoundary = nil
-                    isInvalidUntilBoundary = false
+                let boundary = String(last.boundary.dropLast())
+                if !boundary.isEmpty {
+                    run.append(RunToken(id: last.id, text: last.text, boundary: boundary, isAnchored: last.isAnchored))
+                } else if last.isAnchored {
+                    currentBuffer = last.text
+                } else {
+                    untrackedFragment = last.text
+                    isInvalidUntilBoundary = true
                 }
                 return [.deleteLast]
             }
-            committedWord = nil
-            committedBoundary = nil
-            if !isInvalidUntilBoundary {
-                // One delete beyond the tracked buffer can still be the normal
-                // "delete then type" flow. Repeated untracked deletes imply
-                // that the caret has entered existing text, so correction must
-                // stay disabled until a boundary. ponytail: keep this small
-                // two-delete ceiling until editors expose reliable caret context.
-                untrackedDeleteCount += 1
-                invalidate(untilBoundary: untrackedDeleteCount >= 2)
+            // One delete beyond the tracked buffer can still be the normal
+            // "delete then type" flow. Repeated untracked deletes imply
+            // that the caret has entered existing text, so the next word may
+            // be a fragment and must not be judged on its own. ponytail: keep
+            // this small two-delete ceiling until editors expose reliable
+            // caret context.
+            untrackedDeleteCount += 1
+            let caretEnteredExistingText = untrackedDeleteCount >= 2
+            invalidate(untilBoundary: caretEnteredExistingText)
+            if caretEnteredExistingText {
+                untrackedFragment = ""
             }
             return [.invalidate(.navigation)]
         case .character(let text):
             guard canBuffer(input.context) else {
-                committedWord = nil
-                committedBoundary = nil
                 untrackedDeleteCount = 0
                 return invalidateForContext(input.context)
             }
-            guard !isInvalidUntilBoundary else { return [] }
+            guard !isInvalidUntilBoundary else {
+                if let fragment = untrackedFragment {
+                    untrackedFragment = fragment.count + text.count <= 64 ? fragment + text : nil
+                }
+                return []
+            }
             untrackedDeleteCount = 0
-            committedWord = nil
-            committedBoundary = nil
             let nextCount = currentBuffer.count + text.count
             guard nextCount <= 64 else {
                 invalidate(untilBoundary: true)
@@ -195,33 +228,36 @@ public struct InputStateMachine {
             return [.append(text)]
         case .boundary(let boundary):
             let flushedWord = (!isInvalidUntilBoundary && !currentBuffer.isEmpty) ? currentBuffer : nil
-            defer {
-                if let flushedWord {
-                    committedWord = flushedWord
-                    committedBoundary = boundary
-                } else {
-                    committedWord = nil
-                    committedBoundary = nil
-                }
-                currentBuffer = ""
-                isInvalidUntilBoundary = false
-                untrackedDeleteCount = 0
-            }
+            let heldFragment = isInvalidUntilBoundary ? untrackedFragment : nil
+            currentBuffer = ""
+            isInvalidUntilBoundary = false
+            untrackedDeleteCount = 0
+            untrackedFragment = nil
             guard canBuffer(input.context) else {
                 return invalidateForContext(input.context)
             }
-            guard !isInvalidUntilBoundary, !currentBuffer.isEmpty else { return [] }
-            switch preferences.correctionMode {
-            case .automatic:
-                return [.flush(
-                    word: currentBuffer,
-                    boundary: boundary,
-                    sequence: input.sequence,
-                    context: input.context
-                )]
-            case .hotkey, .layoutSwitch:
-                return []
+            if let flushedWord {
+                commit(RunToken(id: input.sequence, text: flushedWord, boundary: boundary, isAnchored: true))
+                switch preferences.correctionMode {
+                case .automatic:
+                    return [.flush(
+                        word: flushedWord,
+                        boundary: boundary,
+                        sequence: input.sequence,
+                        context: input.context
+                    )]
+                case .hotkey, .layoutSwitch:
+                    return []
+                }
             }
+            // A boundary with no tracked word before it puts a character on screen
+            // that no token accounts for, so earlier words are no longer adjacent.
+            run = []
+            if let heldFragment, !heldFragment.isEmpty, preferences.correctionMode == .automatic {
+                commit(RunToken(id: input.sequence, text: heldFragment, boundary: boundary, isAnchored: false))
+                return [.untrackedWordHeld(length: heldFragment.count)]
+            }
+            return []
         }
     }
 
@@ -239,8 +275,19 @@ public struct InputStateMachine {
 
     private mutating func invalidate(untilBoundary: Bool) {
         currentBuffer = ""
-        committedWord = nil
-        committedBoundary = nil
+        run = []
+        untrackedFragment = nil
         isInvalidUntilBoundary = untilBoundary
+    }
+
+    private mutating func commit(_ token: RunToken) {
+        guard !token.boundary.isEmpty else {
+            run = []
+            return
+        }
+        run.append(token)
+        if run.count > InputStateMachine.maxRunLength {
+            run.removeFirst(run.count - InputStateMachine.maxRunLength)
+        }
     }
 }

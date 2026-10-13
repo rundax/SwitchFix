@@ -1356,6 +1356,27 @@ runSuite("InputSourceDiscoveryEngine: Apple native Ukrainian layout ignores Opti
     assertEqual(desc?.isCustom, false, "Apple native layout is not custom")
 }
 
+runSuite("InputSourceDiscoveryEngine: Apple native layout is classified by its primary language only") {
+    // What macOS reports for "Ukrainian – Legacy": every language its script can write.
+    let appleUkProvider = MockInputSourcePropertyReader(
+        id: "com.apple.keylayout.Ukrainian",
+        localizedName: "Ukrainian – Legacy",
+        languages: ["uk", "be", "bg", "bs_Cyrl", "mk", "myv", "ru", "sr", "sr_Cyrl"],
+        unshiftedKeys: [0: "ф", 1: "и", 11: "і", 12: "й", 30: "ї", 39: "є"]
+    )
+    let appleDesc = InputSourceDiscoveryEngine.classify(provider: appleUkProvider)
+    assertEqual(appleDesc?.supportedLayouts, Set([.ukrainian]), "'ru' further down Apple's list must not make the Ukrainian layout a Russian one")
+    assertEqual(appleDesc?.ukrainianVariant, .legacy, "legacy variant is still detected")
+
+    let customProvider = MockInputSourcePropertyReader(
+        id: "org.example.keylayout.cyrillic-duo",
+        localizedName: "Cyrillic Duo",
+        languages: ["uk", "ru"]
+    )
+    let customDesc = InputSourceDiscoveryEngine.classify(provider: customProvider)
+    assertEqual(customDesc?.supportedLayouts, Set([.ukrainian, .russian]), "third-party layouts keep every language they declare")
+}
+
 runSuite("WordValidator: 'VNC' and 'vnc' are recognized as valid English words via allow override") {
     assert(WordValidator.shared.validate("vnc", language: .english).isValid, "'vnc' should be valid English")
     assert(WordValidator.shared.validate("VNC", language: .english).isValid, "'VNC' should be valid English")

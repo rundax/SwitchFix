@@ -25,3 +25,4 @@ temp.txt
 *.key
 brag-output/
 brag-output-*/
+Benchmarks/results/

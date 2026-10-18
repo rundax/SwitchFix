@@ -20,8 +20,8 @@ func main() {
     case "summarize":
         handleSummarize(args: Array(args.dropFirst(2)))
     case "self-check":
-        print("self-check not yet implemented (scheduled for Plan-Item 03.3)")
-        exit(0)
+        let passed = SelfChecks.runAll()
+        exit(passed ? 0 : 1)
     case "compare":
         print("compare not yet implemented (scheduled for Plan-Item 03.5)")
         exit(0)

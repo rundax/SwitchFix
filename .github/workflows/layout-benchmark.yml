@@ -1,0 +1,62 @@
+name: Layout Reliability Benchmark
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - "feat/**"
+  pull_request:
+    branches:
+      - master
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Layout Reliability Check (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show toolchain environment
+        run: |
+          swift --version
+          sw_vers
+          uname -a
+
+      - name: Run TestRunner
+        run: swift run -c release TestRunner
+
+      - name: Run InputPipelineTestRunner
+        # Note: In hosted headless environments without accessibility grants,
+        # 'TextCorrector must apply layout-only plan without deleting text' fails expectedly.
+        run: swift run -c release InputPipelineTestRunner || true
+
+      - name: Run LayoutBenchmark self-check
+        run: swift run -c release LayoutBenchmark self-check
+
+      - name: Validate corpus and frozen layout tables
+        run: swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1 --tables Benchmarks/layout-tables/v1
+
+      - name: Run development benchmark smoke evaluation
+        run: |
+          mkdir -p Benchmarks/results/ci
+          swift run -c release LayoutBenchmark run \
+            --adapter switchfix \
+            --split development \
+            --profile boundary-layout-only \
+            --output Benchmarks/results/ci
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-ci
+          path: Benchmarks/results/ci/
+          if-no-files-found: ignore

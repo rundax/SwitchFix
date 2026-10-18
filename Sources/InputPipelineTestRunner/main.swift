@@ -1298,6 +1298,45 @@ run("blocked collaborators") {
     assertRoutingContinues(while: .correction)
 }
 
+run("drainPipeline and request assembly") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    var emissionCalled = false
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            check(request.word == "test", "assembled word must match")
+            check(request.boundary == " ", "assembled boundary must match")
+            return DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: "тест",
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { plan in
+            emissionCalled = true
+            return true
+        }
+    )
+
+    engine.enqueue(store.capture(timestamp: 1, kind: .character("t"), keyCode: 17, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    engine.enqueue(store.capture(timestamp: 2, kind: .character("e"), keyCode: 14, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    engine.enqueue(store.capture(timestamp: 3, kind: .character("s"), keyCode: 1, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    engine.enqueue(store.capture(timestamp: 4, kind: .character("t"), keyCode: 17, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    engine.enqueue(store.capture(timestamp: 5, kind: .boundary(" "), keyCode: 49, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+
+    let drained = DispatchSemaphore(value: 0)
+    engine.drainPipeline {
+        drained.signal()
+    }
+    check(drained.wait(timeout: .now() + 2) == .success, "drainPipeline must hop all queues and complete")
+    check(emissionCalled, "drainPipeline must guarantee all correction stages have executed")
+}
+
 private func runIntegrationSmoke() {
     guard Permissions.isAccessibilityGranted(), Permissions.isKeyboardListeningAvailable() else {
         print("SKIP: integration smoke requires Accessibility and Input Monitoring")

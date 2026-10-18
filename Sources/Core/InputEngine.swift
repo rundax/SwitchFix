@@ -38,14 +38,6 @@ public final class InputEngine {
 
     public var onFocusMayChange: ((pid_t, UInt64) -> Void)?
 
-    private struct DetectionConfiguration {
-        var allowedLayouts = Set(Layout.allCases)
-        var preferredCyrillicLayout: Layout?
-        var activeSourceSupportedLayouts: Set<Layout> = [.english]
-        var ukrainianFromVariant: UkrainianKeyboardVariant = .standard
-        var ukrainianToVariant: UkrainianKeyboardVariant = .standard
-    }
-
     private let inputQueue = DispatchQueue(label: "com.switchfix.input-engine", qos: .userInteractive)
     private let detectionQueue = DispatchQueue(label: "com.switchfix.detection", qos: .userInitiated)
     private let correctionQueue = DispatchQueue(label: "com.switchfix.correction", qos: .userInteractive)
@@ -269,6 +261,23 @@ public final class InputEngine {
         inputQueue.async { completion() }
     }
 
+    /// Drain all pipeline queues in order: inputQueue -> detectionQueue -> inputQueue -> correctionQueue.
+    /// This guarantees that any in-flight inputs, detection, and correction preparation/execution have settled.
+    public func drainPipeline(completion: @escaping () -> Void) {
+        inputQueue.async { [weak self] in
+            guard let self else { completion(); return }
+            self.detectionQueue.async { [weak self] in
+                guard let self else { completion(); return }
+                self.inputQueue.async { [weak self] in
+                    guard let self else { completion(); return }
+                    self.correctionQueue.async {
+                        completion()
+                    }
+                }
+            }
+        }
+    }
+
     public func inspectState(
         completion: @escaping (_ buffer: String, _ invalidUntilBoundary: Bool, _ sequence: UInt64) -> Void
     ) {
@@ -326,17 +335,16 @@ public final class InputEngine {
         case .flush(let word, let boundary, let sequence, let context):
             logger.notice("word flushed length=\(word.count) boundaryLength=\(boundary.count) seq=\(sequence) layout=\(context.layout.rawValue)")
             let latest = captureState.snapshot()
-            // The state machine has already appended this word as the run's last token.
-            let run = stateMachine.run
-            runDetection(DetectionRequest(
+            let request = assembleDetectionRequest(
                 word: word,
                 boundary: boundary,
                 sequence: sequence,
                 editGeneration: latest.editGeneration,
                 correctionEpoch: correctionEpoch,
                 context: context,
-                precedingRun: run.last?.id == sequence ? Array(run.dropLast()) : []
-            ))
+                run: stateMachine.run
+            )
+            runDetection(request)
         case .untrackedWordHeld(let length):
             logger.debug("untracked word held length=\(length) until neighboring layout evidence")
         case .requestManualCorrection(let word, let sequence, let context):
@@ -373,23 +381,10 @@ public final class InputEngine {
                 result = customDetection(request)
             } else {
                 let configuration = self.detectionConfiguration.withLock { $0 }
-                if request.context.layout.isCyrillic,
-                   request.word.unicodeScalars.contains(where: { $0.isASCII && $0.properties.isAlphabetic }),
-                   !request.word.unicodeScalars.contains(where: { (0x0400...0x04FF).contains($0.value) }) {
-                    self.logger.debug("capture mismatch: Latin characters captured under \(request.context.layout.rawValue) layout source=\(request.context.inputSourceID)")
-                }
-                self.detector.currentLayout = request.context.layout
-                self.detector.currentInputSourceID = request.context.inputSourceID
-                self.detector.activeSourceSupportedLayouts = configuration.activeSourceSupportedLayouts
-                self.detector.allowedLayouts = configuration.allowedLayouts
-                self.detector.preferredCyrillicLayout = configuration.preferredCyrillicLayout
-                self.detector.ukrainianFromVariant = configuration.ukrainianFromVariant
-                self.detector.ukrainianToVariant = configuration.ukrainianToVariant
-                self.detector.syncRun(request.precedingRun, currentTokenID: request.sequence)
-                self.detector.discardBuffer()
-                self.detector.addCharacter(request.word)
-                result = self.detector.flushBuffer(
-                    boundaryCharacter: request.boundary.isEmpty ? nil : request.boundary
+                result = evaluateDetection(
+                    detector: self.detector,
+                    request: request,
+                    configuration: configuration
                 )
             }
             let duration = DispatchTime.now().uptimeNanoseconds &- startedAt

@@ -8,7 +8,7 @@ Tracked execution of `docs/plans/EXECUTION.md`.
 | --- | --- | --- | --- | --- |
 | 0 | Branch, commit the plans, create `PROGRESS.md`, add `Benchmarks/results/` to `.gitignore` | [Git](EXECUTION.md#git) | DONE | Created branch `feat/layout-reliability` from `4b928be`, added `Benchmarks/results/` to `.gitignore`, created `PROGRESS.md`. Baseline checks match known baseline. |
 | 03.1 | Benchmark inputs: schema/provenance docs, manifest, `LayoutBenchmark` target skeleton with `export-layout-tables`, frozen `Benchmarks/layout-tables/v1`, 200-trial seed corpus | Plan 03 step 1 | DONE | Added `LayoutBenchmark` target with `export-layout-tables` and `validate`, frozen 22 layout tables in `Benchmarks/layout-tables/v1`, generated 200-trial seed corpus in `Benchmarks/layout-corpus/v1` (100 dev, 100 holdout), manifest with SHA256 hashes, and schema documentation. All 200 trials validated against frozen tables. |
-| 03.2 | Runner: corpus loading, SwitchFix adapter replaying on `InputStateMachine` + `LayoutDetector`, scoring; Core extraction of the engine's request assembly; `drainPipeline` seam | Plan 03 step 2 | TODO | |
+| 03.2 | Runner: corpus loading, SwitchFix adapter replaying on `InputStateMachine` + `LayoutDetector`, scoring; Core extraction of the engine's request assembly; `drainPipeline` seam | Plan 03 step 2 | DONE | Extracted `DetectionRequestAssembly` into Core (`DetectionConfiguration`, `assembleDetectionRequest`, `evaluateDetection`), added `drainPipeline(completion:)` multi-queue seam to `InputEngine`. Implemented `SwitchFixAdapter` with synchronous replay on `InputStateMachine` and `LayoutDetector` with virtual editor. Implemented `Scorer` with Wilson 95% intervals and stratified breakdowns. Added `run` and `summarize` subcommands to `LayoutBenchmark`. |
 | 03.3 | `self-check` subcommand with controls; `.github/workflows/layout-benchmark.yml` | Plan 03 step 3, CI section | TODO | |
 | 03.4 | Record and freeze the SwitchFix baseline | Plan 03 step 4 | TODO | |
 | 02.1 | Core policy/store, bounds, persistence tests | Plan 02 slice 1 | TODO | |
@@ -45,6 +45,14 @@ Tracked execution of `docs/plans/EXECUTION.md`.
   - 22 layout tables in `Benchmarks/layout-tables/v1` for 11 layouts on keyboardTypes 91 and 37
   - 200 seed trials (100 development, 100 holdout), 20 repair / 60 preserve / 20 abstain per split, 100% disjoint group IDs
   - Integrity verified with SHA256 in `Benchmarks/layout-corpus/v1/manifest.json`
+
+### Item 03.2
+- **Checks**:
+  - `swift build`: Passed (`Benchmarks/results/logs/03.2-swift-build.log`)
+  - `swift run -c release TestRunner`: 313 passed, 0 failed (`Benchmarks/results/logs/03.2-TestRunner.log`)
+  - `swift run -c release InputPipelineTestRunner`: 966 passed, 1 failed (added drainPipeline & request assembly verification) (`Benchmarks/results/logs/03.2-InputPipelineTestRunner.log`)
+  - `swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1`: 200 trials validated across 2 splits (`Benchmarks/results/logs/03.2-LayoutBenchmark-validate.log`)
+  - `swift run -c release LayoutBenchmark run --adapter switchfix --split development --profile boundary-layout-only --output Benchmarks/results/dev-release`: 100 trials, 18/20 TP (90.0% recall, 90.0% precision), 0/80 text-damage FP (0.00% [0.0%, 4.6%]), 0/80 layout-only FP (0.00% [0.0%, 4.6%]), 80/80 TN (`Benchmarks/results/logs/03.2-LayoutBenchmark-run.log`)
 
 ## Deviations
 

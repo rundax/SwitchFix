@@ -7,19 +7,22 @@ public struct DetectionConfiguration: Equatable, Sendable {
     public var activeSourceSupportedLayouts: Set<Layout>
     public var ukrainianFromVariant: UkrainianKeyboardVariant
     public var ukrainianToVariant: UkrainianKeyboardVariant
+    public var personalExceptions: PersonalExceptionsPolicy
 
     public init(
         allowedLayouts: Set<Layout> = Set(Layout.allCases),
         preferredCyrillicLayout: Layout? = nil,
         activeSourceSupportedLayouts: Set<Layout> = [.english],
         ukrainianFromVariant: UkrainianKeyboardVariant = .standard,
-        ukrainianToVariant: UkrainianKeyboardVariant = .standard
+        ukrainianToVariant: UkrainianKeyboardVariant = .standard,
+        personalExceptions: PersonalExceptionsPolicy = .empty
     ) {
         self.allowedLayouts = allowedLayouts
         self.preferredCyrillicLayout = preferredCyrillicLayout
         self.activeSourceSupportedLayouts = activeSourceSupportedLayouts
         self.ukrainianFromVariant = ukrainianFromVariant
         self.ukrainianToVariant = ukrainianToVariant
+        self.personalExceptions = personalExceptions
     }
 }
 
@@ -28,6 +31,7 @@ public func assemblePrecedingRun(from run: [RunToken], currentSequence: UInt64) 
 }
 
 public func assembleDetectionRequest(
+    trigger: CorrectionTrigger,
     word: String,
     boundary: String,
     sequence: UInt64,
@@ -37,6 +41,7 @@ public func assembleDetectionRequest(
     run: [RunToken]
 ) -> DetectionRequest {
     DetectionRequest(
+        trigger: trigger,
         word: word,
         boundary: boundary,
         sequence: sequence,
@@ -59,6 +64,8 @@ public func evaluateDetection(
     }
     detector.currentLayout = request.context.layout
     detector.currentInputSourceID = request.context.inputSourceID
+    detector.currentTrigger = request.trigger
+    detector.personalExceptions = configuration.personalExceptions
     detector.activeSourceSupportedLayouts = configuration.activeSourceSupportedLayouts
     detector.allowedLayouts = configuration.allowedLayouts
     detector.preferredCyrillicLayout = configuration.preferredCyrillicLayout

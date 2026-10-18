@@ -1906,6 +1906,88 @@ runSuite("PersonalExceptions: Store persistence & isolation") {
     }
 }
 
+runSuite("PersonalExceptions: Detector current word and layout-only suppression") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn", "futynf"])
+
+    // "ghbdsn" is normally corrected from EN -> UK ("привіт"). Because it is protected, it must NOT correct.
+    for char in "ghbdsn" {
+        detector.addCharacter(String(char))
+    }
+    let res = detector.flushBuffer(boundaryCharacter: " ")
+    check(res == nil, "protected word 'ghbdsn' must return nil detection")
+    check(mockDelegate.results.isEmpty, "protected word must emit no delegate results")
+
+    // Layout-only prediction suppression: "futynf" is valid Ukrainian ("агента") typed in English layout.
+    // It would normally emit a layout-only switch. Because it is protected, it must NOT switch!
+    for char in "futynf" {
+        detector.addCharacter(String(char))
+    }
+    let resLayout = detector.flushBuffer(boundaryCharacter: " ")
+    check(resLayout == nil, "protected layout-only word 'futynf' must return nil")
+    check(mockDelegate.results.isEmpty, "protected layout-only word must emit no switch")
+}
+
+runSuite("PersonalExceptions: Detector backward sweep barriers") {
+    // 1. Run sweep stops before protected earlier word
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn"])
+
+    // Type protected word "ghbdsn " (would be "привіт")
+    for char in "ghbdsn" { detector.addCharacter(String(char)) }
+    _ = detector.flushBuffer(boundaryCharacter: " ")
+    check(mockDelegate.results.isEmpty, "first word is protected")
+
+    // Type "hj,jnf " (wrong layout for Ukrainian "робота")
+    for char in "hj,jnf" { detector.addCharacter(String(char)) }
+    let res = detector.flushBuffer(boundaryCharacter: " ")
+    check(res != nil, "second word should correct")
+    if let r = res {
+        // Must only correct "hj,jnf" -> "робота", NOT sweep across "ghbdsn"!
+        assertEqual(r.originalWord, "hj,jnf", "sweep must not cross protected word 'ghbdsn'")
+        assertEqual(r.convertedWord, "робота", "converted text must be only 'робота'")
+    }
+
+    // 2. Already converted token in journal is protected if its display or typed matches exception
+    let detector2 = LayoutDetector()
+    detector2.currentLayout = .english
+    for char in "hj,jnf" { detector2.addCharacter(String(char)) }
+    _ = detector2.flushBuffer(boundaryCharacter: " ")
+    detector2.personalExceptions = PersonalExceptionsPolicy(words: ["робота"])
+
+    for char in "ghbdsn" { detector2.addCharacter(String(char)) }
+    let res2 = detector2.flushBuffer(boundaryCharacter: " ")
+    check(res2 != nil, "second word should correct")
+    if let r = res2 {
+        assertEqual(r.originalWord, "ghbdsn", "sweep must stop before converted protected word 'робота'")
+    }
+}
+
+runSuite("PersonalExceptions: Explicit triggers bypass protection") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn"])
+
+    // Hotkey trigger bypasses personal exceptions
+    detector.currentTrigger = .hotkey
+    for char in "ghbdsn" { detector.addCharacter(String(char)) }
+    let resHotkey = detector.flushBuffer(boundaryCharacter: nil)
+    check(resHotkey != nil, "hotkey trigger must bypass personal exceptions")
+    assertEqual(resHotkey?.convertedWord, "привіт", "hotkey must convert protected word")
+
+    // LayoutSwitch trigger bypasses personal exceptions
+    detector.currentTrigger = .layoutSwitch
+    for char in "ghbdsn" { detector.addCharacter(String(char)) }
+    let resSwitch = detector.flushBuffer(boundaryCharacter: nil)
+    check(resSwitch != nil, "layoutSwitch trigger must bypass personal exceptions")
+}
+
 // =============================================================================
 // Performance
 // =============================================================================

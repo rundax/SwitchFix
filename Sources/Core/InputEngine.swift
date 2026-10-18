@@ -3,6 +3,7 @@ import os
 import Utils
 
 public struct DetectionRequest: Equatable {
+    public let trigger: CorrectionTrigger
     public let word: String
     public let boundary: String
     public let sequence: UInt64
@@ -13,6 +14,7 @@ public struct DetectionRequest: Equatable {
     public let precedingRun: [RunToken]
 
     public init(
+        trigger: CorrectionTrigger,
         word: String,
         boundary: String,
         sequence: UInt64,
@@ -21,6 +23,7 @@ public struct DetectionRequest: Equatable {
         context: InputContextSnapshot,
         precedingRun: [RunToken] = []
     ) {
+        self.trigger = trigger
         self.word = word
         self.boundary = boundary
         self.sequence = sequence
@@ -122,6 +125,23 @@ public final class InputEngine {
         }
     }
 
+    public func updatePersonalExceptions(_ policy: PersonalExceptionsPolicy, epoch: UInt64) {
+        inputQueue.async { [weak self] in
+            guard let self else { return }
+            self.correctionEpoch = epoch
+            self.stateMachine.invalidateUntilBoundary()
+            self.detectionConfiguration.withLock { value in
+                value.personalExceptions = policy
+            }
+            self.resetDetectorState()
+        }
+    }
+
+    public func updatePersonalExceptions(_ policy: PersonalExceptionsPolicy) {
+        let epoch = captureState.invalidateCorrectionConfiguration()
+        updatePersonalExceptions(policy, epoch: epoch)
+    }
+
     public func handleGeneratedLayoutContext(_ context: InputContextSnapshot) {
         let generation = captureState.snapshot().editGeneration
         inputQueue.async { [weak self] in
@@ -183,6 +203,7 @@ public final class InputEngine {
                 self.prepareCorrection(
                     result: result,
                     request: DetectionRequest(
+                        trigger: .layoutSwitch,
                         word: bufferedWord,
                         boundary: "",
                         sequence: latest.latestPhysicalSequence,
@@ -336,6 +357,7 @@ public final class InputEngine {
             logger.notice("word flushed length=\(word.count) boundaryLength=\(boundary.count) seq=\(sequence) layout=\(context.layout.rawValue)")
             let latest = captureState.snapshot()
             let request = assembleDetectionRequest(
+                trigger: .automaticBoundary,
                 word: word,
                 boundary: boundary,
                 sequence: sequence,
@@ -378,7 +400,20 @@ public final class InputEngine {
             let startedAt = DispatchTime.now().uptimeNanoseconds
             let result: DetectionResult?
             if let customDetection = self.customDetection {
-                result = customDetection(request)
+                let configuration = self.detectionConfiguration.withLock { $0 }
+                if request.trigger == .automaticBoundary && configuration.personalExceptions.matches(rawToken: request.word) {
+                    result = nil
+                } else if let rawResult = customDetection(request) {
+                    if request.trigger == .automaticBoundary && configuration.personalExceptions.matches(rawToken: rawResult.originalWord) {
+                        result = nil
+                    } else if request.trigger == .automaticBoundary && request.precedingRun.contains(where: { configuration.personalExceptions.matches(rawToken: $0.text) }) && rawResult.originalWord != request.word {
+                        result = nil
+                    } else {
+                        result = rawResult
+                    }
+                } else {
+                    result = nil
+                }
             } else {
                 let configuration = self.detectionConfiguration.withLock { $0 }
                 result = evaluateDetection(
@@ -442,6 +477,7 @@ public final class InputEngine {
             "correction planned chars=\(result.originalWord.count) replacementChars=\(result.convertedWord.count) deletes=\(deleteCount) pid=\(request.context.frontmostPID) layoutSwitch=\(result.shouldSwitchLayout ? result.targetLayout.rawValue : "none")"
         )
         let plan = CorrectionPlan(
+            trigger: request.trigger,
             boundarySequence: request.sequence,
             contextEpoch: request.context.epoch,
             targetPID: request.context.frontmostPID,
@@ -482,6 +518,7 @@ public final class InputEngine {
         guard let selectedTextRequest else {
             if let word {
                 runDetection(DetectionRequest(
+                    trigger: .hotkey,
                     word: word,
                     boundary: "",
                     sequence: sequence,
@@ -537,6 +574,7 @@ public final class InputEngine {
                     )
                 } else if let word {
                     self.runDetection(DetectionRequest(
+                        trigger: .hotkey,
                         word: word,
                         boundary: "",
                         sequence: sequence,

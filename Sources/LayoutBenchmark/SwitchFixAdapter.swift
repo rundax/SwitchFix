@@ -226,6 +226,7 @@ public final class SwitchFixAdapter: @unchecked Sendable {
                     }
 
                     let req = assembleDetectionRequest(
+                        trigger: .automaticBoundary,
                         word: word,
                         boundary: boundary,
                         sequence: seq,

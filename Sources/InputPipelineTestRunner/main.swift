@@ -466,6 +466,7 @@ run("native undo invalidates detector state") {
 run("correction sequence and context gates") {
     let base = context()
     let plan = CorrectionPlan(
+        trigger: .automaticBoundary,
         boundarySequence: 10,
         contextEpoch: base.epoch,
         targetPID: base.frontmostPID,
@@ -759,6 +760,7 @@ run("tap reset recovery") {
 run("bounded tagged event batch") {
     let current = context()
     let plan = CorrectionPlan(
+        trigger: .automaticBoundary,
         boundarySequence: 1,
         contextEpoch: 1,
         targetPID: current.frontmostPID,
@@ -786,6 +788,7 @@ run("bounded tagged event batch") {
     check(events.allSatisfy { $0.sourceUserData == switchFixEventMarker }, "every generated event must carry the marker")
 
     let longPlan = CorrectionPlan(
+        trigger: .automaticBoundary,
         boundarySequence: 1,
         contextEpoch: 1,
         targetPID: 100,
@@ -811,6 +814,7 @@ run("bounded tagged event batch") {
 run("undo generation") {
     let originalContext = context(epoch: 4, pid: 100)
     let plan = CorrectionPlan(
+        trigger: .automaticBoundary,
         boundarySequence: 7,
         contextEpoch: 4,
         targetPID: 100,
@@ -1337,6 +1341,71 @@ run("drainPipeline and request assembly") {
     check(emissionCalled, "drainPipeline must guarantee all correction stages have executed")
 }
 
+run("personal exceptions pipeline integration and invalidation") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    var emissionCount = 0
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { request in
+            return DetectionResult(
+                sourceLayout: .english,
+                targetLayout: .ukrainian,
+                convertedWord: "тест",
+                originalWord: request.word,
+                shouldSwitchLayout: false
+            )
+        },
+        correctionEmission: { plan in
+            emissionCount += 1
+            return true
+        }
+    )
+
+    // Set personal exceptions containing "protected"
+    engine.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["protected"]))
+    let drained1 = DispatchSemaphore(value: 0)
+    engine.drainPipeline { drained1.signal() }
+    check(drained1.wait(timeout: .now() + 2) == .success, "pipeline drain after exception update")
+
+    // 1. Enqueue protected word "protected "
+    for (idx, char) in "protected".enumerated() {
+        engine.enqueue(store.capture(timestamp: UInt64(idx + 1), kind: .character(String(char)), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+    }
+    engine.enqueue(store.capture(timestamp: 10, kind: .boundary(" "), keyCode: 49, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+
+    let drained2 = DispatchSemaphore(value: 0)
+    engine.drainPipeline { drained2.signal() }
+    check(drained2.wait(timeout: .now() + 2) == .success, "pipeline drain after protected word")
+    check(emissionCount == 0, "protected word must not emit correction even with exactDetection")
+
+    // 2. Invalidate configuration increments epoch without changing enabled state
+    let initialEpoch = store.snapshot().correctionEpoch
+    let newEpoch = store.invalidateCorrectionConfiguration()
+    check(newEpoch == initialEpoch + 1, "invalidateCorrectionConfiguration must increment epoch")
+    check(store.snapshot().correctionAllowed, "enabled state remains allowed after invalidation")
+
+    // A plan created with old epoch must not be eligible
+    let stalePlan = CorrectionPlan(
+        trigger: .automaticBoundary,
+        boundarySequence: 10,
+        contextEpoch: current.epoch,
+        targetPID: current.frontmostPID,
+        editGeneration: 10,
+        correctionEpoch: initialEpoch,
+        deleteCount: 4,
+        replacementText: "test ",
+        originalText: "тест",
+        correctedText: "test",
+        boundaryText: " ",
+        originalLayout: .ukrainian,
+        targetLayout: .english
+    )
+    check(!stalePlan.isEligible(using: store.snapshot()), "plan with stale epoch must fail isEligible")
+}
+
 private func runIntegrationSmoke() {
     guard Permissions.isAccessibilityGranted(), Permissions.isKeyboardListeningAvailable() else {
         print("SKIP: integration smoke requires Accessibility and Input Monitoring")
@@ -1368,6 +1437,7 @@ private func runIntegrationSmoke() {
 
     let smokeContext = context(pid: getpid())
     let plan = CorrectionPlan(
+        trigger: .automaticBoundary,
         boundarySequence: 1,
         contextEpoch: smokeContext.epoch,
         targetPID: getpid(),

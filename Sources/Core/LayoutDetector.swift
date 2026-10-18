@@ -138,6 +138,12 @@ public class LayoutDetector {
         InputSourceManager.shared.sourceID(for: layout)
     }
 
+    /// The trigger provenance for the current detection request.
+    public var currentTrigger: CorrectionTrigger = .automaticBoundary
+
+    /// Personal exceptions protecting specific words from automatic correction.
+    public var personalExceptions: PersonalExceptionsPolicy = .empty
+
     public init() {}
 
     /// Add a character to the word buffer.
@@ -282,6 +288,17 @@ public class LayoutDetector {
         state = .detecting
 
         let word = wordBuffer
+
+        if currentTrigger == .automaticBoundary && (personalExceptions.matches(rawToken: word) || personalExceptions.matches(rawToken: wordBuffer)) {
+            SwitchFixLog.detector.debug("personal exception matched '\(word)' — suppressing automatic correction")
+            consecutiveWrongCount = 0
+            lastDetectionResult = nil
+            pendingSwitchLayout = nil
+            pendingSwitchCount = 0
+            state = .buffering
+            return nil
+        }
+
         let sourceLayout = resolvedSourceLayout(for: word)
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
@@ -797,6 +814,11 @@ public class LayoutDetector {
             if token.boundary.contains(where: \.isNewline) { break }
             let tokenLength = token.typed.count + token.boundary.count
             if spanLength + tokenLength > LayoutDetector.maxSweepLength { break }
+
+            // Personal exceptions barrier: backward sweep stops before any protected token
+            if currentTrigger == .automaticBoundary && (personalExceptions.matches(rawToken: token.typed) || personalExceptions.matches(rawToken: token.display)) {
+                break
+            }
 
             if let convertedTo = token.convertedTo {
                 guard convertedTo == targetLayout else { break }

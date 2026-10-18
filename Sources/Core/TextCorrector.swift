@@ -5,6 +5,7 @@ import os
 import Utils
 
 public struct CorrectionPlan: Equatable {
+    public let trigger: CorrectionTrigger
     public let boundarySequence: UInt64
     public let contextEpoch: UInt64
     public let targetPID: pid_t
@@ -19,6 +20,7 @@ public struct CorrectionPlan: Equatable {
     public let targetLayout: Layout?
 
     public init(
+        trigger: CorrectionTrigger,
         boundarySequence: UInt64,
         contextEpoch: UInt64,
         targetPID: pid_t,
@@ -32,6 +34,7 @@ public struct CorrectionPlan: Equatable {
         originalLayout: Layout,
         targetLayout: Layout?
     ) {
+        self.trigger = trigger
         self.boundarySequence = boundarySequence
         self.contextEpoch = contextEpoch
         self.targetPID = targetPID
@@ -208,6 +211,7 @@ public final class TextCorrector {
             }
             let plan = current.plan
             value = UndoState(plan: CorrectionPlan(
+                trigger: plan.trigger,
                 boundarySequence: plan.boundarySequence,
                 contextEpoch: context.epoch,
                 targetPID: context.frontmostPID,
@@ -258,6 +262,7 @@ public final class TextCorrector {
 
         let replacement = undo.plan.originalText + undo.plan.boundaryText
         let inverse = CorrectionPlan(
+            trigger: undo.plan.trigger,
             boundarySequence: sequence,
             contextEpoch: latest.context.epoch,
             targetPID: latest.context.frontmostPID,
@@ -376,6 +381,7 @@ public final class TextCorrector {
             }
 
             let plan = CorrectionPlan(
+                trigger: .hotkey,
                 boundarySequence: sequence,
                 contextEpoch: context.epoch,
                 targetPID: context.frontmostPID,

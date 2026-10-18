@@ -209,6 +209,15 @@ public final class CaptureStateStore {
         }
     }
 
+    /// Increment correction epoch to invalidate in-flight plans on configuration changes (exceptions, mappings).
+    @discardableResult
+    public func invalidateCorrectionConfiguration() -> UInt64 {
+        state.withLock { value in
+            value.correctionEpoch &+= 1
+            return value.correctionEpoch
+        }
+    }
+
     public func hotkeyConfiguration() -> HotkeyConfiguration {
         state.withLock { $0.hotkeys }
     }

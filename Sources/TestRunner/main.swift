@@ -17,6 +17,10 @@ func assert(_ condition: Bool, _ message: String, file: String = #file, line: In
     }
 }
 
+func check(_ condition: Bool, _ message: String, file: String = #file, line: Int = #line) {
+    assert(condition, message, file: file, line: line)
+}
+
 func assertEqual<T: Equatable>(_ a: T, _ b: T, _ message: String = "", file: String = #file, line: Int = #line) {
     if a == b {
         passed += 1
@@ -28,7 +32,9 @@ func assertEqual<T: Equatable>(_ a: T, _ b: T, _ message: String = "", file: Str
 
 func runSuite(_ name: String, _ block: () -> Void) {
     print("--- \(name) ---")
+    fflush(stdout)
     block()
+    fflush(stdout)
 }
 
 func dictionaryPath(for language: Language) -> String {
@@ -36,14 +42,14 @@ func dictionaryPath(for language: Language) -> String {
     return "\(root)/Sources/Dictionary/Resources/\(language.rawValue).txt"
 }
 
-func forEachDictionaryWord(language: Language, _ block: (String) -> Void) {
+func forEachDictionaryWord(language: Language, _ block: @escaping (String) -> Void) {
     let path = dictionaryPath(for: language)
     guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
         print("  WARN: could not read dictionary at \(path)")
         return
     }
 
-    for line in content.split(whereSeparator: \.isNewline) {
+    content.enumerateLines { line, _ in
         let word = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !word.isEmpty {
             block(word)
@@ -1731,6 +1737,173 @@ runSuite("Synthetic: EN → UK coverage") {
     print("  total: \(total), convertible: \(convertible) (\(String(format: "%.2f", convertibleRate * 100))%)")
     print("  ambiguous: \(ambiguous) (\(String(format: "%.2f", ambiguousRate * 100))%), invalid target: \(invalidTarget)")
     assert(total > 0, "english dictionary should not be empty")
+}
+
+// =============================================================================
+// Personal Exceptions (Plan 02 Slice 1)
+// =============================================================================
+
+runSuite("PersonalExceptions: Normalization & Canonicalization") {
+    // Case variants
+    assertEqual(PersonalExceptionsPolicy.canonicalize("Apple"), "apple", "lowercase Apple")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("APPLE"), "apple", "lowercase APPLE")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("КиЇв"), "київ", "lowercase Ukrainian letters")
+
+    // NFC / NFD canonical composition
+    let decomposed = "e\u{0301}"
+    let precomposed = "é"
+    assertEqual(PersonalExceptionsPolicy.canonicalize(decomposed), precomposed, "NFD must compose to NFC")
+    assertEqual(PersonalExceptionsPolicy.canonicalize(precomposed), precomposed, "NFC must stay NFC")
+
+    // All three apostrophes: ASCII, U+2019, U+02BC
+    assertEqual(PersonalExceptionsPolicy.canonicalize("don't"), "don't", "ASCII apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("don’t"), "don't", "U+2019 curly apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("сімʼя"), "сім'я", "U+02BC modifier letter apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("м’ясо"), "м'ясо", "Ukrainian curly apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("мʼясо"), "м'ясо", "Ukrainian modifier letter apostrophe")
+
+    // Diacritics preserved (no accent stripping)
+    assertEqual(PersonalExceptionsPolicy.canonicalize("café"), "café", "diacritics must not be stripped")
+    assert(PersonalExceptionsPolicy.canonicalize("café") != "cafe", "café is distinct from cafe")
+
+    // Hyphens and backticks remain distinct
+    assertEqual(PersonalExceptionsPolicy.canonicalize("foo-bar"), "foo-bar", "hyphen preserved")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("foo`bar"), "foo`bar", "backtick preserved")
+    assert(PersonalExceptionsPolicy.canonicalize("foo-bar") != PersonalExceptionsPolicy.canonicalize("foo`bar"), "hyphen and backtick are distinct")
+    assert(PersonalExceptionsPolicy.canonicalize("foo'bar") != PersonalExceptionsPolicy.canonicalize("foo-bar"), "apostrophe and hyphen are distinct")
+}
+
+runSuite("PersonalExceptions: Validation rules & boundaries") {
+    // Valid words
+    check(PersonalExceptionsPolicy.validate(candidate: "apple") == .success("apple"), "valid word apple")
+    check(PersonalExceptionsPolicy.validate(candidate: "don't") == .success("don't"), "valid word don't")
+    check(PersonalExceptionsPolicy.validate(candidate: "v2") == .success("v2"), "valid word v2")
+    check(PersonalExceptionsPolicy.validate(candidate: "сім'я") == .success("сім'я"), "valid word сім'я")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo-bar") == .success("foo-bar"), "valid word foo-bar")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo`bar") == .success("foo`bar"), "valid word foo`bar")
+    check(PersonalExceptionsPolicy.validate(candidate: "  swift  ") == .success("swift"), "whitespace trimmed before validation")
+
+    // Empty
+    check(PersonalExceptionsPolicy.validate(candidate: "") == .failure(.empty), "empty rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "   ") == .failure(.empty), "whitespace-only rejected")
+
+    // Length ceilings: 64 Characters, 256 bytes
+    let word64 = String(repeating: "a", count: 64)
+    check(PersonalExceptionsPolicy.validate(candidate: word64) == .success(word64), "64 chars accepted")
+    let word65 = String(repeating: "a", count: 65)
+    check(PersonalExceptionsPolicy.validate(candidate: word65) == .failure(.tooLong(65)), "65 chars rejected")
+
+    // No letters
+    check(PersonalExceptionsPolicy.validate(candidate: "12345") == .failure(.noLetters), "pure digits rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "-") == .failure(.noLetters), "pure punctuation rejected")
+
+    // Invalid characters
+    check(PersonalExceptionsPolicy.validate(candidate: "foo bar") == .failure(.invalidCharacter(" ")), "space rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo\nbar") == .failure(.invalidCharacter("\n")), "newline rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo🎉") == .failure(.invalidCharacter("🎉")), "emoji rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "https://apple.com") == .failure(.invalidCharacter(":")), "url rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "/usr/bin") == .failure(.invalidCharacter("/")), "path rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "user@domain") == .failure(.invalidCharacter("@")), "@ rejected")
+
+    // Punctuation positioning
+    check(PersonalExceptionsPolicy.validate(candidate: "-foo") == .failure(.invalidPunctuationPosition), "leading hyphen rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "'foo") == .failure(.invalidPunctuationPosition), "leading apostrophe rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo-") == .failure(.invalidPunctuationPosition), "trailing hyphen rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo'") == .failure(.invalidPunctuationPosition), "trailing apostrophe rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo--bar") == .failure(.invalidPunctuationPosition), "adjacent hyphens rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo''bar") == .failure(.invalidPunctuationPosition), "adjacent apostrophes rejected")
+}
+
+runSuite("PersonalExceptions: Key derivation & matching") {
+    // Key derivation from tokens
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo"), "foo", "derive plain foo")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo,"), "foo", "derive foo,")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo."), "foo", "derive foo.")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "\"foo"), "foo", "derive \"foo")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo!?"), "foo", "derive foo!?")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "don't"), "don't", "derive don't with internal apostrophe")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "don’t"), "don't", "derive don’t with curly apostrophe")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "сімʼя"), "сім'я", "derive сімʼя with U+02BC")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "kj,"), "kj", "derive kj, -> kj (documented collision)")
+
+    // Matching policy
+    let policy = PersonalExceptionsPolicy(words: ["foo", "don't", "сім'я", "cafe"])
+    check(policy.matches(rawToken: "foo"), "exact match foo")
+    check(policy.matches(rawToken: "Foo"), "case variant Foo matches")
+    check(policy.matches(rawToken: "FOO"), "all-caps FOO matches")
+    check(policy.matches(rawToken: "foo,"), "token with comma foo, matches")
+    check(policy.matches(rawToken: "foo."), "token with period foo. matches")
+    check(policy.matches(rawToken: "\"foo"), "token with leading quote \"foo matches")
+    check(policy.matches(rawToken: "don't"), "don't matches")
+    check(policy.matches(rawToken: "don’t"), "don’t with curly apostrophe matches")
+    check(policy.matches(rawToken: "сімʼя"), "сімʼя with modifier apostrophe matches")
+
+    // Non-matches (no substring, no prefix, distinct tokens)
+    check(!policy.matches(rawToken: "foobar"), "prefix foobar must not match foo")
+    check(!policy.matches(rawToken: "foo-bar"), "hyphenated foo-bar must not match foo")
+    check(!policy.matches(rawToken: "bar"), "unrelated word must not match")
+    check(!policy.matches(rawToken: "café"), "café must not match cafe (accents distinct)")
+}
+
+runSuite("PersonalExceptions: Store persistence & isolation") {
+    autoreleasepool {
+        let suiteName = "com.switchfix.tests.personal-exceptions.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            isolatedDefaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = PersonalExceptionsStore(defaults: isolatedDefaults)
+
+        // Empty startup
+        let initialPolicy = store.loadPolicy()
+        check(initialPolicy.isEmpty, "initial store must be empty")
+        check(initialPolicy.count == 0, "initial count is 0")
+
+        // Add words
+        let add1 = store.add(candidate: "Apple")
+        check(add1 == .success(PersonalExceptionsPolicy(words: ["apple"]), addedWord: "apple"), "add Apple succeeds as canonical apple")
+        let add2 = store.add(candidate: "don’t")
+        check(add2 == .success(PersonalExceptionsPolicy(words: ["apple", "don't"]), addedWord: "don't"), "add don’t succeeds as don't")
+
+        // Duplicate Add
+        let addDup = store.add(candidate: "apple")
+        check(addDup == .duplicate("apple"), "duplicate add returns duplicate status")
+
+        // Reload from new instance (restart simulation)
+        let reloadedStore = PersonalExceptionsStore(defaults: isolatedDefaults)
+        let reloadedPolicy = reloadedStore.loadPolicy()
+        check(reloadedPolicy.count == 2, "reloaded policy has 2 words")
+        check(reloadedPolicy.contains("apple"), "reloaded contains apple")
+        check(reloadedPolicy.contains("don't"), "reloaded contains don't")
+
+        // Remove word
+        let removedPolicy = store.remove(word: "Apple")
+        check(removedPolicy.count == 1, "policy after removal has 1 word")
+        check(!removedPolicy.contains("apple"), "apple was removed")
+        check(removedPolicy.contains("don't"), "don't remains")
+
+        // Malformed defaults handling
+        // 1. Wrong schemaVersion
+        isolatedDefaults.set(["schemaVersion": 99, "words": ["corrupted"]], forKey: PersonalExceptionsStore.preferenceKey)
+        check(store.loadPolicy().isEmpty, "unknown schemaVersion must default to empty policy")
+
+        // 2. Oversized envelope (> 1,000 items)
+        var oversizedWords: [String] = []
+        for i in 0..<1001 {
+            oversizedWords.append("word\(i)")
+        }
+        isolatedDefaults.set(["schemaVersion": 1, "words": oversizedWords], forKey: PersonalExceptionsStore.preferenceKey)
+        check(store.loadPolicy().isEmpty, "oversized envelope (> 1,000) must default to empty policy")
+
+        // 3. Invalid member inside bounded envelope is skipped, valid members loaded
+        isolatedDefaults.set(["schemaVersion": 1, "words": ["valid", "invalid emoji 🎉", "another-valid", "1234"]], forKey: PersonalExceptionsStore.preferenceKey)
+        let filteredPolicy = store.loadPolicy()
+        check(filteredPolicy.count == 2, "filtered policy should load 2 valid words")
+        check(filteredPolicy.contains("valid"), "contains valid")
+        check(filteredPolicy.contains("another-valid"), "contains another-valid")
+        isolatedDefaults.removePersistentDomain(forName: suiteName)
+    }
 }
 
 // =============================================================================

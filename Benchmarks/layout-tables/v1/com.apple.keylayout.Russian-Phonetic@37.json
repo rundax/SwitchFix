@@ -1,0 +1,3465 @@
+{
+  "keyOutputs" : {
+    "0" : {
+      "caps" : {
+        "output" : "А"
+      },
+      "capsOption" : {
+        "output" : "ї"
+      },
+      "keyCode" : 0,
+      "option" : {
+        "output" : "ї"
+      },
+      "shift" : {
+        "output" : "А"
+      },
+      "shiftCaps" : {
+        "output" : "А"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ї"
+      },
+      "shiftOption" : {
+        "output" : "Ї"
+      },
+      "unmodified" : {
+        "output" : "а"
+      }
+    },
+    "1" : {
+      "caps" : {
+        "output" : "С"
+      },
+      "capsOption" : {
+        "output" : "ѕ"
+      },
+      "keyCode" : 1,
+      "option" : {
+        "output" : "ѕ"
+      },
+      "shift" : {
+        "output" : "С"
+      },
+      "shiftCaps" : {
+        "output" : "С"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ѕ"
+      },
+      "shiftOption" : {
+        "output" : "Ѕ"
+      },
+      "unmodified" : {
+        "output" : "с"
+      }
+    },
+    "10" : {
+      "caps" : {
+        "output" : "<"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 10,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "output" : "<"
+      },
+      "shiftCaps" : {
+        "output" : "<"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "output" : ">"
+      }
+    },
+    "100" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 100,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "101" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 101,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "102" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 102,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "103" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 103,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "104" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 104,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "105" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 105,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "106" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 106,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "107" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 107,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "108" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 108,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "109" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 109,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "11" : {
+      "caps" : {
+        "output" : "Б"
+      },
+      "capsOption" : {
+        "output" : "№"
+      },
+      "keyCode" : 11,
+      "option" : {
+        "output" : "№"
+      },
+      "shift" : {
+        "output" : "Б"
+      },
+      "shiftCaps" : {
+        "output" : "Б"
+      },
+      "shiftCapsOption" : {
+        "output" : "№"
+      },
+      "shiftOption" : {
+        "output" : "№"
+      },
+      "unmodified" : {
+        "output" : "б"
+      }
+    },
+    "110" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 110,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "111" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 111,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "112" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 112,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "113" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 113,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "114" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 114,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "115" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 115,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "116" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 116,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "117" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 117,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "118" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 118,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "119" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 119,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "12" : {
+      "caps" : {
+        "output" : "Я"
+      },
+      "capsOption" : {
+        "output" : "¬"
+      },
+      "keyCode" : 12,
+      "option" : {
+        "output" : "¬"
+      },
+      "shift" : {
+        "output" : "Я"
+      },
+      "shiftCaps" : {
+        "output" : "Я"
+      },
+      "shiftCapsOption" : {
+        "output" : "±"
+      },
+      "shiftOption" : {
+        "output" : "±"
+      },
+      "unmodified" : {
+        "output" : "я"
+      }
+    },
+    "120" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 120,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "121" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 121,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "122" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 122,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "123" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 123,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "124" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 124,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "125" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 125,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "126" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 126,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "127" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 127,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "13" : {
+      "caps" : {
+        "output" : "Ш"
+      },
+      "capsOption" : {
+        "output" : "щ"
+      },
+      "keyCode" : 13,
+      "option" : {
+        "output" : "щ"
+      },
+      "shift" : {
+        "output" : "Ш"
+      },
+      "shiftCaps" : {
+        "output" : "Ш"
+      },
+      "shiftCapsOption" : {
+        "output" : "Щ"
+      },
+      "shiftOption" : {
+        "output" : "Щ"
+      },
+      "unmodified" : {
+        "output" : "ш"
+      }
+    },
+    "14" : {
+      "caps" : {
+        "output" : "Е"
+      },
+      "capsOption" : {
+        "output" : "ё"
+      },
+      "keyCode" : 14,
+      "option" : {
+        "output" : "ё"
+      },
+      "shift" : {
+        "output" : "Е"
+      },
+      "shiftCaps" : {
+        "output" : "Е"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ё"
+      },
+      "shiftOption" : {
+        "output" : "Ё"
+      },
+      "unmodified" : {
+        "output" : "е"
+      }
+    },
+    "15" : {
+      "caps" : {
+        "output" : "Р"
+      },
+      "capsOption" : {
+        "output" : "₽"
+      },
+      "keyCode" : 15,
+      "option" : {
+        "output" : "₽"
+      },
+      "shift" : {
+        "output" : "Р"
+      },
+      "shiftCaps" : {
+        "output" : "Р"
+      },
+      "shiftCapsOption" : {
+        "output" : "®"
+      },
+      "shiftOption" : {
+        "output" : "®"
+      },
+      "unmodified" : {
+        "output" : "р"
+      }
+    },
+    "16" : {
+      "caps" : {
+        "output" : "Ы"
+      },
+      "capsOption" : {
+        "output" : "™"
+      },
+      "keyCode" : 16,
+      "option" : {
+        "output" : "™"
+      },
+      "shift" : {
+        "output" : "Ы"
+      },
+      "shiftCaps" : {
+        "output" : "Ы"
+      },
+      "shiftCapsOption" : {
+        "output" : "™"
+      },
+      "shiftOption" : {
+        "output" : "™"
+      },
+      "unmodified" : {
+        "output" : "ы"
+      }
+    },
+    "17" : {
+      "caps" : {
+        "output" : "Т"
+      },
+      "capsOption" : {
+        "output" : "ћ"
+      },
+      "keyCode" : 17,
+      "option" : {
+        "output" : "ћ"
+      },
+      "shift" : {
+        "output" : "Т"
+      },
+      "shiftCaps" : {
+        "output" : "Т"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ћ"
+      },
+      "shiftOption" : {
+        "output" : "Ћ"
+      },
+      "unmodified" : {
+        "output" : "т"
+      }
+    },
+    "18" : {
+      "caps" : {
+        "output" : "!"
+      },
+      "capsOption" : {
+        "output" : "ї"
+      },
+      "keyCode" : 18,
+      "option" : {
+        "output" : "ї"
+      },
+      "shift" : {
+        "output" : "!"
+      },
+      "shiftCaps" : {
+        "output" : "!"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ї"
+      },
+      "shiftOption" : {
+        "output" : "Ї"
+      },
+      "unmodified" : {
+        "output" : "1"
+      }
+    },
+    "19" : {
+      "caps" : {
+        "output" : "@"
+      },
+      "capsOption" : {
+        "output" : "ё"
+      },
+      "keyCode" : 19,
+      "option" : {
+        "output" : "ё"
+      },
+      "shift" : {
+        "output" : "@"
+      },
+      "shiftCaps" : {
+        "output" : "@"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ё"
+      },
+      "shiftOption" : {
+        "output" : "Ё"
+      },
+      "unmodified" : {
+        "output" : "2"
+      }
+    },
+    "2" : {
+      "caps" : {
+        "output" : "Д"
+      },
+      "capsOption" : {
+        "output" : "ђ"
+      },
+      "keyCode" : 2,
+      "option" : {
+        "output" : "ђ"
+      },
+      "shift" : {
+        "output" : "Д"
+      },
+      "shiftCaps" : {
+        "output" : "Д"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ђ"
+      },
+      "shiftOption" : {
+        "output" : "Ђ"
+      },
+      "unmodified" : {
+        "output" : "д"
+      }
+    },
+    "20" : {
+      "caps" : {
+        "output" : "#"
+      },
+      "capsOption" : {
+        "output" : "є"
+      },
+      "keyCode" : 20,
+      "option" : {
+        "output" : "є"
+      },
+      "shift" : {
+        "output" : "#"
+      },
+      "shiftCaps" : {
+        "output" : "#"
+      },
+      "shiftCapsOption" : {
+        "output" : "Є"
+      },
+      "shiftOption" : {
+        "output" : "Є"
+      },
+      "unmodified" : {
+        "output" : "3"
+      }
+    },
+    "21" : {
+      "caps" : {
+        "output" : "$"
+      },
+      "capsOption" : {
+        "output" : "ґ"
+      },
+      "keyCode" : 21,
+      "option" : {
+        "output" : "ґ"
+      },
+      "shift" : {
+        "output" : "$"
+      },
+      "shiftCaps" : {
+        "output" : "$"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ґ"
+      },
+      "shiftOption" : {
+        "output" : "Ґ"
+      },
+      "unmodified" : {
+        "output" : "4"
+      }
+    },
+    "22" : {
+      "caps" : {
+        "output" : "^"
+      },
+      "capsOption" : {
+        "output" : "§"
+      },
+      "keyCode" : 22,
+      "option" : {
+        "output" : "§"
+      },
+      "shift" : {
+        "output" : "^"
+      },
+      "shiftCaps" : {
+        "output" : "^"
+      },
+      "shiftCapsOption" : {
+        "output" : "&"
+      },
+      "shiftOption" : {
+        "output" : "&"
+      },
+      "unmodified" : {
+        "output" : "6"
+      }
+    },
+    "23" : {
+      "caps" : {
+        "output" : "%"
+      },
+      "capsOption" : {
+        "output" : "∞"
+      },
+      "keyCode" : 23,
+      "option" : {
+        "output" : "∞"
+      },
+      "shift" : {
+        "output" : "%"
+      },
+      "shiftCaps" : {
+        "output" : "%"
+      },
+      "shiftCapsOption" : {
+        "output" : "™"
+      },
+      "shiftOption" : {
+        "output" : "™"
+      },
+      "unmodified" : {
+        "output" : "5"
+      }
+    },
+    "24" : {
+      "caps" : {
+        "output" : "Ъ"
+      },
+      "capsOption" : {
+        "output" : "="
+      },
+      "keyCode" : 24,
+      "option" : {
+        "output" : "="
+      },
+      "shift" : {
+        "output" : "Ъ"
+      },
+      "shiftCaps" : {
+        "output" : "Ъ"
+      },
+      "shiftCapsOption" : {
+        "output" : "+"
+      },
+      "shiftOption" : {
+        "output" : "+"
+      },
+      "unmodified" : {
+        "output" : "ъ"
+      }
+    },
+    "25" : {
+      "caps" : {
+        "output" : "("
+      },
+      "capsOption" : {
+        "output" : "["
+      },
+      "keyCode" : 25,
+      "option" : {
+        "output" : "["
+      },
+      "shift" : {
+        "output" : "("
+      },
+      "shiftCaps" : {
+        "output" : "("
+      },
+      "shiftCapsOption" : {
+        "output" : "{"
+      },
+      "shiftOption" : {
+        "output" : "{"
+      },
+      "unmodified" : {
+        "output" : "9"
+      }
+    },
+    "26" : {
+      "caps" : {
+        "output" : "&"
+      },
+      "capsOption" : {
+        "output" : "¶"
+      },
+      "keyCode" : 26,
+      "option" : {
+        "output" : "¶"
+      },
+      "shift" : {
+        "output" : "&"
+      },
+      "shiftCaps" : {
+        "output" : "&"
+      },
+      "shiftCapsOption" : {
+        "output" : "№"
+      },
+      "shiftOption" : {
+        "output" : "№"
+      },
+      "unmodified" : {
+        "output" : "7"
+      }
+    },
+    "27" : {
+      "caps" : {
+        "output" : "Ь"
+      },
+      "capsOption" : {
+        "output" : "-"
+      },
+      "keyCode" : 27,
+      "option" : {
+        "output" : "-"
+      },
+      "shift" : {
+        "output" : "Ь"
+      },
+      "shiftCaps" : {
+        "output" : "Ь"
+      },
+      "shiftCapsOption" : {
+        "output" : "—"
+      },
+      "shiftOption" : {
+        "output" : "—"
+      },
+      "unmodified" : {
+        "output" : "ь"
+      }
+    },
+    "28" : {
+      "caps" : {
+        "output" : "*"
+      },
+      "capsOption" : {
+        "output" : "•"
+      },
+      "keyCode" : 28,
+      "option" : {
+        "output" : "•"
+      },
+      "shift" : {
+        "output" : "*"
+      },
+      "shiftCaps" : {
+        "output" : "*"
+      },
+      "shiftCapsOption" : {
+        "output" : "°"
+      },
+      "shiftOption" : {
+        "output" : "°"
+      },
+      "unmodified" : {
+        "output" : "8"
+      }
+    },
+    "29" : {
+      "caps" : {
+        "output" : ")"
+      },
+      "capsOption" : {
+        "output" : "]"
+      },
+      "keyCode" : 29,
+      "option" : {
+        "output" : "]"
+      },
+      "shift" : {
+        "output" : ")"
+      },
+      "shiftCaps" : {
+        "output" : ")"
+      },
+      "shiftCapsOption" : {
+        "output" : "}"
+      },
+      "shiftOption" : {
+        "output" : "}"
+      },
+      "unmodified" : {
+        "output" : "0"
+      }
+    },
+    "3" : {
+      "caps" : {
+        "output" : "Ф"
+      },
+      "capsOption" : {
+        "output" : "ƒ"
+      },
+      "keyCode" : 3,
+      "option" : {
+        "output" : "ƒ"
+      },
+      "shift" : {
+        "output" : "Ф"
+      },
+      "shiftCaps" : {
+        "output" : "Ф"
+      },
+      "shiftCapsOption" : {
+        "output" : "∆"
+      },
+      "shiftOption" : {
+        "output" : "∆"
+      },
+      "unmodified" : {
+        "output" : "ф"
+      }
+    },
+    "30" : {
+      "caps" : {
+        "output" : "Ж"
+      },
+      "capsOption" : {
+        "output" : "џ"
+      },
+      "keyCode" : 30,
+      "option" : {
+        "output" : "џ"
+      },
+      "shift" : {
+        "output" : "Ж"
+      },
+      "shiftCaps" : {
+        "output" : "Ж"
+      },
+      "shiftCapsOption" : {
+        "output" : "Џ"
+      },
+      "shiftOption" : {
+        "output" : "Џ"
+      },
+      "unmodified" : {
+        "output" : "ж"
+      }
+    },
+    "31" : {
+      "caps" : {
+        "output" : "О"
+      },
+      "capsOption" : {
+        "output" : "«"
+      },
+      "keyCode" : 31,
+      "option" : {
+        "output" : "«"
+      },
+      "shift" : {
+        "output" : "О"
+      },
+      "shiftCaps" : {
+        "output" : "О"
+      },
+      "shiftCapsOption" : {
+        "output" : "‘"
+      },
+      "shiftOption" : {
+        "output" : "‘"
+      },
+      "unmodified" : {
+        "output" : "о"
+      }
+    },
+    "32" : {
+      "caps" : {
+        "output" : "У"
+      },
+      "capsOption" : {
+        "output" : "ў"
+      },
+      "keyCode" : 32,
+      "option" : {
+        "output" : "ў"
+      },
+      "shift" : {
+        "output" : "У"
+      },
+      "shiftCaps" : {
+        "output" : "У"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ў"
+      },
+      "shiftOption" : {
+        "output" : "Ў"
+      },
+      "unmodified" : {
+        "output" : "у"
+      }
+    },
+    "33" : {
+      "caps" : {
+        "output" : "Ю"
+      },
+      "capsOption" : {
+        "output" : "“"
+      },
+      "keyCode" : 33,
+      "option" : {
+        "output" : "“"
+      },
+      "shift" : {
+        "output" : "Ю"
+      },
+      "shiftCaps" : {
+        "output" : "Ю"
+      },
+      "shiftCapsOption" : {
+        "output" : "”"
+      },
+      "shiftOption" : {
+        "output" : "”"
+      },
+      "unmodified" : {
+        "output" : "ю"
+      }
+    },
+    "34" : {
+      "caps" : {
+        "output" : "И"
+      },
+      "capsOption" : {
+        "output" : "і"
+      },
+      "keyCode" : 34,
+      "option" : {
+        "output" : "і"
+      },
+      "shift" : {
+        "output" : "И"
+      },
+      "shiftCaps" : {
+        "output" : "И"
+      },
+      "shiftCapsOption" : {
+        "output" : "І"
+      },
+      "shiftOption" : {
+        "output" : "І"
+      },
+      "unmodified" : {
+        "output" : "и"
+      }
+    },
+    "35" : {
+      "caps" : {
+        "output" : "П"
+      },
+      "capsOption" : {
+        "output" : "»"
+      },
+      "keyCode" : 35,
+      "option" : {
+        "output" : "»"
+      },
+      "shift" : {
+        "output" : "П"
+      },
+      "shiftCaps" : {
+        "output" : "П"
+      },
+      "shiftCapsOption" : {
+        "output" : "’"
+      },
+      "shiftOption" : {
+        "output" : "’"
+      },
+      "unmodified" : {
+        "output" : "п"
+      }
+    },
+    "36" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 36,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "37" : {
+      "caps" : {
+        "output" : "Л"
+      },
+      "capsOption" : {
+        "output" : "љ"
+      },
+      "keyCode" : 37,
+      "option" : {
+        "output" : "љ"
+      },
+      "shift" : {
+        "output" : "Л"
+      },
+      "shiftCaps" : {
+        "output" : "Л"
+      },
+      "shiftCapsOption" : {
+        "output" : "Љ"
+      },
+      "shiftOption" : {
+        "output" : "Љ"
+      },
+      "unmodified" : {
+        "output" : "л"
+      }
+    },
+    "38" : {
+      "caps" : {
+        "output" : "Й"
+      },
+      "capsOption" : {
+        "output" : "ј"
+      },
+      "keyCode" : 38,
+      "option" : {
+        "output" : "ј"
+      },
+      "shift" : {
+        "output" : "Й"
+      },
+      "shiftCaps" : {
+        "output" : "Й"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ј"
+      },
+      "shiftOption" : {
+        "output" : "Ј"
+      },
+      "unmodified" : {
+        "output" : "й"
+      }
+    },
+    "39" : {
+      "caps" : {
+        "output" : "\""
+      },
+      "capsOption" : {
+        "output" : "’"
+      },
+      "keyCode" : 39,
+      "option" : {
+        "output" : "’"
+      },
+      "shift" : {
+        "output" : "\""
+      },
+      "shiftCaps" : {
+        "output" : "\""
+      },
+      "shiftCapsOption" : {
+        "output" : "`"
+      },
+      "shiftOption" : {
+        "output" : "`"
+      },
+      "unmodified" : {
+        "output" : "'"
+      }
+    },
+    "4" : {
+      "caps" : {
+        "output" : "Ч"
+      },
+      "capsOption" : {
+        "output" : "ґ"
+      },
+      "keyCode" : 4,
+      "option" : {
+        "output" : "ґ"
+      },
+      "shift" : {
+        "output" : "Ч"
+      },
+      "shiftCaps" : {
+        "output" : "Ч"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ґ"
+      },
+      "shiftOption" : {
+        "output" : "Ґ"
+      },
+      "unmodified" : {
+        "output" : "ч"
+      }
+    },
+    "40" : {
+      "caps" : {
+        "output" : "К"
+      },
+      "capsOption" : {
+        "output" : "ќ"
+      },
+      "keyCode" : 40,
+      "option" : {
+        "output" : "ќ"
+      },
+      "shift" : {
+        "output" : "К"
+      },
+      "shiftCaps" : {
+        "output" : "К"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ќ"
+      },
+      "shiftOption" : {
+        "output" : "Ќ"
+      },
+      "unmodified" : {
+        "output" : "к"
+      }
+    },
+    "41" : {
+      "caps" : {
+        "output" : ":"
+      },
+      "capsOption" : {
+        "output" : "„"
+      },
+      "keyCode" : 41,
+      "option" : {
+        "output" : "„"
+      },
+      "shift" : {
+        "output" : ":"
+      },
+      "shiftCaps" : {
+        "output" : ":"
+      },
+      "shiftCapsOption" : {
+        "output" : "’"
+      },
+      "shiftOption" : {
+        "output" : "’"
+      },
+      "unmodified" : {
+        "output" : ";"
+      }
+    },
+    "42" : {
+      "caps" : {
+        "output" : "Э"
+      },
+      "capsOption" : {
+        "output" : "є"
+      },
+      "keyCode" : 42,
+      "option" : {
+        "output" : "є"
+      },
+      "shift" : {
+        "output" : "Э"
+      },
+      "shiftCaps" : {
+        "output" : "Э"
+      },
+      "shiftCapsOption" : {
+        "output" : "Є"
+      },
+      "shiftOption" : {
+        "output" : "Є"
+      },
+      "unmodified" : {
+        "output" : "э"
+      }
+    },
+    "43" : {
+      "caps" : {
+        "output" : "<"
+      },
+      "capsOption" : {
+        "output" : "≤"
+      },
+      "keyCode" : 43,
+      "option" : {
+        "output" : "≤"
+      },
+      "shift" : {
+        "output" : "<"
+      },
+      "shiftCaps" : {
+        "output" : "<"
+      },
+      "shiftCapsOption" : {
+        "output" : "÷"
+      },
+      "shiftOption" : {
+        "output" : "÷"
+      },
+      "unmodified" : {
+        "output" : ","
+      }
+    },
+    "44" : {
+      "caps" : {
+        "output" : "?"
+      },
+      "capsOption" : {
+        "output" : "÷"
+      },
+      "keyCode" : 44,
+      "option" : {
+        "output" : "÷"
+      },
+      "shift" : {
+        "output" : "?"
+      },
+      "shiftCaps" : {
+        "output" : "?"
+      },
+      "shiftCapsOption" : {
+        "output" : "\\"
+      },
+      "shiftOption" : {
+        "output" : "\\"
+      },
+      "unmodified" : {
+        "output" : "\/"
+      }
+    },
+    "45" : {
+      "caps" : {
+        "output" : "Н"
+      },
+      "capsOption" : {
+        "output" : "њ"
+      },
+      "keyCode" : 45,
+      "option" : {
+        "output" : "њ"
+      },
+      "shift" : {
+        "output" : "Н"
+      },
+      "shiftCaps" : {
+        "output" : "Н"
+      },
+      "shiftCapsOption" : {
+        "output" : "Њ"
+      },
+      "shiftOption" : {
+        "output" : "Њ"
+      },
+      "unmodified" : {
+        "output" : "н"
+      }
+    },
+    "46" : {
+      "caps" : {
+        "output" : "М"
+      },
+      "capsOption" : {
+        "output" : "µ"
+      },
+      "keyCode" : 46,
+      "option" : {
+        "output" : "µ"
+      },
+      "shift" : {
+        "output" : "М"
+      },
+      "shiftCaps" : {
+        "output" : "М"
+      },
+      "shiftCapsOption" : {
+        "output" : "µ"
+      },
+      "shiftOption" : {
+        "output" : "µ"
+      },
+      "unmodified" : {
+        "output" : "м"
+      }
+    },
+    "47" : {
+      "caps" : {
+        "output" : ">"
+      },
+      "capsOption" : {
+        "output" : "≥"
+      },
+      "keyCode" : 47,
+      "option" : {
+        "output" : "≥"
+      },
+      "shift" : {
+        "output" : ">"
+      },
+      "shiftCaps" : {
+        "output" : ">"
+      },
+      "shiftCapsOption" : {
+        "output" : "…"
+      },
+      "shiftOption" : {
+        "output" : "…"
+      },
+      "unmodified" : {
+        "output" : "."
+      }
+    },
+    "48" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 48,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "49" : {
+      "caps" : {
+        "output" : " "
+      },
+      "capsOption" : {
+        "output" : " "
+      },
+      "keyCode" : 49,
+      "option" : {
+        "output" : " "
+      },
+      "shift" : {
+        "output" : " "
+      },
+      "shiftCaps" : {
+        "output" : " "
+      },
+      "shiftCapsOption" : {
+        "output" : " "
+      },
+      "shiftOption" : {
+        "output" : " "
+      },
+      "unmodified" : {
+        "output" : " "
+      }
+    },
+    "5" : {
+      "caps" : {
+        "output" : "Г"
+      },
+      "capsOption" : {
+        "output" : "ѓ"
+      },
+      "keyCode" : 5,
+      "option" : {
+        "output" : "ѓ"
+      },
+      "shift" : {
+        "output" : "Г"
+      },
+      "shiftCaps" : {
+        "output" : "Г"
+      },
+      "shiftCapsOption" : {
+        "output" : "Ѓ"
+      },
+      "shiftOption" : {
+        "output" : "Ѓ"
+      },
+      "unmodified" : {
+        "output" : "г"
+      }
+    },
+    "50" : {
+      "caps" : {
+        "output" : "Щ"
+      },
+      "capsOption" : {
+        "output" : "†"
+      },
+      "keyCode" : 50,
+      "option" : {
+        "output" : "†"
+      },
+      "shift" : {
+        "output" : "Щ"
+      },
+      "shiftCaps" : {
+        "output" : "Щ"
+      },
+      "shiftCapsOption" : {
+        "output" : "`"
+      },
+      "shiftOption" : {
+        "output" : "`"
+      },
+      "unmodified" : {
+        "output" : "щ"
+      }
+    },
+    "51" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 51,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "52" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 52,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "53" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 53,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "54" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 54,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "55" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 55,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "56" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 56,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "57" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 57,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "58" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 58,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "59" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 59,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "6" : {
+      "caps" : {
+        "output" : "З"
+      },
+      "capsOption" : {
+        "output" : "џ"
+      },
+      "keyCode" : 6,
+      "option" : {
+        "output" : "џ"
+      },
+      "shift" : {
+        "output" : "З"
+      },
+      "shiftCaps" : {
+        "output" : "З"
+      },
+      "shiftCapsOption" : {
+        "output" : "Џ"
+      },
+      "shiftOption" : {
+        "output" : "Џ"
+      },
+      "unmodified" : {
+        "output" : "з"
+      }
+    },
+    "60" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 60,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "61" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 61,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "62" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 62,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "63" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 63,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "64" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 64,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "65" : {
+      "caps" : {
+        "output" : ","
+      },
+      "capsOption" : {
+        "output" : ","
+      },
+      "keyCode" : 65,
+      "option" : {
+        "output" : ","
+      },
+      "shift" : {
+        "output" : ","
+      },
+      "shiftCaps" : {
+        "output" : ","
+      },
+      "shiftCapsOption" : {
+        "output" : ","
+      },
+      "shiftOption" : {
+        "output" : ","
+      },
+      "unmodified" : {
+        "output" : ","
+      }
+    },
+    "66" : {
+      "caps" : {
+        "output" : "*"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 66,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "output" : "*"
+      },
+      "shiftCaps" : {
+        "output" : "*"
+      },
+      "shiftCapsOption" : {
+        "output" : "*"
+      },
+      "shiftOption" : {
+        "output" : "*"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "67" : {
+      "caps" : {
+        "output" : "*"
+      },
+      "capsOption" : {
+        "output" : "*"
+      },
+      "keyCode" : 67,
+      "option" : {
+        "output" : "*"
+      },
+      "shift" : {
+        "output" : "*"
+      },
+      "shiftCaps" : {
+        "output" : "*"
+      },
+      "shiftCapsOption" : {
+        "output" : "*"
+      },
+      "shiftOption" : {
+        "output" : "*"
+      },
+      "unmodified" : {
+        "output" : "*"
+      }
+    },
+    "68" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 68,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "69" : {
+      "caps" : {
+        "output" : "+"
+      },
+      "capsOption" : {
+        "output" : "+"
+      },
+      "keyCode" : 69,
+      "option" : {
+        "output" : "+"
+      },
+      "shift" : {
+        "output" : "+"
+      },
+      "shiftCaps" : {
+        "output" : "+"
+      },
+      "shiftCapsOption" : {
+        "output" : "+"
+      },
+      "shiftOption" : {
+        "output" : "+"
+      },
+      "unmodified" : {
+        "output" : "+"
+      }
+    },
+    "7" : {
+      "caps" : {
+        "output" : "Х"
+      },
+      "capsOption" : {
+        "output" : "≈"
+      },
+      "keyCode" : 7,
+      "option" : {
+        "output" : "≈"
+      },
+      "shift" : {
+        "output" : "Х"
+      },
+      "shiftCaps" : {
+        "output" : "Х"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "output" : "х"
+      }
+    },
+    "70" : {
+      "caps" : {
+        "output" : "+"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 70,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "output" : "+"
+      },
+      "shiftCaps" : {
+        "output" : "+"
+      },
+      "shiftCapsOption" : {
+        "output" : "+"
+      },
+      "shiftOption" : {
+        "output" : "+"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "71" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 71,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "72" : {
+      "caps" : {
+        "output" : "="
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 72,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "output" : "="
+      },
+      "shiftCaps" : {
+        "output" : "="
+      },
+      "shiftCapsOption" : {
+        "output" : "="
+      },
+      "shiftOption" : {
+        "output" : "="
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "73" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 73,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "74" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 74,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "75" : {
+      "caps" : {
+        "output" : "\/"
+      },
+      "capsOption" : {
+        "output" : "\/"
+      },
+      "keyCode" : 75,
+      "option" : {
+        "output" : "\/"
+      },
+      "shift" : {
+        "output" : "\/"
+      },
+      "shiftCaps" : {
+        "output" : "\/"
+      },
+      "shiftCapsOption" : {
+        "output" : "\/"
+      },
+      "shiftOption" : {
+        "output" : "\/"
+      },
+      "unmodified" : {
+        "output" : "\/"
+      }
+    },
+    "76" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 76,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "77" : {
+      "caps" : {
+        "output" : "\/"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 77,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "output" : "\/"
+      },
+      "shiftCaps" : {
+        "output" : "\/"
+      },
+      "shiftCapsOption" : {
+        "output" : "\/"
+      },
+      "shiftOption" : {
+        "output" : "\/"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "78" : {
+      "caps" : {
+        "output" : "-"
+      },
+      "capsOption" : {
+        "output" : "-"
+      },
+      "keyCode" : 78,
+      "option" : {
+        "output" : "-"
+      },
+      "shift" : {
+        "output" : "-"
+      },
+      "shiftCaps" : {
+        "output" : "-"
+      },
+      "shiftCapsOption" : {
+        "output" : "-"
+      },
+      "shiftOption" : {
+        "output" : "-"
+      },
+      "unmodified" : {
+        "output" : "-"
+      }
+    },
+    "79" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 79,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "8" : {
+      "caps" : {
+        "output" : "Ц"
+      },
+      "capsOption" : {
+        "output" : "©"
+      },
+      "keyCode" : 8,
+      "option" : {
+        "output" : "©"
+      },
+      "shift" : {
+        "output" : "Ц"
+      },
+      "shiftCaps" : {
+        "output" : "Ц"
+      },
+      "shiftCapsOption" : {
+        "output" : "©"
+      },
+      "shiftOption" : {
+        "output" : "©"
+      },
+      "unmodified" : {
+        "output" : "ц"
+      }
+    },
+    "80" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 80,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "81" : {
+      "caps" : {
+        "output" : "="
+      },
+      "capsOption" : {
+        "output" : "="
+      },
+      "keyCode" : 81,
+      "option" : {
+        "output" : "="
+      },
+      "shift" : {
+        "output" : "="
+      },
+      "shiftCaps" : {
+        "output" : "="
+      },
+      "shiftCapsOption" : {
+        "output" : "="
+      },
+      "shiftOption" : {
+        "output" : "="
+      },
+      "unmodified" : {
+        "output" : "="
+      }
+    },
+    "82" : {
+      "caps" : {
+        "output" : "0"
+      },
+      "capsOption" : {
+        "output" : "0"
+      },
+      "keyCode" : 82,
+      "option" : {
+        "output" : "0"
+      },
+      "shift" : {
+        "output" : "0"
+      },
+      "shiftCaps" : {
+        "output" : "0"
+      },
+      "shiftCapsOption" : {
+        "output" : "0"
+      },
+      "shiftOption" : {
+        "output" : "0"
+      },
+      "unmodified" : {
+        "output" : "0"
+      }
+    },
+    "83" : {
+      "caps" : {
+        "output" : "1"
+      },
+      "capsOption" : {
+        "output" : "1"
+      },
+      "keyCode" : 83,
+      "option" : {
+        "output" : "1"
+      },
+      "shift" : {
+        "output" : "1"
+      },
+      "shiftCaps" : {
+        "output" : "1"
+      },
+      "shiftCapsOption" : {
+        "output" : "1"
+      },
+      "shiftOption" : {
+        "output" : "1"
+      },
+      "unmodified" : {
+        "output" : "1"
+      }
+    },
+    "84" : {
+      "caps" : {
+        "output" : "2"
+      },
+      "capsOption" : {
+        "output" : "2"
+      },
+      "keyCode" : 84,
+      "option" : {
+        "output" : "2"
+      },
+      "shift" : {
+        "output" : "2"
+      },
+      "shiftCaps" : {
+        "output" : "2"
+      },
+      "shiftCapsOption" : {
+        "output" : "2"
+      },
+      "shiftOption" : {
+        "output" : "2"
+      },
+      "unmodified" : {
+        "output" : "2"
+      }
+    },
+    "85" : {
+      "caps" : {
+        "output" : "3"
+      },
+      "capsOption" : {
+        "output" : "3"
+      },
+      "keyCode" : 85,
+      "option" : {
+        "output" : "3"
+      },
+      "shift" : {
+        "output" : "3"
+      },
+      "shiftCaps" : {
+        "output" : "3"
+      },
+      "shiftCapsOption" : {
+        "output" : "3"
+      },
+      "shiftOption" : {
+        "output" : "3"
+      },
+      "unmodified" : {
+        "output" : "3"
+      }
+    },
+    "86" : {
+      "caps" : {
+        "output" : "4"
+      },
+      "capsOption" : {
+        "output" : "4"
+      },
+      "keyCode" : 86,
+      "option" : {
+        "output" : "4"
+      },
+      "shift" : {
+        "output" : "4"
+      },
+      "shiftCaps" : {
+        "output" : "4"
+      },
+      "shiftCapsOption" : {
+        "output" : "4"
+      },
+      "shiftOption" : {
+        "output" : "4"
+      },
+      "unmodified" : {
+        "output" : "4"
+      }
+    },
+    "87" : {
+      "caps" : {
+        "output" : "5"
+      },
+      "capsOption" : {
+        "output" : "5"
+      },
+      "keyCode" : 87,
+      "option" : {
+        "output" : "5"
+      },
+      "shift" : {
+        "output" : "5"
+      },
+      "shiftCaps" : {
+        "output" : "5"
+      },
+      "shiftCapsOption" : {
+        "output" : "5"
+      },
+      "shiftOption" : {
+        "output" : "5"
+      },
+      "unmodified" : {
+        "output" : "5"
+      }
+    },
+    "88" : {
+      "caps" : {
+        "output" : "6"
+      },
+      "capsOption" : {
+        "output" : "6"
+      },
+      "keyCode" : 88,
+      "option" : {
+        "output" : "6"
+      },
+      "shift" : {
+        "output" : "6"
+      },
+      "shiftCaps" : {
+        "output" : "6"
+      },
+      "shiftCapsOption" : {
+        "output" : "6"
+      },
+      "shiftOption" : {
+        "output" : "6"
+      },
+      "unmodified" : {
+        "output" : "6"
+      }
+    },
+    "89" : {
+      "caps" : {
+        "output" : "7"
+      },
+      "capsOption" : {
+        "output" : "7"
+      },
+      "keyCode" : 89,
+      "option" : {
+        "output" : "7"
+      },
+      "shift" : {
+        "output" : "7"
+      },
+      "shiftCaps" : {
+        "output" : "7"
+      },
+      "shiftCapsOption" : {
+        "output" : "7"
+      },
+      "shiftOption" : {
+        "output" : "7"
+      },
+      "unmodified" : {
+        "output" : "7"
+      }
+    },
+    "9" : {
+      "caps" : {
+        "output" : "В"
+      },
+      "capsOption" : {
+        "output" : "√"
+      },
+      "keyCode" : 9,
+      "option" : {
+        "output" : "√"
+      },
+      "shift" : {
+        "output" : "В"
+      },
+      "shiftCaps" : {
+        "output" : "В"
+      },
+      "shiftCapsOption" : {
+        "output" : "†"
+      },
+      "shiftOption" : {
+        "output" : "†"
+      },
+      "unmodified" : {
+        "output" : "в"
+      }
+    },
+    "90" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 90,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "91" : {
+      "caps" : {
+        "output" : "8"
+      },
+      "capsOption" : {
+        "output" : "8"
+      },
+      "keyCode" : 91,
+      "option" : {
+        "output" : "8"
+      },
+      "shift" : {
+        "output" : "8"
+      },
+      "shiftCaps" : {
+        "output" : "8"
+      },
+      "shiftCapsOption" : {
+        "output" : "8"
+      },
+      "shiftOption" : {
+        "output" : "8"
+      },
+      "unmodified" : {
+        "output" : "8"
+      }
+    },
+    "92" : {
+      "caps" : {
+        "output" : "9"
+      },
+      "capsOption" : {
+        "output" : "9"
+      },
+      "keyCode" : 92,
+      "option" : {
+        "output" : "9"
+      },
+      "shift" : {
+        "output" : "9"
+      },
+      "shiftCaps" : {
+        "output" : "9"
+      },
+      "shiftCapsOption" : {
+        "output" : "9"
+      },
+      "shiftOption" : {
+        "output" : "9"
+      },
+      "unmodified" : {
+        "output" : "9"
+      }
+    },
+    "93" : {
+      "caps" : {
+        "output" : "<"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 93,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "output" : "<"
+      },
+      "shiftCaps" : {
+        "output" : "<"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "output" : ">"
+      }
+    },
+    "94" : {
+      "caps" : {
+        "output" : "Щ"
+      },
+      "capsOption" : {
+        "output" : "†"
+      },
+      "keyCode" : 94,
+      "option" : {
+        "output" : "†"
+      },
+      "shift" : {
+        "output" : "Щ"
+      },
+      "shiftCaps" : {
+        "output" : "Щ"
+      },
+      "shiftCapsOption" : {
+        "output" : "`"
+      },
+      "shiftOption" : {
+        "output" : "`"
+      },
+      "unmodified" : {
+        "output" : "щ"
+      }
+    },
+    "95" : {
+      "caps" : {
+        "rejection" : "empty"
+      },
+      "capsOption" : {
+        "rejection" : "empty"
+      },
+      "keyCode" : 95,
+      "option" : {
+        "rejection" : "empty"
+      },
+      "shift" : {
+        "rejection" : "empty"
+      },
+      "shiftCaps" : {
+        "rejection" : "empty"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "empty"
+      },
+      "shiftOption" : {
+        "rejection" : "empty"
+      },
+      "unmodified" : {
+        "rejection" : "empty"
+      }
+    },
+    "96" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 96,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "97" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 97,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "98" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 98,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    },
+    "99" : {
+      "caps" : {
+        "rejection" : "control"
+      },
+      "capsOption" : {
+        "rejection" : "control"
+      },
+      "keyCode" : 99,
+      "option" : {
+        "rejection" : "control"
+      },
+      "shift" : {
+        "rejection" : "control"
+      },
+      "shiftCaps" : {
+        "rejection" : "control"
+      },
+      "shiftCapsOption" : {
+        "rejection" : "control"
+      },
+      "shiftOption" : {
+        "rejection" : "control"
+      },
+      "unmodified" : {
+        "rejection" : "control"
+      }
+    }
+  },
+  "keyboardType" : 37,
+  "osBuild" : "24G830",
+  "osVersion" : "15.7.9",
+  "schemaVersion" : 1,
+  "sourceID" : "com.apple.keylayout.Russian-Phonetic"
+}

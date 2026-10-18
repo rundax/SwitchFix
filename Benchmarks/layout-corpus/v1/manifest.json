@@ -1,0 +1,103 @@
+{
+  "corpusVersion" : "v1",
+  "created" : "2026-10-19",
+  "files" : {
+    "layout-corpus\/v1\/README.md" : {
+      "sha256" : "aee9eaa02e7fd87cee28a2aa842318186a631b0c8800db5596aa1a6532b40d77"
+    },
+    "layout-corpus\/v1\/development.jsonl" : {
+      "sha256" : "2b54ac2a26bf524ed412dcacbd1458f4115413fc886b624ae93b79bb524c4b16",
+      "trialsCount" : 100
+    },
+    "layout-corpus\/v1\/holdout.jsonl" : {
+      "sha256" : "ad9672a0544c2338a7546724fad423064dc2029999cec8fa3c9402405b8ddd0c",
+      "trialsCount" : 100
+    },
+    "layout-tables\/v1\/com.apple.keylayout.ABC@37.json" : {
+      "sha256" : "cf0bed17113a8f0d96738efeb7ca33449314c2b02e930ccc3b1021cbfdd57f46"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.ABC@91.json" : {
+      "sha256" : "4a135908d4e08e20bdab9e17c39f7731765d039b50c0819b88c847a1d8ecf5aa"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.British@37.json" : {
+      "sha256" : "62657c4714b1ba0567282bf4d2beb6f247ab12643acf8dd66e43fc5e0fb07e7b"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.British@91.json" : {
+      "sha256" : "b29622001b91eba73b291d9c8595f57394f3a64ddd4d700b1ff3a884ea3d82e2"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Colemak@37.json" : {
+      "sha256" : "4faf9db8a1732999fc46357c7791fd6a29ec298b645a810f87b1c281a4c3d83b"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Colemak@91.json" : {
+      "sha256" : "e5ab956b491545b4adc68f82801b67e45a5df016758199f9312a122948174197"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Dvorak@37.json" : {
+      "sha256" : "6b31a65f097b6543cec92f2b87b4e6afc5177ba853de941ab0a62da389d18d0f"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Dvorak@91.json" : {
+      "sha256" : "61befd74221873723822cdafa27f3300077393a55c4a0e4f24d3ca099fd7024f"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Russian-Phonetic@37.json" : {
+      "sha256" : "1c2d031cbb0ef13b89b0e586d8acf64fb8c9d751364c0267b6ed00fbad94a00a"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Russian-Phonetic@91.json" : {
+      "sha256" : "09e30609b90e9aab3184e99c69d689eda4073652dd69a085bde28406d26a593d"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Russian@37.json" : {
+      "sha256" : "249b33745e1b4c8fe058dbfd55cbec18083d93089fe0bb6c9484dabc4e3bc30a"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Russian@91.json" : {
+      "sha256" : "ccb648a0c68868e58e51388594d1632beaccd93f9758504a95706ce4c00e3bad"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.RussianWin@37.json" : {
+      "sha256" : "29898c681949ffe8d31b0a157e85f453d2b2f2c4437927e8c25d87a532d3060b"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.RussianWin@91.json" : {
+      "sha256" : "8585e4a27ee4cf81c204656e5c472aa5fd99c8208e507e1067579a576f5eec1e"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.US@37.json" : {
+      "sha256" : "5066da5b841c2ca0288defff297e9a28057d4c473be59a1bc77700302b23ce0b"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.US@91.json" : {
+      "sha256" : "b506d124fc61cc7cf54a4f88d13b07f3c8620197f50f62f9934585be6c069676"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Ukrainian-PC@37.json" : {
+      "sha256" : "c5ab3998e352694b9b7662235e1aae0a2b74afee18447f72d8028804e49f45f0"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Ukrainian-PC@91.json" : {
+      "sha256" : "65c6e763f08b5976a165cb26b57d9560aadeddfaf5c80b44bcf2e967fd25b82e"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Ukrainian-QWERTY@37.json" : {
+      "sha256" : "9883b792cf3c7113c041c9342f4f18ef9d697ff9cb8f289a4004ff20f1a3242d"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Ukrainian-QWERTY@91.json" : {
+      "sha256" : "8bc9476d6354ed537a9ab6a60b280104bc48cd9e8f542134f057643ea679bceb"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Ukrainian@37.json" : {
+      "sha256" : "a8e9b561ac7404769e2021aa9557dc8e6ea768f5b10b70fa7a9c632f5700dc85"
+    },
+    "layout-tables\/v1\/com.apple.keylayout.Ukrainian@91.json" : {
+      "sha256" : "4307413f155a6ea20503e583f84e6b3669943718ca0709939cd6591691f53bee"
+    }
+  },
+  "keyboardType" : 91,
+  "osBuild" : "24G830",
+  "osVersion" : "15.7.9",
+  "schemaVersion" : 1,
+  "sourceCommit" : "b8471649300162827cc4053d553c14a895820e8b",
+  "splits" : {
+    "development" : {
+      "abstain" : 20,
+      "preserve" : 60,
+      "repair" : 20,
+      "total" : 100
+    },
+    "holdout" : {
+      "abstain" : 20,
+      "preserve" : 60,
+      "repair" : 20,
+      "total" : 100
+    }
+  },
+  "tablesVersion" : "v1"
+}

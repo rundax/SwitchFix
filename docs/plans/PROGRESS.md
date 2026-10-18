@@ -7,7 +7,7 @@ Tracked execution of `docs/plans/EXECUTION.md`.
 | ID | Item | Spec | Status | Notes |
 | --- | --- | --- | --- | --- |
 | 0 | Branch, commit the plans, create `PROGRESS.md`, add `Benchmarks/results/` to `.gitignore` | [Git](EXECUTION.md#git) | DONE | Created branch `feat/layout-reliability` from `4b928be`, added `Benchmarks/results/` to `.gitignore`, created `PROGRESS.md`. Baseline checks match known baseline. |
-| 03.1 | Benchmark inputs: schema/provenance docs, manifest, `LayoutBenchmark` target skeleton with `export-layout-tables`, frozen `Benchmarks/layout-tables/v1`, 200-trial seed corpus | Plan 03 step 1 | TODO | |
+| 03.1 | Benchmark inputs: schema/provenance docs, manifest, `LayoutBenchmark` target skeleton with `export-layout-tables`, frozen `Benchmarks/layout-tables/v1`, 200-trial seed corpus | Plan 03 step 1 | DONE | Added `LayoutBenchmark` target with `export-layout-tables` and `validate`, frozen 22 layout tables in `Benchmarks/layout-tables/v1`, generated 200-trial seed corpus in `Benchmarks/layout-corpus/v1` (100 dev, 100 holdout), manifest with SHA256 hashes, and schema documentation. All 200 trials validated against frozen tables. |
 | 03.2 | Runner: corpus loading, SwitchFix adapter replaying on `InputStateMachine` + `LayoutDetector`, scoring; Core extraction of the engine's request assembly; `drainPipeline` seam | Plan 03 step 2 | TODO | |
 | 03.3 | `self-check` subcommand with controls; `.github/workflows/layout-benchmark.yml` | Plan 03 step 3, CI section | TODO | |
 | 03.4 | Record and freeze the SwitchFix baseline | Plan 03 step 4 | TODO | |
@@ -34,6 +34,17 @@ Tracked execution of `docs/plans/EXECUTION.md`.
   - `swift build`: Passed (`Benchmarks/results/logs/0-swift-build.log`)
   - `swift run -c release TestRunner`: 313 passed, 0 failed (`Benchmarks/results/logs/0-TestRunner.log`)
   - `swift run -c release InputPipelineTestRunner`: 962 passed, 1 failed (only expected accessibility failure: `TextCorrector must apply layout-only plan without deleting text`) (`Benchmarks/results/logs/0-InputPipelineTestRunner.log`)
+
+### Item 03.1
+- **Checks**:
+  - `swift build`: Passed (`Benchmarks/results/logs/03.1-swift-build.log`)
+  - `swift run -c release TestRunner`: 313 passed, 0 failed (`Benchmarks/results/logs/03.1-TestRunner.log`)
+  - `swift run -c release InputPipelineTestRunner`: 962 passed, 1 failed (only expected accessibility failure: `TextCorrector must apply layout-only plan without deleting text`) (`Benchmarks/results/logs/03.1-InputPipelineTestRunner.log`)
+  - `swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1`: 200 trials validated across 2 splits (`Benchmarks/results/logs/03.1-LayoutBenchmark-validate.log`)
+- **Corpus & Tables**:
+  - 22 layout tables in `Benchmarks/layout-tables/v1` for 11 layouts on keyboardTypes 91 and 37
+  - 200 seed trials (100 development, 100 holdout), 20 repair / 60 preserve / 20 abstain per split, 100% disjoint group IDs
+  - Integrity verified with SHA256 in `Benchmarks/layout-corpus/v1/manifest.json`
 
 ## Deviations
 

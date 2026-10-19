@@ -63,6 +63,11 @@ public class PreferencesManager {
         exceptionsStore.loadPolicy()
     }
 
+    /// A recoverable problem with the saved list, for a generic Settings message.
+    public var personalExceptionsLoadIssue: PersonalExceptionsLoadIssue? {
+        exceptionsStore.loadPolicyReportingIssue().issue
+    }
+
     public func addPersonalException(_ candidate: String) -> AddExceptionResult {
         let result = exceptionsStore.add(candidate: candidate)
         if case .success = result {
@@ -73,8 +78,11 @@ public class PreferencesManager {
 
     @discardableResult
     public func removePersonalException(_ word: String) -> PersonalExceptionsPolicy {
+        let previous = exceptionsStore.loadPolicy()
         let policy = exceptionsStore.remove(word: word)
-        NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        if policy != previous {
+            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        }
         return policy
     }
 

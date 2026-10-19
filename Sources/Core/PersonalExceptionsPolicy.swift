@@ -114,11 +114,17 @@ public struct PersonalExceptionsPolicy: Equatable, Sendable {
 
         let scalars = Array(canonical.unicodeScalars)
         for scalar in scalars {
-            if CharacterSet.letters.contains(scalar) {
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter:
                 hasLetter = true
-            } else if CharacterSet.nonBaseCharacters.contains(scalar) {
-                // Combining marks allowed
-            } else if scalar.value >= 0x30 && scalar.value <= 0x39 {
+                continue
+            case .nonspacingMark, .spacingMark, .enclosingMark:
+                // Combining marks are allowed but do not count as a letter.
+                continue
+            default:
+                break
+            }
+            if scalar.value >= 0x30 && scalar.value <= 0x39 {
                 // ASCII digits allowed
             } else if allowedPunctuation.contains(scalar) {
                 // Allowed internal punctuation
@@ -149,55 +155,15 @@ public struct PersonalExceptionsPolicy: Equatable, Sendable {
         return .success(canonical)
     }
 
-    /// Derive matching key from raw token:
-    /// 1. Take token after splitTrailingBoundary
-    /// 2. Drop leading and trailing non-letter, non-digit characters
+    /// Derive the matching key from a raw captured token with the detector's own tokenizers:
+    /// 1. Take the token after `splitTrailingBoundary`
+    /// 2. Drop the leading and trailing non-letter, non-digit characters (`splitTokenForValidation`)
     /// 3. Canonicalize
     public static func deriveMatchingKey(from text: String) -> String? {
-        if text.isEmpty { return nil }
-
-        // Step 1: splitTrailingBoundary
-        var core = text
-        while let last = core.last, isBoundaryChar(last) {
-            core.removeLast()
-        }
-        if core.isEmpty { return nil }
-
-        // Step 2: drop leading and trailing non-letter, non-digit
-        let chars = Array(core)
-        var start = 0
-        while start < chars.count {
-            let ch = chars[start]
-            if ch.isLetter || ch.isNumber {
-                break
-            }
-            start += 1
-        }
-
-        var end = chars.count
-        while end > start {
-            let ch = chars[end - 1]
-            if ch.isLetter || ch.isNumber {
-                break
-            }
-            end -= 1
-        }
-
-        guard start < end else { return nil }
-        let stripped = String(chars[start..<end])
-
+        let core = LayoutDetector.splitTrailingBoundary(from: text).core
+        let stripped = LayoutDetector.splitTokenForValidation(core).core
+        guard !stripped.isEmpty else { return nil }
         let canonical = canonicalize(stripped)
         return canonical.isEmpty ? nil : canonical
-    }
-
-    private static func isBoundaryChar(_ char: Character) -> Bool {
-        if char == " " || char == "\t" || char == "\n" || char == "\r" {
-            return true
-        }
-        // Characters on Cyrillic layouts that are letters must not be stripped in step 1
-        if ",.;'[]`<>()!?:\"{}~".contains(char) {
-            return false
-        }
-        return char.isPunctuation || char.isSymbol
     }
 }

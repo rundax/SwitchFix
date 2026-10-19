@@ -309,6 +309,7 @@ public final class TextCorrector {
     }
 
     public func performSelectionCorrection(
+        trigger: CorrectionTrigger,
         selectedText: String,
         convertedText: String,
         targetLayout: Layout,
@@ -381,7 +382,7 @@ public final class TextCorrector {
             }
 
             let plan = CorrectionPlan(
-                trigger: .hotkey,
+                trigger: trigger,
                 boundarySequence: sequence,
                 contextEpoch: context.epoch,
                 targetPID: context.frontmostPID,

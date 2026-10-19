@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private var keyboardMonitor: KeyboardMonitor?
     private var inputEngine: InputEngine?
+    private var personalExceptionsPublisher: PersonalExceptionsPublisher?
     private var captureState: CaptureStateStore?
     private var focusCoordinator: AccessibilityFocusCoordinator?
     private let inputSourceManager = InputSourceManager.shared
@@ -76,7 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.focusCoordinator?.focusMayChange(pid: pid, epoch: epoch)
             }
         }
-        engine.updatePersonalExceptions(PreferencesManager.shared.personalExceptionsPolicy)
+        let publisher = PersonalExceptionsPublisher { [weak engine] policy in
+            engine?.updatePersonalExceptions(policy)
+        }
+        publisher.publishIfChanged(PreferencesManager.shared.personalExceptionsPolicy)
+        personalExceptionsPublisher = publisher
         inputEngine = engine
         inputSourceManager.setSelectionCallbacks(
             willSelect: { [weak self] layout, sourceID in
@@ -446,7 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         captureState?.updateHotkeys(currentHotkeyConfiguration())
         inputEngine?.updatePreferences(currentPreferencesSnapshot())
-        inputEngine?.updatePersonalExceptions(PreferencesManager.shared.personalExceptionsPolicy)
+        personalExceptionsPublisher?.publishIfChanged(PreferencesManager.shared.personalExceptionsPolicy)
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }

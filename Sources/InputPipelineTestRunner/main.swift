@@ -1446,6 +1446,274 @@ run("personal exceptions pipeline integration and invalidation") {
     check(addEmissionCount == 0, "in-flight correction must be invalidated by exception update")
 }
 
+private final class ExceptionPipelineHarness {
+    private final class Recorder {
+        private let lock = NSLock()
+        private var plans: [CorrectionPlan] = []
+        private var selections: [(CorrectionTrigger, String)] = []
+
+        func record(_ plan: CorrectionPlan) {
+            lock.lock(); defer { lock.unlock() }
+            plans.append(plan)
+        }
+
+        func record(_ trigger: CorrectionTrigger, _ selectedText: String) {
+            lock.lock(); defer { lock.unlock() }
+            selections.append((trigger, selectedText))
+        }
+
+        func snapshot() -> (plans: [CorrectionPlan], selections: [(CorrectionTrigger, String)]) {
+            lock.lock(); defer { lock.unlock() }
+            return (plans, selections)
+        }
+    }
+
+    let store: CaptureStateStore
+    let engine: InputEngine
+    private let recorder = Recorder()
+    private let selectionEmitted = DispatchSemaphore(value: 0)
+    private var timestamp: UInt64 = 0
+
+    var plans: [CorrectionPlan] { recorder.snapshot().plans }
+    var selections: [(CorrectionTrigger, String)] { recorder.snapshot().selections }
+
+    init(
+        mode: InputCorrectionMode,
+        focus: SecureFocusState = .notSecure,
+        selectedText: String? = nil,
+        detectionStarted: DispatchSemaphore? = nil,
+        releaseDetection: DispatchSemaphore? = nil
+    ) {
+        let current = context(focus: focus)
+        let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+        let recorder = self.recorder
+        let selectionEmitted = self.selectionEmitted
+        self.store = store
+        engine = InputEngine(
+            captureState: store,
+            initialContext: current,
+            preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: mode),
+            exactDetection: { request in
+                detectionStarted?.signal()
+                if let releaseDetection { _ = releaseDetection.wait(timeout: .now() + 5) }
+                return DetectionResult(
+                    sourceLayout: .english,
+                    targetLayout: .ukrainian,
+                    convertedWord: "тест",
+                    originalWord: request.word,
+                    shouldSwitchLayout: false
+                )
+            },
+            correctionEmission: { plan in
+                recorder.record(plan)
+                return true
+            },
+            selectedTextRequest: selectedText.map { text in
+                { _, _, completion in completion(text) }
+            },
+            selectionEmission: { trigger, selected, _ in
+                recorder.record(trigger, selected)
+                selectionEmitted.signal()
+            }
+        )
+    }
+
+    func enqueue(_ kind: CapturedInput.Kind) {
+        timestamp += 1
+        engine.enqueue(store.capture(
+            timestamp: timestamp,
+            kind: kind,
+            keyCode: 0,
+            flagsRawValue: 0,
+            isAutorepeat: false,
+            sourcePID: 1,
+            sourceUserData: 0
+        ))
+    }
+
+    func type(_ text: String) {
+        for character in text { enqueue(.character(String(character))) }
+    }
+
+    /// Selected-text correction hops through the selection queue, which `drainPipeline` does not cover.
+    func waitForSelection() -> Bool {
+        selectionEmitted.wait(timeout: .now() + 2) == .success
+    }
+
+    func drain() -> Bool {
+        let done = DispatchSemaphore(value: 0)
+        engine.drainPipeline { done.signal() }
+        return done.wait(timeout: .now() + 2) == .success
+    }
+
+    func switchSource(to layout: Layout) {
+        let previous = store.snapshot().context
+        let next = store.replaceContext(
+            frontmostPID: previous.frontmostPID,
+            appAllowed: previous.appAllowed,
+            layout: layout,
+            inputSourceID: "com.test.\(layout.rawValue)",
+            secureFocus: previous.secureFocus
+        )
+        engine.handleLayoutChange(from: previous.layout, to: layout, context: next, fromVariant: .standard, toVariant: .standard)
+    }
+}
+
+run("configuration change keeps the next word") {
+    let current = context()
+    func flushes(_ commands: [InputStateCommand]) -> [String] {
+        commands.compactMap { command -> String? in
+            if case .flush(let word, _, _, _) = command { return word }
+            return nil
+        }
+    }
+
+    var idle = automaticMachine(current)
+    idle.resetForConfigurationChange()
+    var commands: [InputStateCommand] = []
+    for (index, character) in "next".enumerated() {
+        commands += idle.consume(input(sequence: UInt64(index + 1), kind: .character(String(character)), context: current))
+    }
+    commands += idle.consume(input(sequence: 10, kind: .boundary(" "), context: current))
+    check(flushes(commands) == ["next"], "with nothing in progress, the next word after a configuration change is judged")
+
+    var midWord = automaticMachine(current)
+    _ = midWord.consume(input(sequence: 1, kind: .character("p"), context: current))
+    _ = midWord.consume(input(sequence: 2, kind: .character("a"), context: current))
+    midWord.resetForConfigurationChange()
+    commands = []
+    for (index, character) in "rt".enumerated() {
+        commands += midWord.consume(input(sequence: UInt64(index + 3), kind: .character(String(character)), context: current))
+    }
+    commands += midWord.consume(input(sequence: 5, kind: .boundary(" "), context: current))
+    for (index, character) in "next".enumerated() {
+        commands += midWord.consume(input(sequence: UInt64(index + 6), kind: .character(String(character)), context: current))
+    }
+    commands += midWord.consume(input(sequence: 10, kind: .boundary(" "), context: current))
+    check(flushes(commands) == ["next"], "a word in progress is skipped to its boundary, never judged as a fragment")
+}
+
+run("personal exceptions: explicit triggers bypass, automatic stays blocked") {
+    let protected = PersonalExceptionsPolicy(words: ["protected"])
+
+    let automatic = ExceptionPipelineHarness(mode: .automatic)
+    automatic.engine.updatePersonalExceptions(protected)
+    // No drain here: the published policy must precede input enqueued right after it.
+    automatic.type("protected")
+    automatic.enqueue(.boundary(" "))
+    check(automatic.drain(), "automatic pipeline drains")
+    check(automatic.plans.isEmpty, "configuration published before new input blocks the automatic correction")
+    automatic.type("protected")
+    automatic.enqueue(.hotkey)
+    check(automatic.drain(), "hotkey pipeline drains")
+    check(automatic.plans.map(\.trigger) == [.hotkey], "hotkey correction of a protected word is applied")
+    check(automatic.plans.first?.originalText == "protected", "hotkey correction converts the protected word itself")
+
+    let layoutSwitch = ExceptionPipelineHarness(mode: .layoutSwitch)
+    layoutSwitch.engine.updatePersonalExceptions(protected)
+    layoutSwitch.type("protected")
+    check(layoutSwitch.drain(), "layout-switch input drains before the source changes")
+    layoutSwitch.switchSource(to: .ukrainian)
+    check(layoutSwitch.drain(), "layout-switch pipeline drains")
+    check(layoutSwitch.plans.map(\.trigger) == [.layoutSwitch], "On Layout Switch correction of a protected word is applied")
+    check(layoutSwitch.plans.first?.originalText == "protected", "layout-switch correction converts the buffered protected word")
+
+    let selection = ExceptionPipelineHarness(mode: .automatic, selectedText: "protected")
+    selection.engine.updatePersonalExceptions(protected)
+    selection.enqueue(.hotkey)
+    check(selection.waitForSelection(), "selection hotkey correction is emitted")
+    check(selection.selections.map(\.0) == [.hotkey], "selected-text hotkey correction is applied with hotkey provenance")
+    check(selection.selections.first?.1 == "protected", "selected protected text is converted")
+
+    let switchSelection = ExceptionPipelineHarness(mode: .layoutSwitch, selectedText: "protected")
+    switchSelection.engine.updatePersonalExceptions(protected)
+    check(switchSelection.drain(), "selection layout-switch setup drains")
+    switchSelection.switchSource(to: .ukrainian)
+    check(switchSelection.waitForSelection(), "selection layout-switch correction is emitted")
+    check(switchSelection.selections.map(\.0) == [.layoutSwitch], "selected text converted on a layout switch carries layoutSwitch provenance")
+}
+
+run("personal exceptions: security still wins for explicit triggers") {
+    let secure = ExceptionPipelineHarness(mode: .automatic, focus: .secure)
+    secure.engine.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["protected"]))
+    secure.type("protected")
+    secure.enqueue(.hotkey)
+    secure.type("other")
+    secure.enqueue(.boundary(" "))
+    check(secure.drain(), "secure pipeline drains")
+    check(secure.plans.isEmpty, "hotkey bypass of exceptions never bypasses secure-field protection")
+}
+
+run("personal exceptions: empty-policy parity and removal in flight") {
+    let empty = ExceptionPipelineHarness(mode: .automatic)
+    empty.engine.updatePersonalExceptions(.empty)
+    let unrelated = ExceptionPipelineHarness(mode: .automatic)
+    unrelated.engine.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["unrelated"]))
+    for harness in [empty, unrelated] {
+        harness.type("test")
+        harness.enqueue(.boundary(" "))
+        check(harness.drain(), "parity pipeline drains")
+    }
+    check(empty.plans.map(\.replacementText) == ["тест "], "empty policy corrects as before")
+    check(unrelated.plans.map(\.replacementText) == empty.plans.map(\.replacementText), "an unrelated exception changes no correction")
+
+    let started = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let removal = ExceptionPipelineHarness(mode: .automatic, detectionStarted: started, releaseDetection: release)
+    removal.engine.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["other", "protected"]))
+    removal.type("test")
+    removal.enqueue(.boundary(" "))
+    check(started.wait(timeout: .now() + 1) == .success, "detection started before removal")
+    removal.engine.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["other"]))
+    release.signal()
+    check(removal.drain(), "removal pipeline drains")
+    check(removal.plans.isEmpty, "removing an exception invalidates the in-flight correction")
+}
+
+run("personal exceptions: unchanged set is not republished") {
+    let current = context()
+    let store = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: current,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        exactDetection: { _ in nil },
+        correctionEmission: { _ in true }
+    )
+    let publisher = PersonalExceptionsPublisher { engine.updatePersonalExceptions($0) }
+    let start = store.snapshot().correctionEpoch
+    check(publisher.publishIfChanged(PersonalExceptionsPolicy(words: ["a"])), "first set is published")
+    check(!publisher.publishIfChanged(PersonalExceptionsPolicy(words: ["a"])), "unchanged set is not republished")
+    check(store.snapshot().correctionEpoch == start + 1, "an unrelated preference change does not invalidate corrections")
+    check(publisher.publishIfChanged(PersonalExceptionsPolicy(words: ["a", "b"])), "a changed set is published")
+    check(store.snapshot().correctionEpoch == start + 2, "a genuine change invalidates once")
+}
+
+run("personal exceptions: U+02BC words reach detection whole") {
+    check(KeyboardMonitor.capturedKind(forText: "\u{02BC}") == .character("\u{02BC}"), "U+02BC is captured as part of a word")
+    check(KeyboardMonitor.capturedKind(forText: "’") == .character("’"), "U+2019 is captured as part of a word")
+    check(KeyboardMonitor.capturedKind(forText: "'") == .character("'"), "ASCII apostrophe is captured as part of a word")
+    check(KeyboardMonitor.capturedKind(forText: "!") == .boundary("!"), "control: '!' is a boundary")
+
+    let current = context(layout: .ukrainian)
+    var machine = automaticMachine(current)
+    var commands: [InputStateCommand] = []
+    for (index, character) in "сімʼя".enumerated() {
+        commands += machine.consume(input(
+            sequence: UInt64(index + 1),
+            kind: KeyboardMonitor.capturedKind(forText: String(character)),
+            context: current
+        ))
+    }
+    commands += machine.consume(input(sequence: 10, kind: .boundary(" "), context: current))
+    let flushed = commands.compactMap { command -> String? in
+        if case .flush(let word, _, _, _) = command { return word }
+        return nil
+    }
+    check(flushed == ["сімʼя"], "the whole word including U+02BC is flushed once")
+    check(PersonalExceptionsPolicy(words: ["сім'я"]).matches(rawToken: flushed.first ?? ""), "the flushed word matches its exception")
+}
+
 private func runIntegrationSmoke() {
     guard Permissions.isAccessibilityGranted(), Permissions.isKeyboardListeningAvailable() else {
         print("SKIP: integration smoke requires Accessibility and Input Monitoring")

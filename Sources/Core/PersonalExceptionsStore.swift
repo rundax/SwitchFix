@@ -7,6 +7,15 @@ public enum AddExceptionResult: Equatable, Sendable {
     case invalid(ExceptionValidationError)
 }
 
+/// Why a stored list could not be used as saved. Carries no stored words.
+public enum PersonalExceptionsLoadIssue: Equatable, Sendable {
+    /// Wrong type, unknown schema version, or more than the allowed entries: nothing was loaded
+    /// and the stored value is left untouched until the next explicit edit.
+    case unreadable
+    /// The envelope was valid, but this many entries failed validation and were ignored.
+    case skippedEntries(Int)
+}
+
 public final class PersonalExceptionsStore: @unchecked Sendable {
     public static let preferenceKey = "SwitchFix_personalExceptions_v1"
     public static let currentSchemaVersion = 1
@@ -23,36 +32,45 @@ public final class PersonalExceptionsStore: @unchecked Sendable {
     /// If envelope is invalid/oversized/unknown-version, leaves stored value untouched and returns empty policy.
     public func loadPolicy() -> PersonalExceptionsPolicy {
         return lock.withLock {
-            loadPolicyLocked()
+            loadLocked().policy
+        }
+    }
+
+    /// Load the validated policy together with a recoverable issue for Settings to report.
+    public func loadPolicyReportingIssue() -> (policy: PersonalExceptionsPolicy, issue: PersonalExceptionsLoadIssue?) {
+        return lock.withLock {
+            loadLocked()
         }
     }
 
     private func loadPolicyLocked() -> PersonalExceptionsPolicy {
-        guard let dict = defaults.dictionary(forKey: Self.preferenceKey) else {
-            return PersonalExceptionsPolicy.empty
+        loadLocked().policy
+    }
+
+    private func loadLocked() -> (policy: PersonalExceptionsPolicy, issue: PersonalExceptionsLoadIssue?) {
+        guard let stored = defaults.object(forKey: Self.preferenceKey) else {
+            return (.empty, nil)
         }
 
-        guard let version = dict["schemaVersion"] as? Int, version == Self.currentSchemaVersion else {
-            return PersonalExceptionsPolicy.empty
-        }
-
-        guard let wordsArray = dict["words"] as? [String] else {
-            return PersonalExceptionsPolicy.empty
-        }
-
-        // Reject oversized envelope
-        guard wordsArray.count <= PersonalExceptionsPolicy.maxEntries else {
-            return PersonalExceptionsPolicy.empty
+        guard let dict = stored as? [String: Any],
+              let version = dict["schemaVersion"] as? Int, version == Self.currentSchemaVersion,
+              let wordsArray = dict["words"] as? [Any],
+              wordsArray.count <= PersonalExceptionsPolicy.maxEntries else {
+            return (.empty, .unreadable)
         }
 
         var validWords: Set<String> = []
-        for word in wordsArray {
-            if case .success(let canonical) = PersonalExceptionsPolicy.validate(candidate: word) {
+        var skipped = 0
+        for value in wordsArray {
+            if let word = value as? String,
+               case .success(let canonical) = PersonalExceptionsPolicy.validate(candidate: word) {
                 validWords.insert(canonical)
+            } else {
+                skipped += 1
             }
         }
 
-        return PersonalExceptionsPolicy(words: validWords)
+        return (PersonalExceptionsPolicy(words: validWords), skipped > 0 ? .skippedEntries(skipped) : nil)
     }
 
     /// Add a word to personal exceptions.

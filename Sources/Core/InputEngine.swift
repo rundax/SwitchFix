@@ -38,6 +38,8 @@ public final class InputEngine {
     public typealias ExactDetection = (DetectionRequest) -> DetectionResult?
     public typealias CorrectionEmission = (CorrectionPlan) -> Bool
     public typealias SelectedTextRequest = (pid_t, UInt64, @escaping (String?) -> Void) -> Void
+    /// Test seam replacing the pasteboard-based selected-text correction.
+    public typealias SelectionEmission = (_ trigger: CorrectionTrigger, _ selectedText: String, _ convertedText: String) -> Void
 
     public var onFocusMayChange: ((pid_t, UInt64) -> Void)?
 
@@ -52,6 +54,7 @@ public final class InputEngine {
     private let customDetection: ExactDetection?
     private let customEmission: CorrectionEmission?
     private let selectedTextRequest: SelectedTextRequest?
+    private let customSelectionEmission: SelectionEmission?
     private let detectionConfiguration = OSAllocatedUnfairLock(initialState: DetectionConfiguration())
     private var correctionEpoch: UInt64
     private var latestProcessedSequence: UInt64 = 0
@@ -66,7 +69,8 @@ public final class InputEngine {
         corrector: TextCorrector = TextCorrector(),
         exactDetection: ExactDetection? = nil,
         correctionEmission: CorrectionEmission? = nil,
-        selectedTextRequest: SelectedTextRequest? = nil
+        selectedTextRequest: SelectedTextRequest? = nil,
+        selectionEmission: SelectionEmission? = nil
     ) {
         self.captureState = captureState
         self.stateMachine = InputStateMachine(context: initialContext, preferences: preferences)
@@ -75,6 +79,7 @@ public final class InputEngine {
         self.customDetection = exactDetection
         self.customEmission = correctionEmission
         self.selectedTextRequest = selectedTextRequest
+        self.customSelectionEmission = selectionEmission
         correctionEpoch = captureState.updateCorrectionEnabled(preferences.isEnabled)
     }
 
@@ -129,7 +134,7 @@ public final class InputEngine {
         inputQueue.async { [weak self] in
             guard let self else { return }
             self.correctionEpoch = epoch
-            self.stateMachine.invalidateUntilBoundary()
+            self.stateMachine.resetForConfigurationChange()
             self.detectionConfiguration.withLock { value in
                 value.personalExceptions = policy
             }
@@ -241,7 +246,8 @@ public final class InputEngine {
                                 ukrainianToVariant: toVariant
                             )
                             guard converted != selectedText else { return }
-                            self.corrector.performSelectionCorrection(
+                            self.emitSelectionCorrection(
+                                trigger: .layoutSwitch,
                                 selectedText: selectedText,
                                 convertedText: converted,
                                 targetLayout: newLayout,
@@ -250,8 +256,7 @@ public final class InputEngine {
                                 sequence: latest.latestPhysicalSequence,
                                 context: context,
                                 editGeneration: latest.editGeneration,
-                                correctionEpoch: requestCorrectionEpoch,
-                                latestCaptureState: self.captureState.snapshot
+                                correctionEpoch: requestCorrectionEpoch
                             )
                         } else {
                             applyBufferedCorrection()
@@ -560,7 +565,8 @@ public final class InputEngine {
                     )
                    }),
                    converted != selectedText {
-                    self.corrector.performSelectionCorrection(
+                    self.emitSelectionCorrection(
+                        trigger: .hotkey,
                         selectedText: selectedText,
                         convertedText: converted,
                         targetLayout: targetLayout,
@@ -569,8 +575,7 @@ public final class InputEngine {
                         sequence: sequence,
                         context: context,
                         editGeneration: generation,
-                        correctionEpoch: requestCorrectionEpoch,
-                        latestCaptureState: self.captureState.snapshot
+                        correctionEpoch: requestCorrectionEpoch
                     )
                 } else if let word {
                     self.runDetection(DetectionRequest(
@@ -586,6 +591,37 @@ public final class InputEngine {
                 }
             }
         }
+    }
+
+    private func emitSelectionCorrection(
+        trigger: CorrectionTrigger,
+        selectedText: String,
+        convertedText: String,
+        targetLayout: Layout,
+        shouldSwitchLayout: Bool,
+        originalLayout: Layout,
+        sequence: UInt64,
+        context: InputContextSnapshot,
+        editGeneration: UInt64,
+        correctionEpoch: UInt64
+    ) {
+        if let customSelectionEmission {
+            customSelectionEmission(trigger, selectedText, convertedText)
+            return
+        }
+        corrector.performSelectionCorrection(
+            trigger: trigger,
+            selectedText: selectedText,
+            convertedText: convertedText,
+            targetLayout: targetLayout,
+            shouldSwitchLayout: shouldSwitchLayout,
+            originalLayout: originalLayout,
+            sequence: sequence,
+            context: context,
+            editGeneration: editGeneration,
+            correctionEpoch: correctionEpoch,
+            latestCaptureState: captureState.snapshot
+        )
     }
 
     private func resetDetectorState() {

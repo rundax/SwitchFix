@@ -98,6 +98,13 @@ public struct InputStateMachine {
         invalidate(untilBoundary: true)
     }
 
+    /// Correction configuration changed: drop the run so no earlier word is judged under the new
+    /// configuration. A word already in progress is skipped until its boundary, because only part
+    /// of it would remain buffered; with nothing in progress the next word starts normally.
+    public mutating func resetForConfigurationChange() {
+        invalidate(untilBoundary: isInvalidUntilBoundary || !currentBuffer.isEmpty || untrackedFragment != nil)
+    }
+
     public mutating func updatePreferences(_ preferences: InputPreferencesSnapshot) -> [InputStateCommand] {
         let previous = self.preferences
         self.preferences = preferences

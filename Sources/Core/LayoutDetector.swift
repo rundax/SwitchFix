@@ -289,8 +289,8 @@ public class LayoutDetector {
 
         let word = wordBuffer
 
-        if currentTrigger == .automaticBoundary && (personalExceptions.matches(rawToken: word) || personalExceptions.matches(rawToken: wordBuffer)) {
-            SwitchFixLog.detector.debug("personal exception matched '\(word)' — suppressing automatic correction")
+        if currentTrigger == .automaticBoundary && personalExceptions.matches(rawToken: word) {
+            SwitchFixLog.detector.debug("personal exception matched chars=\(word.count) — suppressing automatic correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
             pendingSwitchLayout = nil
@@ -1093,6 +1093,11 @@ public class LayoutDetector {
     }
 
     private func splitTokenForValidation(_ token: String) -> (prefix: String, core: String, suffix: String) {
+        Self.splitTokenForValidation(token)
+    }
+
+    /// Shared with `PersonalExceptionsPolicy`, so exception matching uses the detector's own token rules.
+    static func splitTokenForValidation(_ token: String) -> (prefix: String, core: String, suffix: String) {
         let chars = Array(token)
         if chars.isEmpty {
             return ("", "", "")
@@ -1124,6 +1129,11 @@ public class LayoutDetector {
 
     /// Split trailing punctuation/symbols from a word.
     private func splitTrailingBoundary(from text: String) -> (core: String, trailing: String) {
+        Self.splitTrailingBoundary(from: text)
+    }
+
+    /// Shared with `PersonalExceptionsPolicy`, so exception matching uses the detector's own token rules.
+    static func splitTrailingBoundary(from text: String) -> (core: String, trailing: String) {
         var core = text
         var trailing = ""
         while let last = core.last, isBoundaryChar(last) {
@@ -1133,7 +1143,7 @@ public class LayoutDetector {
         return (core, trailing)
     }
 
-    private func isBoundaryChar(_ char: Character) -> Bool {
+    private static func isBoundaryChar(_ char: Character) -> Bool {
         guard let scalar = char.unicodeScalars.first else { return false }
         return LayoutDetector.boundaryCharacterSet.contains(scalar)
     }

@@ -324,6 +324,7 @@ class PersonalExceptionsViewModel: ObservableObject {
     @Published var newWordInput: String = ""
     @Published var statusMessage: String?
     @Published var isErrorMessage: Bool = false
+    @Published var loadIssueMessage: String?
 
     init() {
         reload()
@@ -340,6 +341,18 @@ class PersonalExceptionsViewModel: ObservableObject {
             self.words = currentWords
         }
         selection.formIntersection(words)
+        let issueMessage: String?
+        switch PreferencesManager.shared.personalExceptionsLoadIssue {
+        case .unreadable:
+            issueMessage = "Saved personal exceptions could not be read and are not in use. Adding or removing a word saves a new list."
+        case .skippedEntries:
+            issueMessage = "Some saved personal exceptions were invalid and are ignored. Adding or removing a word saves the cleaned list."
+        case nil:
+            issueMessage = nil
+        }
+        if loadIssueMessage != issueMessage {
+            loadIssueMessage = issueMessage
+        }
     }
 
     func addWord() {
@@ -434,6 +447,12 @@ struct PersonalExceptionsView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
             )
+
+            if let issue = model.loadIssueMessage {
+                Text(issue)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
 
             if let message = model.statusMessage {
                 Text(message)

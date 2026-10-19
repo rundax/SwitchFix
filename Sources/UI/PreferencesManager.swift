@@ -57,6 +57,27 @@ public class PreferencesManager {
         defaults.removeObject(forKey: Keys.legacyAllowCyrillicToCyrillic)
     }
 
+    public let exceptionsStore = PersonalExceptionsStore()
+
+    public var personalExceptionsPolicy: PersonalExceptionsPolicy {
+        exceptionsStore.loadPolicy()
+    }
+
+    public func addPersonalException(_ candidate: String) -> AddExceptionResult {
+        let result = exceptionsStore.add(candidate: candidate)
+        if case .success = result {
+            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        }
+        return result
+    }
+
+    @discardableResult
+    public func removePersonalException(_ word: String) -> PersonalExceptionsPolicy {
+        let policy = exceptionsStore.remove(word: word)
+        NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        return policy
+    }
+
     public var isEnabled: Bool {
         get { defaults.object(forKey: Keys.isEnabled) as? Bool ?? true }
         set {

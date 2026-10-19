@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.focusCoordinator?.focusMayChange(pid: pid, epoch: epoch)
             }
         }
+        engine.updatePersonalExceptions(PreferencesManager.shared.personalExceptionsPolicy)
         inputEngine = engine
         inputSourceManager.setSelectionCallbacks(
             willSelect: { [weak self] layout, sourceID in
@@ -445,6 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         captureState?.updateHotkeys(currentHotkeyConfiguration())
         inputEngine?.updatePreferences(currentPreferencesSnapshot())
+        inputEngine?.updatePersonalExceptions(PreferencesManager.shared.personalExceptionsPolicy)
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }

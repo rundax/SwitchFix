@@ -318,6 +318,132 @@ class ExclusionsViewModel: ObservableObject {
     }
 }
 
+class PersonalExceptionsViewModel: ObservableObject {
+    @Published var words: [String] = []
+    @Published var selection: Set<String> = []
+    @Published var newWordInput: String = ""
+    @Published var statusMessage: String?
+    @Published var isErrorMessage: Bool = false
+
+    init() {
+        reload()
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: .preferencesDidChange, object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc func reload() {
+        let currentWords = PreferencesManager.shared.personalExceptionsPolicy.words.sorted()
+        if self.words != currentWords {
+            self.words = currentWords
+        }
+        selection.formIntersection(words)
+    }
+
+    func addWord() {
+        let trimmed = newWordInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let result = PreferencesManager.shared.addPersonalException(trimmed)
+        switch result {
+        case .success(_, let added):
+            newWordInput = ""
+            statusMessage = "Added '\(added)'"
+            isErrorMessage = false
+            reload()
+        case .duplicate:
+            statusMessage = "Already in the list"
+            isErrorMessage = false
+        case .invalid(let error):
+            statusMessage = error.localizedDescription
+            isErrorMessage = true
+        }
+    }
+
+    func removeSelected() {
+        for word in selection {
+            PreferencesManager.shared.removePersonalException(word)
+        }
+        selection.removeAll()
+        statusMessage = nil
+        reload()
+    }
+}
+
+struct PersonalExceptionsView: View {
+    @StateObject private var model = PersonalExceptionsViewModel()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Personal Exceptions").font(.headline)
+                Spacer()
+                Text("\(model.words.count)/\(PersonalExceptionsPolicy.maxEntries)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Text("These words stay as typed during automatic correction. Hotkey and layout-switch corrections still work.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 0) {
+                if model.words.isEmpty {
+                    Text("No exceptions added yet.")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+                } else {
+                    List(model.words, id: \.self, selection: $model.selection) { word in
+                        Text(word)
+                            .font(.body)
+                            .tag(word)
+                    }
+                    .frame(height: 120)
+                }
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    TextField("Add word (e.g. Swift, don't, Kyiv)…", text: $model.newWordInput)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            model.addWord()
+                        }
+
+                    Button("Add") {
+                        model.addWord()
+                    }
+                    .disabled(model.newWordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    Divider().frame(height: 16)
+
+                    Button(action: model.removeSelected) {
+                        Image(systemName: "minus")
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(model.selection.isEmpty)
+                    .accessibilityLabel("Remove Selected")
+                }
+                .padding(6)
+                .background(Color(nsColor: .controlBackgroundColor))
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+
+            if let message = model.statusMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(model.isErrorMessage ? .red : .secondary)
+            }
+        }
+    }
+}
+
 struct RunningAppPickerView: View {
     @ObservedObject var model: ExclusionsViewModel
     @Environment(\.dismiss) private var dismiss
@@ -626,6 +752,11 @@ struct SettingsView: View {
 
                 Divider()
 
+                // PERSONAL EXCEPTIONS
+                PersonalExceptionsView()
+
+                Divider()
+
                 // EXCLUDED APPS
                 ExcludedAppsView()
 
@@ -633,7 +764,7 @@ struct SettingsView: View {
             }
             .padding(30)
         }
-        .frame(width: 480, height: 750)
+        .frame(width: 480, height: 850)
         .onAppear { model.syncLaunchAtLogin() }
     }
 }

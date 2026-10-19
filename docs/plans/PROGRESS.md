@@ -13,7 +13,7 @@ Tracked execution of `docs/plans/EXECUTION.md`.
 | 03.4 | Record and freeze the SwitchFix baseline | Plan 03 step 4 | DONE | Recorded and froze the SwitchFix baseline v1 across all 200 trials (development, holdout, combined) in `Benchmarks/baselines/v1/baseline.{json,md}` with full environment metadata. Baseline achieved 90.0% recall (36/40), 0.00% text-damage FP (0/160, 95% Wilson CI [0.0%, 2.3%]), 0.00% layout-only FP (0/160), and 100% preservation (160/160 TN). All 4 false negatives isolated to static Ukrainian variant fallbacks. |
 | 02.1 | Core policy/store, bounds, persistence tests | Plan 02 slice 1 | DONE | Implemented `PersonalExceptionsPolicy` (NFC, lowercasing, apostrophe normalization [ASCII, U+2019, U+02BC], letter requirement, character/byte bounds [1-64 chars, <=256 bytes], internal punctuation checks, matching key derivation) and `PersonalExceptionsStore` (UserDefaults storage under `SwitchFix_personalExceptions_v1` with `schemaVersion: 1`, 1,000 entry limit, envelope validation). Added 79 unit tests in `TestRunner` (392 passed). |
 | 02.2 | Trigger provenance, detector barriers, `invalidateCorrectionConfiguration()`, pipeline regressions | Plan 02 slice 2 | DONE | Introduced `CorrectionTrigger` (.automaticBoundary, .hotkey, .layoutSwitch) carried explicitly in `DetectionRequest` and `CorrectionPlan`. Added `invalidateCorrectionConfiguration()` to `CaptureStateStore`. Integrated personal exceptions into `LayoutDetector` (current word suppression, confidence reset, backward sweep barrier on typed/display text, explicit trigger bypass) and `InputEngine` (safeguards on exactDetection). 405 passed in TestRunner, 972 passed in InputPipelineTestRunner. |
-| 02.3 | Preferences/AppDelegate wiring, Settings list | Plan 02 slice 3 | TODO | |
+| 02.3 | Preferences/AppDelegate wiring, Settings list | Plan 02 slice 3 | DONE | Wired `PersonalExceptionsStore` into `PreferencesManager` with `addPersonalException` / `removePersonalException` publishing `.preferencesDidChange`. Updated `AppDelegate` to sync personal exceptions to `InputEngine` on startup and preference updates. Added Personal Exceptions UI section to `SettingsView.swift` with word list, count/limit indicator, Add field, and Remove Selected button. Added pipeline in-flight invalidation test (975 passed in InputPipelineTestRunner). |
 | 02.4 | Typed undo outcome, candidate lifecycle, menu action | Plan 02 slice 4 | TODO | |
 | 02.5 | Exception fixtures as a new corpus version; rerun the benchmark against the frozen baseline | Plan 02 slice 5, plan 03 step 7 | TODO | |
 | 01A.1 | Native builder, pure mapper, canonical reverse rule, fixture checks, mask fix at the two allowed sites | Plan 01 Phase A commit 1 | TODO | |
@@ -91,6 +91,14 @@ Tracked execution of `docs/plans/EXECUTION.md`.
   - `swift run -c release InputPipelineTestRunner`: 972 passed, 1 failed (added 6 assertions for pipeline exception blocking and invalidateCorrectionConfiguration epoch invalidation) (`Benchmarks/results/logs/02.2-InputPipelineTestRunner.log`)
   - `swift run -c release LayoutBenchmark self-check`: 36 passed, 0 failed (`Benchmarks/results/logs/02.2-LayoutBenchmark-self-check.log`)
   - `swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1`: 200 trials validated across 2 splits (`Benchmarks/results/logs/02.2-LayoutBenchmark-validate.log`)
+
+### Item 02.3
+- **Checks**:
+  - `swift build`: Passed (`Benchmarks/results/logs/02.3-swift-build.log`)
+  - `swift run -c release TestRunner`: 405 passed, 0 failed (`Benchmarks/results/logs/02.3-TestRunner.log`)
+  - `swift run -c release InputPipelineTestRunner`: 975 passed, 1 failed (added mid-flight exception update invalidation test) (`Benchmarks/results/logs/02.3-InputPipelineTestRunner.log`)
+  - `swift run -c release LayoutBenchmark self-check`: 36 passed, 0 failed (`Benchmarks/results/logs/02.3-LayoutBenchmark-self-check.log`)
+  - `swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1`: 200 trials validated across 2 splits (`Benchmarks/results/logs/02.3-LayoutBenchmark-validate.log`)
 
 ## Deviations
 

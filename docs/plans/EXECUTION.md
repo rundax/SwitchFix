@@ -29,13 +29,14 @@ Copy this table into `PROGRESS.md` in item 0, with a Status column (TODO / DONE 
 | 02.1 | Core policy/store, bounds, persistence tests | Plan 02 slice 1 |
 | 02.2 | Trigger provenance, detector barriers, `invalidateCorrectionConfiguration()`, pipeline regressions | Plan 02 slice 2 |
 | 02.3 | Preferences/AppDelegate wiring, Settings list | Plan 02 slice 3 |
+| R1–R4 | Verification remediation (done out of band; see `PROGRESS.md`) | Verification 2026-10-19 |
 | 02.4 | Typed undo outcome, candidate lifecycle, menu action | Plan 02 slice 4 |
-| 02.5 | Exception fixtures as a new corpus version; rerun the benchmark against the frozen baseline | Plan 02 slice 5, plan 03 step 7 |
+| 02.5 | Exception fixtures as corpus v3 (built on v2); rerun the benchmark against baseline v2 | Plan 02 slice 5, plan 03 step 7 |
 | 01A.1 | Native builder, pure mapper, canonical reverse rule, fixture checks, mask fix at the two allowed sites | Plan 01 Phase A commit 1 |
 | 01A.2 | Synchronous snapshot publication, keyboard-type capture, readiness, invalidation | Plan 01 Phase A commit 2 |
 | 01A.3 | Convert through exact sources in every path; remove Ukrainian variant fallbacks | Plan 01 Phase A commit 3 |
 | 01A.4 | Source-selection and undo bindings | Plan 01 Phase A commit 4 |
-| 01A.5 | Remove static maps, user guidance, benchmark rerun against the frozen baseline | Plan 01 Phase A commit 5, plan 03 step 7 |
+| 01A.5 | Remove static maps, user guidance, benchmark rerun against baseline v2 | Plan 01 Phase A commit 5, plan 03 step 7 |
 | 01B | Phase B gate decision | Plan 01 Phase B |
 | 03.5 | Klavko decision-layer adapter and local comparison | Plan 03 step 5 |
 | 03.6 | App conformance runs | Plan 03 step 6 |
@@ -49,12 +50,17 @@ After every item that changes code:
 swift build
 swift run -c release TestRunner
 swift run -c release InputPipelineTestRunner
-swift run -c release LayoutBenchmark self-check   # once 03.3 has landed
+swift run -c release LayoutBenchmark self-check
+swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v2 --strict
+swift run -c release LayoutBenchmark run --split development --corpus Benchmarks/layout-corpus/v2 \
+  --baseline Benchmarks/baselines/v2/corpus-v2/baseline.json
 ```
 
-Add the item-specific commands its plan names (for example `LayoutBenchmark validate` and `run`).
+Add the item-specific commands its plan names. The `run --baseline` gate exits 2 when any trial loses its pass or coverage or the run is incomplete; improvements pass. A trial that loses its pass because of an intended change is a deviation with a per-trial explanation, never a reason to re-record the baseline.
 
-Known baseline at `4b928be`: `TestRunner` 313/313. `InputPipelineTestRunner` 962/963, where the only allowed failure is `TextCorrector must apply layout-only plan without deleting text` when the session lacks Accessibility. Any other failure blocks the item: fix it inside the item or mark the item BLOCKED. Record pass/fail counts per item. Counts only grow; removing or weakening an existing assertion is a deviation that needs a stated reason.
+Known counts at `c22be93` (after verification remediation): `TestRunner` 455/455. `InputPipelineTestRunner` 1012/1013, where the only allowed failure is `TextCorrector must apply layout-only plan without deleting text` when the session lacks Accessibility. `LayoutBenchmark self-check` 106/106. Any other failure blocks the item: fix it inside the item or mark the item BLOCKED. Record pass/fail counts per item. Counts only grow; removing or weakening an existing assertion is a deviation that needs a stated reason.
+
+Explain a benchmark outcome only with an experiment that changes the suspected cause and reruns (for example a scratch copy with one setting changed), never by inspection alone. The v1 baseline's four misses were attributed to static mapping by inspection; the real cause was a harness misconfiguration.
 
 Never record something as verified that you did not run. Manual checks the plans require (hardware matrix, VoiceOver, Settings relaunch, TextEdit/browser behavior, app conformance) go into the Needs-human section of `PROGRESS.md` with exact steps, unless you actually performed them, in which case record how.
 
@@ -65,7 +71,8 @@ Never record something as verified that you did not run. Manual checks the plans
 - Follow the repository's message style (`feat: …`, `fix: …`, `test: …`, `docs: …`, `chore: …`). The body says what changed and why. End the message with the trailer `Plan-Item: <ID>` so each item is found with `git log --grep "Plan-Item: <ID>"`. Never add `Co-Authored-By` or any AI attribution line.
 - Never push, force-push, amend or rebase earlier items' commits, or merge into `master`.
 - Raw benchmark output and the Klavko checkout stay under gitignored `Benchmarks/results/`. Comparative Klavko results are never committed.
-- After 03.4, `Benchmarks/layout-corpus/v1`, `Benchmarks/layout-tables/v1` and the recorded baseline are frozen. Later fixtures go into a new corpus version.
+- Frozen: `Benchmarks/layout-tables/v1`, `Benchmarks/layout-corpus/v1` and `v2`, `Benchmarks/baselines/v1` (superseded, kept for reference) and `Benchmarks/baselines/v2`. Later fixtures go into a new corpus version (v3 onward, built on v2). The reference baseline is `Benchmarks/baselines/v2/corpus-v2/baseline.json`.
+- A new baseline is recorded only with `LayoutBenchmark record-baseline` from a clean checkout of a committed revision (`git worktree add --detach <dir> <sha>`), passing `--runner-log` for each runner's log, and only when a recorded harness defect invalidates the current one.
 
 ## Deviations
 
@@ -95,7 +102,7 @@ Mark the item BLOCKED or NEEDS-HUMAN, write the reason in `PROGRESS.md`, commit,
 Write `docs/plans/EXECUTION-REPORT.md` and commit it with `Plan-Item: F`. Include:
 
 - each item: status, commit SHAs, checks run with pass/fail counts, deviations;
-- benchmark tables for the baseline, after plan 02 and after plan 01 Phase A: trial counts, coverage, text-damage and layout-only FP rates with Wilson intervals, recall, precision, and mapping rejections by reason code, with artifact paths;
+- benchmark tables for baseline v2, after plan 02 and after plan 01 Phase A: trial counts, coverage, text-damage and layout-only FP rates with Wilson intervals, recall, precision, and mapping rejections by reason code, with artifact paths;
 - every trial whose outcome changed between runs, with an explanation;
 - the 01B decision and the numbers behind it;
 - the Needs-human list with exact steps;

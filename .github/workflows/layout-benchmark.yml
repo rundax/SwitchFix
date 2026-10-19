@@ -41,16 +41,21 @@ jobs:
       - name: Run LayoutBenchmark self-check
         run: swift run -c release LayoutBenchmark self-check
 
-      - name: Validate corpus and frozen layout tables
-        run: swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1 --tables Benchmarks/layout-tables/v1
+      - name: Validate corpora and frozen layout tables
+        run: |
+          swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v2 --tables Benchmarks/layout-tables/v1 --strict
+          # v1 is frozen with known label conflicts; it must still validate, warnings allowed.
+          swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1 --tables Benchmarks/layout-tables/v1
 
-      - name: Run development benchmark smoke evaluation
+      - name: Development smoke run gated against baseline v2
         run: |
           mkdir -p Benchmarks/results/ci
           swift run -c release LayoutBenchmark run \
             --adapter switchfix \
             --split development \
             --profile boundary-layout-only \
+            --corpus Benchmarks/layout-corpus/v2 \
+            --baseline Benchmarks/baselines/v2/corpus-v2/baseline.json \
             --output Benchmarks/results/ci
 
       - name: Upload benchmark artifacts

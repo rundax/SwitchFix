@@ -223,3 +223,154 @@ public enum SeedCorpusDefinitions {
         SeedItemDefinition(groupID: "holdout-grp-100", category: "symbol", label: "abstain", sourceLayout: "uk", targetLayout: "uk", intendedText: "=== ", isRepair: false)
     ]
 }
+
+/// One frozen corpus version: its trials and the README written next to them.
+public struct SeedCorpusVersion {
+    public let version: String
+    public let created: String
+    public let generator: String
+    public let developmentItems: [SeedItemDefinition]
+    public let holdoutItems: [SeedItemDefinition]
+    public let readme: (_ sourceCommit: String, _ summaries: [String: SplitSummary]) -> String
+}
+
+extension SeedCorpusDefinitions {
+    public static func version(_ name: String) -> SeedCorpusVersion? {
+        switch name {
+        case "v1": return v1
+        case "v2": return v2
+        default: return nil
+        }
+    }
+
+    static let v1 = SeedCorpusVersion(
+        version: "v1",
+        created: "2026-10-19",
+        generator: "manual-v1",
+        developmentItems: developmentItems,
+        holdoutItems: holdoutItems,
+        readme: { sourceCommit, _ in
+            """
+            # Layout Benchmark Corpus v1
+
+            Version: 1.0 (Frozen Seed Baseline)
+            Specification: `docs/plans/03-comparative-false-positive-benchmark.md`
+            Source commit: `\(sourceCommit)`
+
+            ## Overview
+
+            This directory contains the frozen 200-trial seed corpus for the SwitchFix comparative layout reliability benchmark:
+            - `development.jsonl`: 100 trials used during development and regression testing
+            - `holdout.jsonl`: 100 trials reserved for generalization evaluation
+            - `manifest.json`: Cryptographic integrity hashes and split distributions
+
+            ## Split Structure (Per Split)
+
+            Each split contains exactly 100 trials:
+            - **20 Repair** trials: Intentional layout errors requiring automatic repair (10 English → Ukrainian, 10 Ukrainian → English)
+            - **60 Preserve** trials: Intentional correct text requiring preservation with no modifications (30 typed under ABC, 30 typed under Ukrainian)
+            - **20 Abstain** trials: Ambiguous or unsupported inputs requiring no automatic action (10 typed under ABC, 10 typed under Ukrainian)
+
+            Base group IDs (`groupID`) are completely disjoint across the development and holdout splits.
+
+            ## Trial Schema & Provenance
+
+            Every row in the JSONL files is an independent JSON object:
+            - `schemaVersion`: 1
+            - `id`: Unique identifier across all splits
+            - `groupID`: Base entity / sentence group (disjoint across splits)
+            - `split`: `"development"` or `"holdout"`
+            - `languages`: Array of relevant language codes (e.g. `["en", "uk"]`)
+            - `category`: Strata label (e.g. `single-word`, `capitalized`, `code-token`, `acronym`, `ambiguous-short`, etc.)
+            - `label`: Target behavior (`repair`, `preserve`, or `abstain`)
+            - `provenance`: Synthetic generation metadata with `"review": "pending-human"`
+            - `initial`: Starting editor state (sourceID, language, text, caretUTF16, preferredCyrillic, keyboardType)
+            - `events`: Array of physical key and boundary events (keyCode, modifiers, rendered)
+            - `expected`: Target outcome (text, language, sourceID, allowedAutomaticActions, checkpoints)
+
+            ## Deterministic Rendering
+
+            Events are rendered using the frozen layout tables in `Benchmarks/layout-tables/v1/`. The `rendered` field in each event is verified against the table output for the given keyCode and modifiers.
+            """
+        }
+    )
+
+    /// v1 trials whose typed input or base text leaked across splits or carried contradictory
+    /// labels, keyed by their v1 position, with the replacement that keeps the stratum.
+    static let v2HoldoutReplacements: [Int: SeedItemDefinition] = [
+        11: SeedItemDefinition(groupID: "holdout-grp-011-v2", category: "single-word", label: "repair", sourceLayout: "uk", targetLayout: "en", intendedText: "garden ", isRepair: true, id: "holdout-repair-011-v2"),
+        58: SeedItemDefinition(groupID: "holdout-grp-058-v2", category: "short-word", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "ще ", isRepair: false, id: "holdout-preserve-058-v2"),
+        93: SeedItemDefinition(groupID: "holdout-grp-093-v2", category: "ambiguous-short", label: "abstain", sourceLayout: "uk", targetLayout: "uk", intendedText: "аж ", isRepair: false, id: "holdout-abstain-093-v2"),
+        94: SeedItemDefinition(groupID: "holdout-grp-094-v2", category: "ambiguous-short", label: "abstain", sourceLayout: "uk", targetLayout: "uk", intendedText: "хоч ", isRepair: false, id: "holdout-abstain-094-v2"),
+        98: SeedItemDefinition(groupID: "holdout-grp-098-v2", category: "isolated-char", label: "abstain", sourceLayout: "uk", targetLayout: "uk", intendedText: "є ", isRepair: false, id: "holdout-abstain-098-v2")
+    ]
+
+    /// Intentional tokens that are also real words in the other layout (Apple "Ukrainian" is
+    /// the legacy variant: s=и, b=і). Labels come from the intended text, not a dictionary.
+    static let v2DevelopmentCollisions: [SeedItemDefinition] = [
+        SeedItemDefinition(groupID: "dev-grp-101", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "vs ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-102", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "yt ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-103", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "nfr ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-104", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "uhf ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-105", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "hbr ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-106", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "руку ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-106", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "руки ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-106", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "рук ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-107", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "кум ", isRepair: false),
+        SeedItemDefinition(groupID: "dev-grp-108", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "нут ", isRepair: false)
+    ]
+
+    static let v2HoldoutCollisions: [SeedItemDefinition] = [
+        SeedItemDefinition(groupID: "holdout-grp-101", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "lev ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-102", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "ns ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-103", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "gap ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-104", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "ufc ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-105", category: "cross-layout-collision", label: "preserve", sourceLayout: "en", targetLayout: "en", intendedText: "dsl ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-101", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "дум ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-106", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "дути ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-106", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "дув ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-107", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "пуд ", isRepair: false),
+        SeedItemDefinition(groupID: "holdout-grp-108", category: "cross-layout-collision", label: "preserve", sourceLayout: "uk", targetLayout: "uk", intendedText: "дну ", isRepair: false)
+    ]
+
+    static let v2 = SeedCorpusVersion(
+        version: "v2",
+        created: "2026-10-19",
+        generator: "manual-v2",
+        developmentItems: developmentItems + v2DevelopmentCollisions,
+        holdoutItems: holdoutItems.enumerated().map { v2HoldoutReplacements[$0.offset + 1] ?? $0.element } + v2HoldoutCollisions,
+        readme: { sourceCommit, summaries in
+            let dev = summaries["development"]
+            let holdout = summaries["holdout"]
+            return """
+            # Layout Benchmark Corpus v2
+
+            Specification: `docs/plans/03-comparative-false-positive-benchmark.md`
+            Source commit: `\(sourceCommit)`
+            Generator: `LayoutBenchmark generate-seed-corpus --version v2` (byte-deterministic; regenerating reproduces the manifest hashes)
+
+            v2 supersedes v1 as the regression corpus. v1 stays frozen and unchanged for reproducing its baselines.
+
+            ## Changes from v1
+
+            1. **Leaks and contradictory labels removed.** In v1 the identical typed inputs `і` and `чи` appeared in both splits with opposite labels (preserve vs abstain), `apple` was a development preserve and a holdout reversed-mapping repair, and holdout labeled `от` and `ну` both preserve and abstain. Five holdout trials are replaced, keeping their stratum, under new IDs: `holdout-repair-011-v2` (`garden`), `holdout-preserve-058-v2` (`ще`), `holdout-abstain-093-v2` (`аж`), `holdout-abstain-094-v2` (`хоч`), `holdout-abstain-098-v2` (`є`).
+            2. **Hard negatives added.** v1 negatives were all typed on the correct layout and never collided with a word in the other language, so a zero false-positive rate said little. Category `cross-layout-collision` adds 10 `preserve` trials per split, 5 typed on ABC and 5 on Ukrainian, each an intended token whose rendering on the other layout is a real word (for example `vs` → `ми`, `руку` → `here`). Inflections of one lemma and reversed mappings share a group.
+            3. **Validation is stricter.** `validate` reports identical typed input with different labels anywhere, and typed input or base text shared across splits; `--strict` fails on any of them. v1 validates with 9 such warnings, v2 with none. Validation also checks manifest hashes, caret offsets and exact keyboard-type tables.
+
+            ## Split Structure
+
+            - Development: \(dev?.total ?? 0) trials (\(dev?.repair ?? 0) repair, \(dev?.preserve ?? 0) preserve, \(dev?.abstain ?? 0) abstain)
+            - Holdout: \(holdout?.total ?? 0) trials (\(holdout?.repair ?? 0) repair, \(holdout?.preserve ?? 0) preserve, \(holdout?.abstain ?? 0) abstain)
+
+            Every label is divided equally between trials typed on ABC and on Ukrainian. All trials are synthetic, rendered through the frozen `Benchmarks/layout-tables/v1` tables, and carry `"review": "pending-human"`; human review results become a new corpus version.
+
+            ## Known limits
+
+            - The `abstain` stratum is short words, gibberish and symbols typed on the correct layout; it does not yet contain genuinely ambiguous wrong-layout input.
+            - Hard negatives are few (20 in total) and correlated within groups; treat their rate as a regression signal, not a false-positive claim.
+
+            The trial schema is unchanged from v1 (see `Benchmarks/layout-corpus/v1/README.md`).
+            """
+        }
+    )
+}

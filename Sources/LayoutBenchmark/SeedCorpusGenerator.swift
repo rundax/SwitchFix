@@ -8,6 +8,8 @@ public struct SeedItemDefinition {
     public let targetLayout: String // "en" (ABC) or "uk" (Ukrainian)
     public let intendedText: String
     public let isRepair: Bool
+    /// Explicit trial ID; by default the ID comes from the split, label and position.
+    public var id: String? = nil
 }
 
 public enum SeedCorpusGenerator {
@@ -15,6 +17,7 @@ public enum SeedCorpusGenerator {
         id: String,
         item: SeedItemDefinition,
         split: String,
+        generator: String = "manual-v1",
         abcTable: LayoutTable,
         ukTable: LayoutTable
     ) throws -> Trial {
@@ -88,7 +91,7 @@ public enum SeedCorpusGenerator {
             languages: ["en", "uk"],
             category: item.category,
             label: item.label,
-            provenance: Provenance(kind: "synthetic", generator: "manual-v1", seed: 0, review: "pending-human"),
+            provenance: Provenance(kind: "synthetic", generator: generator, seed: 0, review: "pending-human"),
             initial: InitialState(
                 sourceID: initialSourceID,
                 language: initialLanguage,

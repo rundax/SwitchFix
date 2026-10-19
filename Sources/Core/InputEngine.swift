@@ -447,7 +447,7 @@ public final class InputEngine {
     private func prepareCorrection(result: DetectionResult, request: DetectionRequest) {
         let latest = captureState.snapshot()
         let cancelReason: String?
-        let isTextIdentical = result.originalWord == result.convertedWord
+        let plannedEdit = planCorrectionEdit(result: result, boundary: request.boundary)
 
         if latest.latestPhysicalSequence != request.sequence {
             cancelReason = "sequence-drift"
@@ -463,21 +463,19 @@ public final class InputEngine {
             cancelReason = "app-not-allowed"
         } else if !latest.correctionAllowed {
             cancelReason = "correction-disallowed"
-        } else if result.originalWord.count > 64 {
-            cancelReason = "word-too-long"
-        } else if isTextIdentical && !result.shouldSwitchLayout {
-            cancelReason = "text-identical-no-switch"
+        } else if case .failure(let rejection) = plannedEdit {
+            cancelReason = rejection.rawValue
         } else {
             cancelReason = nil
         }
-        guard cancelReason == nil else {
-            logger.debug("correction cancelled reason=\(cancelReason!) chars=\(result.originalWord.count)")
+        guard cancelReason == nil, case .success(let edit) = plannedEdit else {
+            logger.debug("correction cancelled reason=\(cancelReason ?? "none") chars=\(result.originalWord.count)")
             return
         }
 
         let boundary = request.boundary
-        let deleteCount = isTextIdentical ? 0 : result.originalWord.count + boundary.count
-        let replacementText = isTextIdentical ? "" : result.convertedWord + boundary
+        let deleteCount = edit.deleteCount
+        let replacementText = edit.replacementText
         logger.notice(
             "correction planned chars=\(result.originalWord.count) replacementChars=\(result.convertedWord.count) deletes=\(deleteCount) pid=\(request.context.frontmostPID) layoutSwitch=\(result.shouldSwitchLayout ? result.targetLayout.rawValue : "none")"
         )
@@ -494,7 +492,7 @@ public final class InputEngine {
             correctedText: result.convertedWord,
             boundaryText: boundary,
             originalLayout: result.sourceLayout,
-            targetLayout: result.shouldSwitchLayout ? result.targetLayout : nil
+            targetLayout: edit.switchTarget
         )
 
         correctionQueue.async { [weak self] in

@@ -34,9 +34,9 @@ jobs:
         run: swift run -c release TestRunner
 
       - name: Run InputPipelineTestRunner
-        # Note: In hosted headless environments without accessibility grants,
-        # 'TextCorrector must apply layout-only plan without deleting text' fails expectedly.
-        run: swift run -c release InputPipelineTestRunner || true
+        # Hosted runners pass the Accessibility-dependent TextCorrector test (release CI runs
+        # the same runner); every failure here is a real failure.
+        run: swift run -c release InputPipelineTestRunner
 
       - name: Run LayoutBenchmark self-check
         run: swift run -c release LayoutBenchmark self-check

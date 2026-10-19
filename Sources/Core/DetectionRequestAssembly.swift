@@ -78,3 +78,32 @@ public func evaluateDetection(
         boundaryCharacter: request.boundary.isEmpty ? nil : request.boundary
     )
 }
+
+/// The text edit and layout switch a detection result asks for, before live-state checks.
+public struct CorrectionEdit: Equatable, Sendable {
+    public let deleteCount: Int
+    public let replacementText: String
+    public let switchTarget: Layout?
+}
+
+public enum CorrectionEditRejection: String, Error, Sendable {
+    case wordTooLong = "word-too-long"
+    case textIdenticalNoSwitch = "text-identical-no-switch"
+}
+
+/// Shared by `InputEngine` and the benchmark replay, so both turn a result into the same edit.
+/// A layout-only result deletes and retypes nothing.
+public func planCorrectionEdit(result: DetectionResult, boundary: String) -> Result<CorrectionEdit, CorrectionEditRejection> {
+    let isTextIdentical = result.originalWord == result.convertedWord
+    if result.originalWord.count > 64 {
+        return .failure(.wordTooLong)
+    }
+    if isTextIdentical && !result.shouldSwitchLayout {
+        return .failure(.textIdenticalNoSwitch)
+    }
+    return .success(CorrectionEdit(
+        deleteCount: isTextIdentical ? 0 : result.originalWord.count + boundary.count,
+        replacementText: isTextIdentical ? "" : result.convertedWord + boundary,
+        switchTarget: result.shouldSwitchLayout ? result.targetLayout : nil
+    ))
+}

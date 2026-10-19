@@ -92,11 +92,16 @@ public enum BenchmarkLayer: String, Sendable {
 }
 
 public final class SwitchFixAdapter: @unchecked Sendable {
+    /// Profile `boundary-layout-only`: English and Ukrainian only.
+    public static let profileLayouts: Set<Layout> = [.english, .ukrainian]
+
     private let tables: [String: LayoutTable]
+    private let renderer: KeyRenderer
     private var isReady = false
 
     public init(tables: [String: LayoutTable]) {
         self.tables = tables
+        self.renderer = KeyRenderer(tables: tables)
     }
 
     public func prewarm() -> Bool {
@@ -107,40 +112,49 @@ public final class SwitchFixAdapter: @unchecked Sendable {
         return isReady
     }
 
+    /// Replays a trial on the real `InputStateMachine` and `LayoutDetector`.
+    ///
+    /// `replay` feeds automatic source switches back into rendering and context; `decision`
+    /// records the same proposals without feedback, so later keys keep the initial source.
     public func executeTrial(trial: Trial, layer: BenchmarkLayer = .replay) -> TrialResult {
-        guard isReady else {
-            return TrialResult(
+        func unavailable(_ failure: AdapterFailure, text: String = "", sourceID: String = "", actions: [EmittedAction] = [], checkpoints: [ObservedCheckpoint] = [], reasons: Set<String> = []) -> TrialResult {
+            TrialResult(
                 trialID: trial.id,
-                status: "error",
-                finalText: "",
-                finalSourceID: "",
-                errorMessage: "Adapter dictionaries not ready"
+                status: failure.status,
+                finalText: text,
+                finalSourceID: sourceID,
+                actions: actions,
+                checkpoints: checkpoints,
+                reasonCodes: reasons.union([failure.reason]).sorted(),
+                errorMessage: failure.reason
             )
         }
 
-        let startedAt = DispatchTime.now().uptimeNanoseconds
-
-        let initialLayout: Layout = trial.initial.language == "uk" ? .ukrainian : .english
-        var activeLayout = initialLayout
-        var activeSourceID = trial.initial.sourceID
-        var virtualText = trial.initial.text
-
-        let detector = LayoutDetector()
-        detector.preferredSourceIDProvider = { layout in
-            switch layout {
-            case .english: return "com.apple.keylayout.ABC"
-            case .ukrainian: return "com.apple.keylayout.Ukrainian"
-            case .russian: return "com.apple.keylayout.Russian"
-            }
+        guard isReady else {
+            return unavailable(AdapterFailure(status: "error", reason: "dictionaries_not_ready"))
+        }
+        guard let initialLayout = layout(forLanguageCode: trial.initial.language),
+              SwitchFixAdapter.profileLayouts.contains(initialLayout) else {
+            return unavailable(AdapterFailure(status: "unsupported", reason: "language_outside_profile"))
+        }
+        guard trial.initial.caretUTF16 == trial.initial.text.utf16.count else {
+            return unavailable(AdapterFailure(status: "unsupported", reason: "caret_not_at_end"))
         }
 
-        var config = DetectionConfiguration(
-            allowedLayouts: [.english, .ukrainian],
-            preferredCyrillicLayout: .ukrainian,
-            activeSourceSupportedLayouts: [activeLayout],
-            ukrainianFromVariant: .standard,
-            ukrainianToVariant: .standard
-        )
+        let environment: TrialSourceEnvironment
+        switch TrialSourceEnvironment.make(trial: trial, tables: tables, allowedLayouts: SwitchFixAdapter.profileLayouts) {
+        case .success(let value): environment = value
+        case .failure(let failure): return unavailable(failure)
+        }
+
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        var activeLayout = initialLayout
+        var activeSourceID = trial.initial.sourceID
+        var editor = VirtualEditor(text: trial.initial.text)
+
+        let detector = LayoutDetector()
+        detector.preferredSourceIDProvider = { environment.preferredSourceIDs[$0] }
+        var config = environment.detectionConfiguration(currentSourceID: activeSourceID, currentLayout: activeLayout)
 
         var contextSnapshot = InputContextSnapshot(
             epoch: 1,
@@ -150,53 +164,50 @@ public final class SwitchFixAdapter: @unchecked Sendable {
             inputSourceID: activeSourceID,
             secureFocus: .notSecure
         )
-
         var stateMachine = InputStateMachine(
             context: contextSnapshot,
-            preferences: InputPreferencesSnapshot(
-                isEnabled: true,
-                correctionMode: .automatic
-            )
+            preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic)
         )
 
         var actions: [EmittedAction] = []
-        var observedCheckpoints: [ObservedCheckpoint] = []
+        var observedCheckpoints = [ObservedCheckpoint(afterEvent: 0, text: editor.text, language: languageCode(for: activeLayout), sourceID: activeSourceID)]
+        var reasons: Set<String> = []
         var sequence: UInt64 = 0
 
         for (idx, event) in trial.events.enumerated() {
             sequence += 1
 
-            // If active layout switched and this is a key event in replay mode, render through the new layout's table
-            var renderedChar = event.rendered
-            if layer == .replay && activeSourceID != trial.initial.sourceID && event.type == "key" {
-                let kbdType = trial.initial.keyboardType ?? 91
-                let tableKey = "\(activeSourceID)@\(kbdType)"
-                if let activeTable = tables[tableKey] ?? tables["\(activeSourceID)@91"] ?? tables["\(activeSourceID)@37"] {
-                    if let stroke = activeTable.lookup(keyCode: event.keyCode, modifiers: event.modifiers),
-                       let out = stroke.output {
-                        renderedChar = out
-                    }
-                }
-            }
-
             let kind: CapturedInput.Kind
             switch event.type {
-            case "boundary":
-                kind = .boundary(renderedChar)
+            case "key", "boundary":
+                let rendered: String
+                switch renderer.render(event, sourceID: activeSourceID, keyboardType: environment.keyboardType, initialSourceID: trial.initial.sourceID) {
+                case .rendered(let value):
+                    rendered = value
+                case .unavailable(let status, let reason):
+                    return unavailable(AdapterFailure(status: status, reason: reason), text: editor.text, sourceID: activeSourceID, actions: actions, checkpoints: observedCheckpoints, reasons: reasons)
+                }
+                // The keystroke reaches the application before SwitchFix sees the boundary.
+                editor.type(rendered)
+                kind = event.type == "boundary" ? .boundary(rendered) : KeyboardMonitor.capturedKind(forText: rendered)
             case "delete":
+                editor.deleteBackward()
                 kind = .delete
-            case "navigation":
-                kind = .navigation
             default:
-                kind = .character(renderedChar)
+                return unavailable(AdapterFailure(status: "unsupported", reason: "event_type_\(event.type)"), text: editor.text, sourceID: activeSourceID, actions: actions, checkpoints: observedCheckpoints, reasons: reasons)
             }
+
+            var flags: UInt64 = 0
+            if event.modifiers.contains("shift") { flags |= 0x020000 }
+            if event.modifiers.contains("caps") { flags |= 0x010000 }
+            if event.modifiers.contains("option") { flags |= 0x080000 }
 
             let input = CapturedInput(
                 sequence: sequence,
                 timestamp: sequence,
                 kind: kind,
                 keyCode: event.keyCode,
-                flagsRawValue: event.modifiers.contains("shift") ? 0x020000 : 0,
+                flagsRawValue: flags,
                 isAutorepeat: false,
                 sourcePID: 100,
                 sourceUserData: 0,
@@ -204,28 +215,16 @@ public final class SwitchFixAdapter: @unchecked Sendable {
                 editGeneration: 1
             )
 
-            let commands = stateMachine.consume(input)
-
-            for command in commands {
+            for command in stateMachine.consume(input) {
                 switch command {
-                case .append(let text):
-                    if layer == .replay {
-                        virtualText.append(text)
-                    }
-                case .deleteLast:
-                    if layer == .replay && !virtualText.isEmpty {
-                        virtualText.removeLast()
-                    }
-                case .invalidate:
-                    detector.reset()
-                case .untrackedWordHeld:
+                case .append, .deleteLast, .untrackedWordHeld:
                     break
+                case .invalidate, .nativeUndo:
+                    detector.reset()
+                case .requestManualCorrection, .requestRevert:
+                    reasons.insert("manual_command_ignored")
                 case .flush(let word, let boundary, let seq, let ctx):
-                    if layer == .replay {
-                        virtualText.append(boundary)
-                    }
-
-                    let req = assembleDetectionRequest(
+                    let request = assembleDetectionRequest(
                         trigger: .automaticBoundary,
                         word: word,
                         boundary: boundary,
@@ -235,109 +234,90 @@ public final class SwitchFixAdapter: @unchecked Sendable {
                         context: ctx,
                         run: stateMachine.run
                     )
-
-                    let detection = evaluateDetection(
-                        detector: detector,
-                        request: req,
-                        configuration: config
-                    )
-
-                    if let res = detection {
-                        // 1. Text replacement
-                        let targetSuffix = res.originalWord + boundary
-                        if layer == .replay {
-                            if virtualText.hasSuffix(targetSuffix) {
-                                let prefix = virtualText.dropLast(targetSuffix.count)
-                                virtualText = String(prefix) + res.convertedWord + boundary
-                                actions.append(EmittedAction(
-                                    type: "replaceSuffix",
-                                    eventIndex: idx,
-                                    fromText: res.originalWord,
-                                    toText: res.convertedWord
-                                ))
-                            }
-                        } else {
-                            actions.append(EmittedAction(
-                                type: "replaceSuffix",
-                                eventIndex: idx,
-                                fromText: res.originalWord,
-                                toText: res.convertedWord
-                            ))
-                        }
-
-                        // 2. Source switch
-                        if res.shouldSwitchLayout {
-                            let targetSource = (detector.preferredSourceIDProvider?(res.targetLayout) ?? nil) ?? "com.apple.keylayout.Ukrainian"
-                            activeSourceID = targetSource
-                            activeLayout = res.targetLayout
-                            contextSnapshot = InputContextSnapshot(
-                                epoch: contextSnapshot.epoch + 1,
-                                frontmostPID: 100,
-                                appAllowed: true,
-                                layout: activeLayout,
-                                inputSourceID: activeSourceID,
-                                secureFocus: .notSecure
-                            )
-                            _ = stateMachine.updateContext(contextSnapshot)
-                            config.activeSourceSupportedLayouts = [activeLayout]
-                            actions.append(EmittedAction(
-                                type: "switchSource",
-                                eventIndex: idx,
-                                targetSource: targetSource,
-                                targetLayout: res.targetLayout.rawValue
-                            ))
-                        }
+                    guard let detection = evaluateDetection(detector: detector, request: request, configuration: config) else {
+                        continue
                     }
-                case .requestManualCorrection, .requestRevert, .nativeUndo:
-                    break
+
+                    let edit: CorrectionEdit
+                    switch planCorrectionEdit(result: detection, boundary: boundary) {
+                    case .success(let value):
+                        edit = value
+                    case .failure(let rejection):
+                        reasons.insert("cancelled_\(rejection.rawValue)")
+                        continue
+                    }
+
+                    if edit.deleteCount > 0 || !edit.replacementText.isEmpty {
+                        let outcome = editor.replaceSuffix(
+                            deleteCount: edit.deleteCount,
+                            with: edit.replacementText,
+                            expectedSuffix: detection.originalWord + boundary
+                        )
+                        if !outcome.suffixMatched { reasons.insert("suffix_mismatch") }
+                        if outcome.underflow { reasons.insert("delete_underflow") }
+                        actions.append(EmittedAction(
+                            type: "replaceSuffix",
+                            eventIndex: idx,
+                            fromText: detection.originalWord,
+                            toText: detection.convertedWord
+                        ))
+                    }
+
+                    guard let target = edit.switchTarget else { continue }
+                    guard let targetSource = environment.preferredSourceIDs[target] else {
+                        reasons.insert("no_source_for_target")
+                        continue
+                    }
+                    actions.append(EmittedAction(
+                        type: "switchSource",
+                        eventIndex: idx,
+                        targetSource: targetSource,
+                        targetLayout: languageCode(for: target)
+                    ))
+                    guard layer == .replay else { continue }
+
+                    // Mirrors the app after its own switch: new context (focus assumed resolved
+                    // before the next key), detector reset, configuration recomputed.
+                    activeSourceID = targetSource
+                    activeLayout = target
+                    contextSnapshot = InputContextSnapshot(
+                        epoch: contextSnapshot.epoch + 1,
+                        frontmostPID: 100,
+                        appAllowed: true,
+                        layout: activeLayout,
+                        inputSourceID: activeSourceID,
+                        secureFocus: .notSecure
+                    )
+                    _ = stateMachine.updateContext(contextSnapshot)
+                    detector.reset()
+                    config = environment.detectionConfiguration(currentSourceID: activeSourceID, currentLayout: activeLayout)
                 }
             }
 
             observedCheckpoints.append(ObservedCheckpoint(
                 afterEvent: idx + 1,
-                text: virtualText,
-                language: activeLayout.rawValue,
+                text: editor.text,
+                language: languageCode(for: activeLayout),
                 sourceID: activeSourceID
             ))
         }
 
-        let duration = Double(DispatchTime.now().uptimeNanoseconds &- startedAt) / 1_000_000.0
-
-        let finalText: String
-        let finalSource: String
-
+        let finalSourceID: String
         if layer == .replay {
-            finalText = virtualText
-            finalSource = activeSourceID
+            finalSourceID = activeSourceID
         } else {
-            // In decision mode, synthesize final state based on proposed decisions
-            if let replaceAction = actions.first(where: { $0.type == "replaceSuffix" }),
-               let conv = replaceAction.toText {
-                finalText = conv + " "
-            } else {
-                finalText = trial.events.map { $0.rendered }.joined()
-            }
-            if let switchAction = actions.first(where: { $0.type == "switchSource" }),
-               let s = switchAction.targetSource {
-                finalSource = s
-            } else {
-                finalSource = activeSourceID
-            }
+            finalSourceID = actions.last(where: { $0.type == "switchSource" })?.targetSource ?? activeSourceID
         }
 
         return TrialResult(
-            protocolVersion: 1,
-            adapter: "switchfix",
-            adapterVersion: "1.0",
             trialID: trial.id,
             status: "ok",
-            finalText: finalText,
-            finalSourceID: finalSource,
+            finalText: editor.text,
+            finalSourceID: finalSourceID,
             actions: actions,
             checkpoints: observedCheckpoints,
-            reasonCodes: [],
-            durationMs: duration,
-            errorMessage: nil
+            reasonCodes: reasons.sorted(),
+            durationMs: Double(DispatchTime.now().uptimeNanoseconds &- startedAt) / 1_000_000.0
         )
     }
 }

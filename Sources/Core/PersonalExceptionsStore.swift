@@ -103,10 +103,17 @@ public final class PersonalExceptionsStore: @unchecked Sendable {
     /// Remove a word from personal exceptions.
     @discardableResult
     public func remove(word: String) -> PersonalExceptionsPolicy {
+        return remove(words: [word])
+    }
+
+    /// Remove multiple words from personal exceptions in a single batch.
+    @discardableResult
+    public func remove(words: Set<String>) -> PersonalExceptionsPolicy {
         return lock.withLock {
-            let canonical = PersonalExceptionsPolicy.canonicalize(word)
+            guard !words.isEmpty else { return loadPolicyLocked() }
+            let canonicalWords = Set(words.map { PersonalExceptionsPolicy.canonicalize($0) })
             var current = loadPolicyLocked().words
-            current.remove(canonical)
+            current.subtract(canonicalWords)
             persistLocked(words: current)
             return PersonalExceptionsPolicy(words: current)
         }

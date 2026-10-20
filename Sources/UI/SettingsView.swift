@@ -376,9 +376,7 @@ class PersonalExceptionsViewModel: ObservableObject {
     }
 
     func removeSelected() {
-        for word in selection {
-            PreferencesManager.shared.removePersonalException(word)
-        }
+        PreferencesManager.shared.removePersonalExceptions(selection)
         selection.removeAll()
         statusMessage = nil
         reload()

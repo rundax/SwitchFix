@@ -274,12 +274,18 @@ public final class InputEngine {
         ukrainianFromVariant: UkrainianKeyboardVariant,
         ukrainianToVariant: UkrainianKeyboardVariant
     ) {
-        detectionConfiguration.withLock { value in
-            value.allowedLayouts = allowedLayouts
-            value.preferredCyrillicLayout = preferredCyrillicLayout
-            value.activeSourceSupportedLayouts = activeSourceSupportedLayouts
-            value.ukrainianFromVariant = ukrainianFromVariant
-            value.ukrainianToVariant = ukrainianToVariant
+        let epoch = captureState.invalidateCorrectionConfiguration()
+        inputQueue.async { [weak self] in
+            guard let self else { return }
+            self.correctionEpoch = epoch
+            self.detectionConfiguration.withLock { value in
+                value.allowedLayouts = allowedLayouts
+                value.preferredCyrillicLayout = preferredCyrillicLayout
+                value.activeSourceSupportedLayouts = activeSourceSupportedLayouts
+                value.ukrainianFromVariant = ukrainianFromVariant
+                value.ukrainianToVariant = ukrainianToVariant
+            }
+            self.resetDetectorState()
         }
     }
 

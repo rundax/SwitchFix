@@ -163,10 +163,15 @@ public enum Scorer {
         }
 
         let observed = Dictionary(result.checkpoints.map { ($0.afterEvent, $0) }, uniquingKeysWith: { _, last in last })
-        let checkpointsMatch = trial.expected.checkpoints.allSatisfy { expected in
+        let checkpointTextMatches = trial.expected.checkpoints.allSatisfy { expected in
             guard let seen = observed[expected.afterEvent] else { return false }
-            return seen.text == expected.text && seen.language == expected.language
+            return seen.text == expected.text
         }
+        let checkpointLanguageMatches = trial.expected.checkpoints.allSatisfy { expected in
+            guard let seen = observed[expected.afterEvent] else { return false }
+            return seen.language == expected.language
+        }
+        let checkpointsMatch = checkpointTextMatches && checkpointLanguageMatches
         let prefixIntact = result.finalText.hasPrefix(trial.initial.text)
         let textMatches = result.finalText == trial.expected.text
         let sourceMatches = result.finalSourceID == trial.expected.sourceID
@@ -186,11 +191,11 @@ public enum Scorer {
             return .fnTransientDamage
         }
 
-        // Any replacement counts as damage on a negative trial, even one later undone.
-        if replaced || !textMatches || !checkpointsMatch || !prefixIntact {
+        // Any replacement or checkpoint text mutation counts as text damage on a negative trial.
+        if replaced || !textMatches || !checkpointTextMatches || !prefixIntact {
             return .textDamageFP
         }
-        return switched ? .layoutOnlyFP : .trueNegative
+        return (switched || !checkpointLanguageMatches) ? .layoutOnlyFP : .trueNegative
     }
 
     public static func score(trials: [Trial], results: [TrialResult]) -> BenchmarkScoreReport {

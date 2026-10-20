@@ -379,6 +379,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? inputSourceManager.preferredUkrainianVariant()
         let toVariant = inputSourceManager.ukrainianVariant(forInputSourceID: newSourceID)
             ?? inputSourceManager.preferredUkrainianVariant()
+        // Install the new correction epoch before scheduling layout-switch corrections.
+        updateDetectionConfiguration(allowedLayouts: readyLayouts)
         if expectedGeneratedSelection {
             monitorFailure = nil
             inputEngine?.handleGeneratedLayoutContext(context)
@@ -392,7 +394,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 toVariant: toVariant
             )
         }
-        updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }
 

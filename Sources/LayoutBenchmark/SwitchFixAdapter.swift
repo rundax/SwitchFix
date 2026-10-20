@@ -185,7 +185,9 @@ public final class SwitchFixAdapter: @unchecked Sendable {
                 case .rendered(let value):
                     rendered = value
                 case .unavailable(let status, let reason):
-                    return unavailable(AdapterFailure(status: status, reason: reason), text: editor.text, sourceID: activeSourceID, actions: actions, checkpoints: observedCheckpoints, reasons: reasons)
+                    let effectiveStatus = actions.isEmpty ? status : "error"
+                    let effectiveReason = actions.isEmpty ? reason : "post_intervention_\(reason)"
+                    return unavailable(AdapterFailure(status: effectiveStatus, reason: effectiveReason), text: editor.text, sourceID: activeSourceID, actions: actions, checkpoints: observedCheckpoints, reasons: reasons)
                 }
                 // The keystroke reaches the application before SwitchFix sees the boundary.
                 editor.type(rendered)
@@ -194,7 +196,9 @@ public final class SwitchFixAdapter: @unchecked Sendable {
                 editor.deleteBackward()
                 kind = .delete
             default:
-                return unavailable(AdapterFailure(status: "unsupported", reason: "event_type_\(event.type)"), text: editor.text, sourceID: activeSourceID, actions: actions, checkpoints: observedCheckpoints, reasons: reasons)
+                let effectiveStatus = actions.isEmpty ? "unsupported" : "error"
+                let effectiveReason = actions.isEmpty ? "event_type_\(event.type)" : "post_intervention_event_type_\(event.type)"
+                return unavailable(AdapterFailure(status: effectiveStatus, reason: effectiveReason), text: editor.text, sourceID: activeSourceID, actions: actions, checkpoints: observedCheckpoints, reasons: reasons)
             }
 
             var flags: UInt64 = 0

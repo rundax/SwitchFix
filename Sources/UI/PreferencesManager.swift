@@ -78,8 +78,14 @@ public class PreferencesManager {
 
     @discardableResult
     public func removePersonalException(_ word: String) -> PersonalExceptionsPolicy {
+        return removePersonalExceptions([word])
+    }
+
+    @discardableResult
+    public func removePersonalExceptions(_ words: Set<String>) -> PersonalExceptionsPolicy {
+        guard !words.isEmpty else { return exceptionsStore.loadPolicy() }
         let previous = exceptionsStore.loadPolicy()
-        let policy = exceptionsStore.remove(word: word)
+        let policy = exceptionsStore.remove(words: words)
         if policy != previous {
             NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
         }

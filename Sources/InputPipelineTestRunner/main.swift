@@ -1405,45 +1405,54 @@ run("personal exceptions pipeline integration and invalidation") {
     )
     check(!stalePlan.isEligible(using: store.snapshot()), "plan with stale epoch must fail isEligible")
 
-    // 3. Adding an exception invalidates in-flight correction before emission
-    let addStore = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
-    var addEmissionCount = 0
-    let detectionStarted = DispatchSemaphore(value: 0)
-    let releaseDetection = DispatchSemaphore(value: 0)
-    let engine2 = InputEngine(
-        captureState: addStore,
-        initialContext: current,
-        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
-        exactDetection: { request in
-            detectionStarted.signal()
-            _ = releaseDetection.wait(timeout: .now() + 5)
-            return DetectionResult(
-                sourceLayout: .english,
-                targetLayout: .ukrainian,
-                convertedWord: "тест",
-                originalWord: request.word,
-                shouldSwitchLayout: false
+    // 3. Exception and layout configuration updates invalidate in-flight correction before emission.
+    for updateLayoutConfiguration in [false, true] {
+        let addStore = CaptureStateStore(context: current, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+        var addEmissionCount = 0
+        let detectionStarted = DispatchSemaphore(value: 0)
+        let releaseDetection = DispatchSemaphore(value: 0)
+        let engine2 = InputEngine(
+            captureState: addStore,
+            initialContext: current,
+            preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+            exactDetection: { request in
+                detectionStarted.signal()
+                _ = releaseDetection.wait(timeout: .now() + 5)
+                return DetectionResult(
+                    sourceLayout: .english,
+                    targetLayout: .ukrainian,
+                    convertedWord: "тест",
+                    originalWord: request.word,
+                    shouldSwitchLayout: false
+                )
+            },
+            correctionEmission: { _ in
+                addEmissionCount += 1
+                return true
+            }
+        )
+
+        // Type word "test "
+        engine2.enqueue(addStore.capture(timestamp: 1, kind: .character("t"), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+        engine2.enqueue(addStore.capture(timestamp: 2, kind: .boundary(" "), keyCode: 49, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
+
+        check(detectionStarted.wait(timeout: .now() + 1) == .success, "detection started")
+        if updateLayoutConfiguration {
+            engine2.updateDetectionConfiguration(
+                allowedLayouts: [.english],
+                ukrainianFromVariant: .standard,
+                ukrainianToVariant: .standard
             )
-        },
-        correctionEmission: { _ in
-            addEmissionCount += 1
-            return true
+        } else {
+            engine2.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["newexception"]))
         }
-    )
+        releaseDetection.signal()
 
-    // Type word "test "
-    engine2.enqueue(addStore.capture(timestamp: 1, kind: .character("t"), keyCode: 0, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
-    engine2.enqueue(addStore.capture(timestamp: 2, kind: .boundary(" "), keyCode: 49, flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0))
-
-    check(detectionStarted.wait(timeout: .now() + 1) == .success, "detection started")
-    // Update personal exceptions while detection is in-flight: this calls invalidateCorrectionConfiguration
-    engine2.updatePersonalExceptions(PersonalExceptionsPolicy(words: ["newexception"]))
-    releaseDetection.signal()
-
-    let drained3 = DispatchSemaphore(value: 0)
-    engine2.drainPipeline { drained3.signal() }
-    check(drained3.wait(timeout: .now() + 2) == .success, "pipeline drained after mid-flight exception update")
-    check(addEmissionCount == 0, "in-flight correction must be invalidated by exception update")
+        let drained3 = DispatchSemaphore(value: 0)
+        engine2.drainPipeline { drained3.signal() }
+        check(drained3.wait(timeout: .now() + 2) == .success, "pipeline drained after mid-flight configuration update")
+        check(addEmissionCount == 0, "in-flight correction must be invalidated by configuration update")
+    }
 }
 
 private final class ExceptionPipelineHarness {
@@ -1554,6 +1563,12 @@ private final class ExceptionPipelineHarness {
             layout: layout,
             inputSourceID: "com.test.\(layout.rawValue)",
             secureFocus: previous.secureFocus
+        )
+        engine.updateDetectionConfiguration(
+            allowedLayouts: [.english, .ukrainian],
+            activeSourceSupportedLayouts: [layout],
+            ukrainianFromVariant: .standard,
+            ukrainianToVariant: .standard
         )
         engine.handleLayoutChange(from: previous.layout, to: layout, context: next, fromVariant: .standard, toVariant: .standard)
     }

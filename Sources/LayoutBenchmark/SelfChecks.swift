@@ -250,6 +250,14 @@ public enum SelfChecks {
         )
         check(Scorer.classify(trial: guarded, result: restored) == .textDamageFP, "Damage seen at a checkpoint counts even when the final text is restored")
 
+        let languageMismatch = TrialResult(
+            trialID: "neg-cp",
+            finalText: "a ",
+            finalSourceID: abc,
+            checkpoints: [ObservedCheckpoint(afterEvent: 1, text: "a", language: "uk", sourceID: ukrainian)]
+        )
+        check(Scorer.classify(trial: guarded, result: languageMismatch) == .layoutOnlyFP, "Language-only mismatch at checkpoint is a layout-only false positive, not text damage")
+
         let switchOnly = TrialResult(trialID: "neg1", finalText: "a ", finalSourceID: ukrainian, actions: [switchToUkrainian])
         check(Scorer.classify(trial: negative, result: switchOnly) == .layoutOnlyFP, "A switch without a text edit is a layout-only false positive")
 
@@ -368,6 +376,11 @@ public enum SelfChecks {
         let result = try! CorpusValidator.validate(corpusDirectory: tempDir, tablesDirectory: tablesDir)
         check(result.errors.contains { $0.contains("not on a character boundary") }, "A caret inside a surrogate pair must fail validation")
 
+        let midChar = trial("midchar", label: "preserve", events: [], expected: text, initialText: text, caret: 0)
+        writeCorpus([midChar], [], to: tempDir)
+        let midCharResult = try! CorpusValidator.validate(corpusDirectory: tempDir, tablesDirectory: tablesDir)
+        check(midCharResult.errors.contains { $0.contains("must be at end of initial text") }, "A non-terminal caret must fail validation")
+
         let atEnd = trial("end", label: "preserve", events: [], expected: text, initialText: text)
         writeCorpus([atEnd], [], to: tempDir)
         check(!(try! CorpusValidator.validate(corpusDirectory: tempDir, tablesDirectory: tablesDir)).errors.contains { $0.contains("caretUTF16") }, "A caret at the end is valid")
@@ -458,6 +471,16 @@ public enum SelfChecks {
             let edits = { (r: TrialResult) in r.actions.filter { $0.type == "replaceSuffix" }.count }
             check(edits(result) == 1, "With switch feedback only the first word needs a repair")
             check(edits(decision) == 2, "Without feedback the second word is still typed on ABC and needs its own repair")
+
+            for event in [TrialEvent(type: "key", keyCode: 36, rendered: "\r"),
+                          TrialEvent(type: "unknown", keyCode: 0, rendered: "")] {
+                let failing = Trial(id: "post-intervention", groupID: "post-intervention", split: "development",
+                                    languages: twoWords.languages, category: "test", label: "repair",
+                                    initial: twoWords.initial, events: twoWords.events + [event], expected: twoWords.expected)
+                let failed = adapter.executeTrial(trial: failing)
+                check(!failed.actions.isEmpty && failed.status == "error", "Unsupported input after an intervention remains an error")
+                check(Scorer.classify(trial: failing, result: failed) == .fnError, "A post-intervention error remains in quality denominators")
+            }
         } else {
             check(false, "Generator must build the two-word trial")
         }

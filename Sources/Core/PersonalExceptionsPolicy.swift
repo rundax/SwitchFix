@@ -137,6 +137,16 @@ public struct PersonalExceptionsPolicy: Equatable, Sendable {
             return .failure(.noLetters)
         }
 
+        // Combining marks may not appear standalone at the start of a word
+        if let first = scalars.first {
+            switch first.properties.generalCategory {
+            case .nonspacingMark, .spacingMark, .enclosingMark:
+                return .failure(.invalidCharacter(Character(first)))
+            default:
+                break
+            }
+        }
+
         // Punctuation positioning check:
         // May not be first, last, or adjacent to another punctuation character
         if let first = scalars.first, allowedPunctuation.contains(first) {
@@ -150,6 +160,11 @@ public struct PersonalExceptionsPolicy: Equatable, Sendable {
             if allowedPunctuation.contains(scalars[i]) && allowedPunctuation.contains(scalars[i + 1]) {
                 return .failure(.invalidPunctuationPosition)
             }
+        }
+
+        // The stored canonical entry must match its own derived key so it is always reachable
+        guard let matchingKey = deriveMatchingKey(from: canonical), matchingKey == canonical else {
+            return .failure(.invalidCharacter(canonical.first ?? " "))
         }
 
         return .success(canonical)

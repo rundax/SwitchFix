@@ -1606,12 +1606,9 @@ func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant
     }
     // Detection and emission hop queues, and a correction is dropped if the next key beats it.
     func settle() {
-        for _ in 0..<3 {
-            let drained = DispatchSemaphore(value: 0)
-            engine.drain { drained.signal() }
-            drained.wait()
-            Thread.sleep(forTimeInterval: 0.05)
-        }
+        let drained = DispatchSemaphore(value: 0)
+        engine.drainPipeline { drained.signal() }
+        drained.wait()
     }
     for key in keys {
         switch key {
@@ -1809,6 +1806,7 @@ runSuite("PersonalExceptions: Validation rules & boundaries") {
     check(PersonalExceptionsPolicy.validate(candidate: "-foo") == .failure(.invalidPunctuationPosition), "leading hyphen rejected")
     check(PersonalExceptionsPolicy.validate(candidate: "'foo") == .failure(.invalidPunctuationPosition), "leading apostrophe rejected")
     check(PersonalExceptionsPolicy.validate(candidate: "foo-") == .failure(.invalidPunctuationPosition), "trailing hyphen rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "\u{0301}foo") == .failure(.invalidCharacter("\u{0301}")), "leading combining mark rejected")
     check(PersonalExceptionsPolicy.validate(candidate: "foo'") == .failure(.invalidPunctuationPosition), "trailing apostrophe rejected")
     check(PersonalExceptionsPolicy.validate(candidate: "foo--bar") == .failure(.invalidPunctuationPosition), "adjacent hyphens rejected")
     check(PersonalExceptionsPolicy.validate(candidate: "foo''bar") == .failure(.invalidPunctuationPosition), "adjacent apostrophes rejected")
@@ -1882,6 +1880,13 @@ runSuite("PersonalExceptions: Store persistence & isolation") {
         check(removedPolicy.count == 1, "policy after removal has 1 word")
         check(!removedPolicy.contains("apple"), "apple was removed")
         check(removedPolicy.contains("don't"), "don't remains")
+
+        _ = store.add(candidate: "Apple")
+        _ = store.add(candidate: "keep")
+        let batchRemoved = store.remove(words: ["APPLE", "don’t", "missing"])
+        check(batchRemoved.words == ["keep"], "batch removal canonicalizes words and preserves unselected entries")
+        check(reloadedStore.loadPolicy() == batchRemoved, "batch removal persists the resulting policy")
+        check(store.remove(words: []) == batchRemoved, "empty batch removal leaves policy unchanged")
 
         // Malformed defaults handling
         // 1. Wrong schemaVersion

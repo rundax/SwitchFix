@@ -91,6 +91,8 @@ public enum CorpusValidator {
                 errors.append("\(prefix) caretUTF16 \(caret) outside 0...\(initialText.utf16.count)")
             } else if !characterBoundaries.contains(caret) {
                 errors.append("\(prefix) caretUTF16 \(caret) is not on a character boundary")
+            } else if caret != initialText.utf16.count {
+                errors.append("\(prefix) caretUTF16 \(caret) must be at end of initial text (\(initialText.utf16.count))")
             }
 
             var editor = VirtualEditor(text: initialText)

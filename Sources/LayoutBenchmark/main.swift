@@ -258,6 +258,10 @@ func handleRun(_ options: Options) {
                 print("Gate FAILED: baseline was recorded on a different corpus (manifest \(baseline.metadata.corpusManifestSha256.prefix(12)) vs \(metadata.corpusManifestSha256.prefix(12)))")
                 exit(2)
             }
+            guard baseline.metadata.layer == metadata.layer else {
+                print("Gate FAILED: baseline was recorded on layer '\(baseline.metadata.layer)' but current run is on layer '\(metadata.layer)'")
+                exit(2)
+            }
             let findings = BaselineGate.regressions(current: report, baseline: baseline)
             if !report.complete || !findings.isEmpty {
                 print("Gate FAILED against \(baselinePath):")

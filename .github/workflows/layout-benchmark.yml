@@ -1,0 +1,67 @@
+name: Layout Reliability Benchmark
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - "feat/**"
+  pull_request:
+    branches:
+      - master
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Layout Reliability Check (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show toolchain environment
+        run: |
+          swift --version
+          sw_vers
+          uname -a
+
+      - name: Run TestRunner
+        run: swift run -c release TestRunner
+
+      - name: Run InputPipelineTestRunner
+        # Hosted runners pass the Accessibility-dependent TextCorrector test (release CI runs
+        # the same runner); every failure here is a real failure.
+        run: swift run -c release InputPipelineTestRunner
+
+      - name: Run LayoutBenchmark self-check
+        run: swift run -c release LayoutBenchmark self-check
+
+      - name: Validate corpora and frozen layout tables
+        run: |
+          swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v2 --tables Benchmarks/layout-tables/v1 --strict
+          # v1 is frozen with known label conflicts; it must still validate, warnings allowed.
+          swift run -c release LayoutBenchmark validate --corpus Benchmarks/layout-corpus/v1 --tables Benchmarks/layout-tables/v1
+
+      - name: Development smoke run gated against baseline v2
+        run: |
+          mkdir -p Benchmarks/results/ci
+          swift run -c release LayoutBenchmark run \
+            --adapter switchfix \
+            --split development \
+            --profile boundary-layout-only \
+            --corpus Benchmarks/layout-corpus/v2 \
+            --baseline Benchmarks/baselines/v2/corpus-v2/baseline.json \
+            --output Benchmarks/results/ci
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-ci
+          path: Benchmarks/results/ci/
+          if-no-files-found: ignore

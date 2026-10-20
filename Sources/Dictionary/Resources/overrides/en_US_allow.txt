@@ -27,3 +27,4 @@ replaced
 replacing
 gsd
 vs
+vnc

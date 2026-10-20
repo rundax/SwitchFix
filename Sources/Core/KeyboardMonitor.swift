@@ -396,10 +396,15 @@ public final class KeyboardMonitor {
         guard let text = translated ?? KeyboardMonitor.eventCharacterString(from: event) else {
             return .navigation
         }
+        return KeyboardMonitor.capturedKind(forText: text)
+    }
+
+    /// Classifies the text a key produced as part of a word or as a word boundary.
+    public static func capturedKind(forText text: String) -> CapturedInput.Kind {
         if text.count == 1,
            let scalar = text.unicodeScalars.first,
-           KeyboardMonitor.boundaryCharacterSet.contains(scalar),
-           !KeyboardMonitor.softBoundaryCharacterSet.contains(scalar) {
+           boundaryCharacterSet.contains(scalar),
+           !softBoundaryCharacterSet.contains(scalar) {
             return .boundary(text)
         }
         return .character(text)

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private var keyboardMonitor: KeyboardMonitor?
     private var inputEngine: InputEngine?
+    private var personalExceptionsPublisher: PersonalExceptionsPublisher?
     private var captureState: CaptureStateStore?
     private var focusCoordinator: AccessibilityFocusCoordinator?
     private let inputSourceManager = InputSourceManager.shared
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SwitchFixLog.app.notice("launched, pid=\(ProcessInfo.processInfo.processIdentifier)")
+        PreferencesManager.shared.removeLegacySettings()
         statusBarController = StatusBarController()
         inputSourceManager.refreshCurrentInputSource()
         previousLayout = inputSourceManager.currentLayout()
@@ -75,6 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.focusCoordinator?.focusMayChange(pid: pid, epoch: epoch)
             }
         }
+        let publisher = PersonalExceptionsPublisher { [weak engine] policy in
+            engine?.updatePersonalExceptions(policy)
+        }
+        publisher.publishIfChanged(PreferencesManager.shared.personalExceptionsPolicy)
+        personalExceptionsPublisher = publisher
         inputEngine = engine
         inputSourceManager.setSelectionCallbacks(
             willSelect: { [weak self] layout, sourceID in
@@ -372,6 +379,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? inputSourceManager.preferredUkrainianVariant()
         let toVariant = inputSourceManager.ukrainianVariant(forInputSourceID: newSourceID)
             ?? inputSourceManager.preferredUkrainianVariant()
+        // Install the new correction epoch before scheduling layout-switch corrections.
+        updateDetectionConfiguration(allowedLayouts: readyLayouts)
         if expectedGeneratedSelection {
             monitorFailure = nil
             inputEngine?.handleGeneratedLayoutContext(context)
@@ -385,7 +394,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 toVariant: toVariant
             )
         }
-        updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }
 
@@ -444,6 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         captureState?.updateHotkeys(currentHotkeyConfiguration())
         inputEngine?.updatePreferences(currentPreferencesSnapshot())
+        personalExceptionsPublisher?.publishIfChanged(PreferencesManager.shared.personalExceptionsPolicy)
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
         refreshRuntimeReadiness()
     }
@@ -529,9 +538,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let currentVariant = currentLayout == .ukrainian
             ? inputSourceManager.currentUkrainianVariant() ?? preferredVariant
             : preferredVariant
+        if currentLayout.isCyrillic {
+            PreferencesManager.shared.lastCyrillicLayout = currentLayout
+        }
         inputEngine?.updateDetectionConfiguration(
             allowedLayouts: effectiveAllowed,
-            allowCyrillicToCyrillic: PreferencesManager.shared.allowCyrillicToCyrillic,
+            preferredCyrillicLayout: PreferencesManager.shared.lastCyrillicLayout,
             activeSourceSupportedLayouts: inputSourceManager.activeSourceSupportedLayouts(),
             ukrainianFromVariant: currentVariant,
             ukrainianToVariant: preferredVariant

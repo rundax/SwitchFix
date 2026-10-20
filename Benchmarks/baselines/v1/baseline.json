@@ -1,0 +1,828 @@
+{
+  "baselineVersion" : "v1",
+  "combined" : {
+    "categoryBreakdown" : {
+      "acronym" : {
+        "category" : "acronym",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 14,
+        "total" : 14,
+        "tp" : 0
+      },
+      "ambiguous-short" : {
+        "category" : "ambiguous-short",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 20,
+        "total" : 20,
+        "tp" : 0
+      },
+      "apostrophe" : {
+        "category" : "apostrophe",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 8,
+        "total" : 8,
+        "tp" : 0
+      },
+      "back-to-back" : {
+        "category" : "back-to-back",
+        "fn" : 2,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 4,
+        "tp" : 2
+      },
+      "capitalized" : {
+        "category" : "capitalized",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 4,
+        "tp" : 4
+      },
+      "code-token" : {
+        "category" : "code-token",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 8,
+        "total" : 8,
+        "tp" : 0
+      },
+      "contraction" : {
+        "category" : "contraction",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "email" : {
+        "category" : "email",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "filename" : {
+        "category" : "filename",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "gibberish" : {
+        "category" : "gibberish",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 8,
+        "total" : 8,
+        "tp" : 0
+      },
+      "isolated-char" : {
+        "category" : "isolated-char",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 6,
+        "total" : 6,
+        "tp" : 0
+      },
+      "isolated-symbol" : {
+        "category" : "isolated-symbol",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "natural-word" : {
+        "category" : "natural-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 24,
+        "total" : 24,
+        "tp" : 0
+      },
+      "path" : {
+        "category" : "path",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "phrase" : {
+        "category" : "phrase",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "proper-noun" : {
+        "category" : "proper-noun",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 16,
+        "total" : 16,
+        "tp" : 0
+      },
+      "punctuation" : {
+        "category" : "punctuation",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 8,
+        "total" : 8,
+        "tp" : 0
+      },
+      "question" : {
+        "category" : "question",
+        "fn" : 2,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 4,
+        "tp" : 2
+      },
+      "short-word" : {
+        "category" : "short-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 24,
+        "total" : 24,
+        "tp" : 0
+      },
+      "single-word" : {
+        "category" : "single-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 28,
+        "tp" : 28
+      },
+      "symbol" : {
+        "category" : "symbol",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "url" : {
+        "category" : "url",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      }
+    },
+    "directionBreakdown" : {
+      "EN -> UK" : {
+        "direction" : "EN -> UK",
+        "fn" : 4,
+        "layoutFP" : 0,
+        "recall" : 0.8,
+        "textDamageFPRate" : 0,
+        "textFP" : 0,
+        "tn" : 80,
+        "total" : 100,
+        "tp" : 16
+      },
+      "UK -> EN" : {
+        "direction" : "UK -> EN",
+        "fn" : 0,
+        "layoutFP" : 0,
+        "recall" : 1,
+        "textDamageFPRate" : 0,
+        "textFP" : 0,
+        "tn" : 80,
+        "total" : 100,
+        "tp" : 20
+      }
+    },
+    "falseNegatives" : 4,
+    "fnNoAction" : 0,
+    "fnUnsafeMutation" : 0,
+    "fnWrongRepair" : 4,
+    "layoutOnlyFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.023446102076098447
+      },
+      "rate" : 0,
+      "total" : 160
+    },
+    "layoutOnlyFPs" : 0,
+    "nAbstain" : 40,
+    "nNegative" : 160,
+    "nPositive" : 40,
+    "nPreserve" : 120,
+    "precision" : {
+      "count" : 36,
+      "interval" : {
+        "lower" : 0.7694825786891643,
+        "upper" : 0.9604204003905062
+      },
+      "rate" : 0.9,
+      "total" : 40
+    },
+    "recall" : {
+      "count" : 36,
+      "interval" : {
+        "lower" : 0.7694825786891643,
+        "upper" : 0.9604204003905062
+      },
+      "rate" : 0.9,
+      "total" : 40
+    },
+    "textDamageFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.023446102076098447
+      },
+      "rate" : 0,
+      "total" : 160
+    },
+    "textDamageFPs" : 0,
+    "totalFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.023446102076098447
+      },
+      "rate" : 0,
+      "total" : 160
+    },
+    "totalFPs" : 0,
+    "totalTrials" : 200,
+    "trueNegatives" : 160,
+    "truePositives" : 36
+  },
+  "corpus" : {
+    "manifestSha256" : "febe8160b901532305809eb11850a463f7522864699bf8f1dbc5ed675c389772",
+    "version" : "v1"
+  },
+  "created" : "2026-10-18T23:17:19Z",
+  "development" : {
+    "categoryBreakdown" : {
+      "acronym" : {
+        "category" : "acronym",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 7,
+        "total" : 7,
+        "tp" : 0
+      },
+      "ambiguous-short" : {
+        "category" : "ambiguous-short",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 10,
+        "total" : 10,
+        "tp" : 0
+      },
+      "apostrophe" : {
+        "category" : "apostrophe",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "back-to-back" : {
+        "category" : "back-to-back",
+        "fn" : 1,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 2,
+        "tp" : 1
+      },
+      "capitalized" : {
+        "category" : "capitalized",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 2,
+        "tp" : 2
+      },
+      "code-token" : {
+        "category" : "code-token",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "contraction" : {
+        "category" : "contraction",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "email" : {
+        "category" : "email",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      },
+      "filename" : {
+        "category" : "filename",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      },
+      "gibberish" : {
+        "category" : "gibberish",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "isolated-char" : {
+        "category" : "isolated-char",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 3,
+        "total" : 3,
+        "tp" : 0
+      },
+      "isolated-symbol" : {
+        "category" : "isolated-symbol",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "natural-word" : {
+        "category" : "natural-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 12,
+        "total" : 12,
+        "tp" : 0
+      },
+      "path" : {
+        "category" : "path",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      },
+      "phrase" : {
+        "category" : "phrase",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "proper-noun" : {
+        "category" : "proper-noun",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 8,
+        "total" : 8,
+        "tp" : 0
+      },
+      "punctuation" : {
+        "category" : "punctuation",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "question" : {
+        "category" : "question",
+        "fn" : 1,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 2,
+        "tp" : 1
+      },
+      "short-word" : {
+        "category" : "short-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 12,
+        "total" : 12,
+        "tp" : 0
+      },
+      "single-word" : {
+        "category" : "single-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 14,
+        "tp" : 14
+      },
+      "symbol" : {
+        "category" : "symbol",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "url" : {
+        "category" : "url",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      }
+    },
+    "directionBreakdown" : {
+      "EN -> UK" : {
+        "direction" : "EN -> UK",
+        "fn" : 2,
+        "layoutFP" : 0,
+        "recall" : 0.8,
+        "textDamageFPRate" : 0,
+        "textFP" : 0,
+        "tn" : 40,
+        "total" : 50,
+        "tp" : 8
+      },
+      "UK -> EN" : {
+        "direction" : "UK -> EN",
+        "fn" : 0,
+        "layoutFP" : 0,
+        "recall" : 1,
+        "textDamageFPRate" : 0,
+        "textFP" : 0,
+        "tn" : 40,
+        "total" : 50,
+        "tp" : 10
+      }
+    },
+    "falseNegatives" : 2,
+    "fnNoAction" : 0,
+    "fnUnsafeMutation" : 0,
+    "fnWrongRepair" : 2,
+    "layoutOnlyFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.04581795177789462
+      },
+      "rate" : 0,
+      "total" : 80
+    },
+    "layoutOnlyFPs" : 0,
+    "nAbstain" : 20,
+    "nNegative" : 80,
+    "nPositive" : 20,
+    "nPreserve" : 60,
+    "precision" : {
+      "count" : 18,
+      "interval" : {
+        "lower" : 0.6989668593935576,
+        "upper" : 0.9721334538176092
+      },
+      "rate" : 0.9,
+      "total" : 20
+    },
+    "recall" : {
+      "count" : 18,
+      "interval" : {
+        "lower" : 0.6989668593935576,
+        "upper" : 0.9721334538176092
+      },
+      "rate" : 0.9,
+      "total" : 20
+    },
+    "textDamageFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.04581795177789462
+      },
+      "rate" : 0,
+      "total" : 80
+    },
+    "textDamageFPs" : 0,
+    "totalFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.04581795177789462
+      },
+      "rate" : 0,
+      "total" : 80
+    },
+    "totalFPs" : 0,
+    "totalTrials" : 100,
+    "trueNegatives" : 80,
+    "truePositives" : 18
+  },
+  "environment" : {
+    "architecture" : "arm64",
+    "dictionaryMode" : "text-fallback-test",
+    "keyboardType" : "91",
+    "osBuild" : "24G830",
+    "osVersion" : "15.7.9"
+  },
+  "holdout" : {
+    "categoryBreakdown" : {
+      "acronym" : {
+        "category" : "acronym",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 7,
+        "total" : 7,
+        "tp" : 0
+      },
+      "ambiguous-short" : {
+        "category" : "ambiguous-short",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 10,
+        "total" : 10,
+        "tp" : 0
+      },
+      "apostrophe" : {
+        "category" : "apostrophe",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "back-to-back" : {
+        "category" : "back-to-back",
+        "fn" : 1,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 2,
+        "tp" : 1
+      },
+      "capitalized" : {
+        "category" : "capitalized",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 2,
+        "tp" : 2
+      },
+      "code-token" : {
+        "category" : "code-token",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "contraction" : {
+        "category" : "contraction",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "email" : {
+        "category" : "email",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      },
+      "filename" : {
+        "category" : "filename",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      },
+      "gibberish" : {
+        "category" : "gibberish",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "isolated-char" : {
+        "category" : "isolated-char",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 3,
+        "total" : 3,
+        "tp" : 0
+      },
+      "isolated-symbol" : {
+        "category" : "isolated-symbol",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "natural-word" : {
+        "category" : "natural-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 12,
+        "total" : 12,
+        "tp" : 0
+      },
+      "path" : {
+        "category" : "path",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      },
+      "phrase" : {
+        "category" : "phrase",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "proper-noun" : {
+        "category" : "proper-noun",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 8,
+        "total" : 8,
+        "tp" : 0
+      },
+      "punctuation" : {
+        "category" : "punctuation",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 4,
+        "total" : 4,
+        "tp" : 0
+      },
+      "question" : {
+        "category" : "question",
+        "fn" : 1,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 2,
+        "tp" : 1
+      },
+      "short-word" : {
+        "category" : "short-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 12,
+        "total" : 12,
+        "tp" : 0
+      },
+      "single-word" : {
+        "category" : "single-word",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 0,
+        "total" : 14,
+        "tp" : 14
+      },
+      "symbol" : {
+        "category" : "symbol",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 2,
+        "total" : 2,
+        "tp" : 0
+      },
+      "url" : {
+        "category" : "url",
+        "fn" : 0,
+        "fp" : 0,
+        "tn" : 1,
+        "total" : 1,
+        "tp" : 0
+      }
+    },
+    "directionBreakdown" : {
+      "EN -> UK" : {
+        "direction" : "EN -> UK",
+        "fn" : 2,
+        "layoutFP" : 0,
+        "recall" : 0.8,
+        "textDamageFPRate" : 0,
+        "textFP" : 0,
+        "tn" : 40,
+        "total" : 50,
+        "tp" : 8
+      },
+      "UK -> EN" : {
+        "direction" : "UK -> EN",
+        "fn" : 0,
+        "layoutFP" : 0,
+        "recall" : 1,
+        "textDamageFPRate" : 0,
+        "textFP" : 0,
+        "tn" : 40,
+        "total" : 50,
+        "tp" : 10
+      }
+    },
+    "falseNegatives" : 2,
+    "fnNoAction" : 0,
+    "fnUnsafeMutation" : 0,
+    "fnWrongRepair" : 2,
+    "layoutOnlyFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.04581795177789462
+      },
+      "rate" : 0,
+      "total" : 80
+    },
+    "layoutOnlyFPs" : 0,
+    "nAbstain" : 20,
+    "nNegative" : 80,
+    "nPositive" : 20,
+    "nPreserve" : 60,
+    "precision" : {
+      "count" : 18,
+      "interval" : {
+        "lower" : 0.6989668593935576,
+        "upper" : 0.9721334538176092
+      },
+      "rate" : 0.9,
+      "total" : 20
+    },
+    "recall" : {
+      "count" : 18,
+      "interval" : {
+        "lower" : 0.6989668593935576,
+        "upper" : 0.9721334538176092
+      },
+      "rate" : 0.9,
+      "total" : 20
+    },
+    "textDamageFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.04581795177789462
+      },
+      "rate" : 0,
+      "total" : 80
+    },
+    "textDamageFPs" : 0,
+    "totalFPRate" : {
+      "count" : 0,
+      "interval" : {
+        "lower" : 0,
+        "upper" : 0.04581795177789462
+      },
+      "rate" : 0,
+      "total" : 80
+    },
+    "totalFPs" : 0,
+    "totalTrials" : 100,
+    "trueNegatives" : 80,
+    "truePositives" : 18
+  },
+  "layer" : "replay",
+  "profile" : "boundary-layout-only",
+  "runnerChecks" : {
+    "InputPipelineTestRunner" : {
+      "expectedFailure" : "TextCorrector must apply layout-only plan without deleting text",
+      "failed" : "1",
+      "passed" : "966"
+    },
+    "LayoutBenchmarkSelfCheck" : {
+      "failed" : "0",
+      "passed" : "36"
+    },
+    "LayoutBenchmarkValidate" : {
+      "splitsCount" : "2",
+      "status" : "passed",
+      "trialsCount" : "200"
+    },
+    "TestRunner" : {
+      "failed" : "0",
+      "passed" : "313"
+    }
+  },
+  "schemaVersion" : 1,
+  "sourceCommit" : "34a77cd75f58b014a76180b8d7e6098082b5c676"
+}

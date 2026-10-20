@@ -61,7 +61,9 @@ public class LayoutDetector {
     private var pendingSwitchLayout: Layout?
     private var pendingSwitchCount: Int = 0
     private var recentOutcomes: [RecentOutcome] = []
-    private var pendingSuppressedShort: SuppressedShort?
+    private var journal: [JournalToken] = []
+    private var currentTokenID: UInt64?
+    private var pendingSweepMarks: [(index: Int, display: String, target: Layout)] = []
     private var isOutOfSync: Bool = false
 
     private let validator = WordValidator.shared
@@ -69,8 +71,10 @@ public class LayoutDetector {
     /// Layouts that are allowed as correction targets (defaults to all).
     public var allowedLayouts: Set<Layout> = Set(Layout.allCases)
 
-    /// Whether to allow corrections between different Cyrillic layouts (e.g. Ukrainian ↔ Russian).
-    public var allowCyrillicToCyrillic: Bool = false
+    /// The Cyrillic layout the user is currently on, or was last on. Latin text is only ever
+    /// converted to this Cyrillic layout; `nil` means no history, so every allowed one is tried.
+    /// Cyrillic ↔ Cyrillic (Ukrainian ↔ Russian) conversion is intentionally unsupported.
+    public var preferredCyrillicLayout: Layout?
 
     private enum RecentOutcome {
         case valid(Layout)
@@ -78,13 +82,26 @@ public class LayoutDetector {
         case unknown
     }
 
-    private struct SuppressedShort {
-        let originalWord: String
-        let convertedWord: String
-        let sourceLayout: Layout
-        let targetLayout: Layout
-        let boundaryAfterWord: String
+    /// A word flushed earlier in the current typing run that is still on screen right before
+    /// the word being checked. `display` is what the screen shows now: `typed`, or its
+    /// same-length conversion once a correction has covered it.
+    private struct JournalToken {
+        let id: UInt64?
+        let typed: String
+        let boundary: String
+        var display: String
+        var convertedTo: Layout?
     }
+
+    private struct RunSweep {
+        let original: String
+        let converted: String
+        let sourceLayout: Layout
+    }
+
+    private static let maxJournalLength = 16
+    /// InputEngine refuses corrections longer than this, so a sweep must stay within it.
+    private static let maxSweepLength = 64
 
     private static let boundaryCharacterSet: CharacterSet = {
         var set = CharacterSet.punctuationCharacters.union(.symbols)
@@ -121,6 +138,12 @@ public class LayoutDetector {
         InputSourceManager.shared.sourceID(for: layout)
     }
 
+    /// The trigger provenance for the current detection request.
+    public var currentTrigger: CorrectionTrigger = .automaticBoundary
+
+    /// Personal exceptions protecting specific words from automatic correction.
+    public var personalExceptions: PersonalExceptionsPolicy = .empty
+
     public init() {}
 
     /// Add a character to the word buffer.
@@ -134,17 +157,23 @@ public class LayoutDetector {
     /// - Parameter boundaryCharacter: The character that triggered the flush (e.g. " ", "\n"), or nil for hotkey-triggered flush.
     @discardableResult
     public func flushBuffer(boundaryCharacter: String? = nil) -> DetectionResult? {
+        let tokenID = currentTokenID
+        currentTokenID = nil
         guard !wordBuffer.isEmpty else {
+            // A boundary with no word before it: earlier words are no longer adjacent.
+            journal.removeAll()
             state = .idle
             isOutOfSync = false
             return nil
         }
 
         // Split trailing punctuation from the buffer (e.g. "hello," -> "hello" + ",")
+        let typedWord = wordBuffer
         let (coreWord, trailingPunctuation) = splitTrailingBoundary(from: wordBuffer)
         wordBuffer = coreWord
 
         guard !wordBuffer.isEmpty else {
+            record(typed: typedWord, display: typedWord, convertedTo: nil, boundary: boundaryCharacter, id: tokenID)
             state = .idle
             isOutOfSync = false
             return nil
@@ -155,10 +184,31 @@ public class LayoutDetector {
         pendingBoundaryCharacter = boundary.isEmpty ? nil : boundary
 
         // Check buffer at word boundaries (short words are handled by WordValidator whitelist)
+        pendingSweepMarks = []
         let result = isOutOfSync ? nil : checkBuffer()
         if let result {
             delegate?.layoutDetector(self, didDetectWrongLayout: result, boundaryCharacter: pendingBoundaryCharacter)
         }
+
+        if isOutOfSync {
+            journal.removeAll()
+        } else if let result {
+            for mark in pendingSweepMarks {
+                journal[mark.index].display = mark.display
+                journal[mark.index].convertedTo = mark.target
+            }
+            // Conversion maps key to key, so the current word is the tail of the corrected span.
+            record(
+                typed: typedWord,
+                display: String(result.convertedWord.suffix(coreWord.count)) + trailingPunctuation,
+                convertedTo: result.targetLayout,
+                boundary: boundaryCharacter,
+                id: tokenID
+            )
+        } else {
+            record(typed: typedWord, display: typedWord, convertedTo: nil, boundary: boundaryCharacter, id: tokenID)
+        }
+        pendingSweepMarks = []
 
         // Reset buffer
         pendingBoundaryCharacter = nil
@@ -168,10 +218,42 @@ public class LayoutDetector {
         return result
     }
 
+    /// Evaluate normally, but retain only observed text until the caller confirms emission.
+    /// The returned commit must run on the same serial queue as detection. Token identities
+    /// let late confirmations update surviving tokens without resurrecting an invalidated run.
+    func stageJournalCorrection(_ evaluate: () -> DetectionResult?) -> (DetectionResult?, () -> Void) {
+        let before = journal
+        let result = evaluate()
+        let proposed = journal
+        journal = proposed.map { token in
+            var observed = token
+            let previous = before.first { $0.id == token.id && $0.typed == token.typed && $0.boundary == token.boundary }
+            observed.display = previous?.display ?? token.typed
+            observed.convertedTo = previous?.convertedTo
+            return observed
+        }
+        let observed = journal
+        return (result, { [weak self] in
+            guard let self else { return }
+            for index in self.journal.indices {
+                let token = self.journal[index]
+                guard let baseline = observed.first(where: {
+                    $0.id == token.id && $0.typed == token.typed && $0.boundary == token.boundary
+                }), token.display == baseline.display, token.convertedTo == baseline.convertedTo,
+                let confirmed = proposed.first(where: {
+                    $0.id == token.id && $0.typed == token.typed && $0.boundary == token.boundary
+                }) else { continue }
+                self.journal[index].display = confirmed.display
+                self.journal[index].convertedTo = confirmed.convertedTo
+            }
+        })
+    }
+
     /// Called when backspace/delete is pressed — remove last character from buffer.
     public func deleteLastCharacter() {
         guard !wordBuffer.isEmpty else {
             isOutOfSync = true
+            journal.removeAll()
             return
         }
         wordBuffer.removeLast()
@@ -192,6 +274,24 @@ public class LayoutDetector {
         wordBuffer = ""
         state = .idle
         isOutOfSync = true
+        journal.removeAll()
+    }
+
+    /// Replace the run journal with the words the caller knows are still on screen right before
+    /// the word about to be flushed, keeping what earlier corrections changed about them.
+    public func syncRun(_ preceding: [RunToken], currentTokenID: UInt64) {
+        let known = journal
+        journal = preceding.map { token in
+            let match = known.first { $0.id == token.id && $0.typed == token.text }
+            return JournalToken(
+                id: token.id,
+                typed: token.text,
+                boundary: token.boundary,
+                display: match?.display ?? token.text,
+                convertedTo: match?.convertedTo
+            )
+        }
+        self.currentTokenID = currentTokenID
     }
 
     /// Reset all state (e.g., when app loses focus).
@@ -203,7 +303,8 @@ public class LayoutDetector {
         pendingSwitchLayout = nil
         pendingSwitchCount = 0
         recentOutcomes = []
-        pendingSuppressedShort = nil
+        journal.removeAll()
+        currentTokenID = nil
         isOutOfSync = false
     }
 
@@ -216,9 +317,19 @@ public class LayoutDetector {
 
     private func checkBuffer() -> DetectionResult? {
         state = .detecting
-        let suppressedShort = consumePendingSuppressedShort()
 
         let word = wordBuffer
+
+        if currentTrigger == .automaticBoundary && personalExceptions.matches(rawToken: word) {
+            SwitchFixLog.detector.debug("personal exception matched chars=\(word.count) — suppressing automatic correction")
+            consecutiveWrongCount = 0
+            lastDetectionResult = nil
+            pendingSwitchLayout = nil
+            pendingSwitchCount = 0
+            state = .buffering
+            return nil
+        }
+
         let sourceLayout = resolvedSourceLayout(for: word)
 
         // Skip if the word contains mixed scripts (both Latin and Cyrillic)
@@ -234,53 +345,33 @@ public class LayoutDetector {
         let currentWordParts = splitTokenForValidation(word)
         let currentValidationInput = currentWordParts.core.isEmpty ? word : currentWordParts.core
 
-        let activeLayouts = activeSourceSupportedLayouts.contains(currentLayout) ? activeSourceSupportedLayouts : [currentLayout]
-        let isLocallyValid = activeLayouts.contains { layout in
-            let lang = languageForLayout(layout)
-            return validator.validate(currentValidationInput, language: lang, allowSuggestion: false).isValid
-        }
+        let activeLayouts = activeLayoutSet
+        let isLocallyValid = isValidInActiveLayouts(word)
 
         if isLocallyValid {
-            if let merged = mergeSuppressedShort(
-                suppressedShort,
+            if let sweep = sweepRun(
+                toward: sourceLayout,
                 currentOriginal: word,
                 currentConverted: word,
-                targetLayout: sourceLayout,
                 isLowConfidence: word.count <= lowConfidenceMaxLength,
                 shouldSwitch: false
-            ), let suppressed = suppressedShort {
+            ) {
                 let result = DetectionResult(
-                    sourceLayout: suppressed.sourceLayout,
+                    sourceLayout: sweep.sourceLayout,
                     targetLayout: sourceLayout,
-                    convertedWord: merged.converted,
-                    originalWord: merged.original,
+                    convertedWord: sweep.converted,
+                    originalWord: sweep.original,
                     shouldSwitchLayout: false
                 )
                 consecutiveWrongCount = 0
                 lastDetectionResult = nil
-                recordOutcome(.corrected(from: suppressed.sourceLayout, to: sourceLayout))
+                recordOutcome(.corrected(from: sweep.sourceLayout, to: sourceLayout))
                 state = .buffering
                 return result
             }
 
-            // A short word valid in both layouts is undecidable in isolation.
-            // Keep it pending and only merge it when the next word confirms the
-            // alternative layout.
-            if let ambiguous = validAlternative(for: word, sourceLayout: sourceLayout, activeLayouts: activeLayouts),
-               let boundary = pendingBoundaryCharacter,
-               !boundary.isEmpty {
-                pendingSuppressedShort = SuppressedShort(
-                    originalWord: word,
-                    convertedWord: ambiguous.convertedWord,
-                    sourceLayout: sourceLayout,
-                    targetLayout: ambiguous.targetLayout,
-                    boundaryAfterWord: boundary
-                )
-                SwitchFixLog.detector.info(
-                    "deferred ambiguous valid word chars=\(word.count) until neighboring layout evidence"
-                )
-            }
-
+            // A word valid in both layouts is undecidable in isolation. It stays in the run
+            // journal, where a later word that confirms the other layout can still reach it.
             SwitchFixLog.detector.debug("valid in active layout set (\(activeLayouts.map(\.rawValue).joined(separator: ", "))): chars=\(word.count) — no correction")
             consecutiveWrongCount = 0
             lastDetectionResult = nil
@@ -294,31 +385,30 @@ public class LayoutDetector {
         // If the word is typed in a script not supported by active layouts, but is ALREADY valid
         // in an allowed alternative layout, switch layout without modifying the text (layout-only switch).
         if !activeLayouts.contains(sourceLayout), allowedLayouts.contains(sourceLayout) {
-            let isCyrillicCrossSwitch = !allowCyrillicToCyrillic && currentLayout.isCyrillic && sourceLayout.isCyrillic
+            let isCyrillicCrossSwitch = currentLayout.isCyrillic && sourceLayout.isCyrillic
             if !isCyrillicCrossSwitch {
                 let candidateLanguage = languageForLayout(sourceLayout)
                 if validator.validate(currentValidationInput, language: candidateLanguage, allowSuggestion: false).isValid {
                     let isLowConfidence = word.count <= lowConfidenceMaxLength
                     let shouldSwitch = shouldSwitchLayout(isLowConfidence: isLowConfidence, targetLayout: sourceLayout)
 
-                    if let merged = mergeSuppressedShort(
-                        suppressedShort,
+                    if let sweep = sweepRun(
+                        toward: sourceLayout,
                         currentOriginal: word,
                         currentConverted: word,
-                        targetLayout: sourceLayout,
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
-                    ), let suppressed = suppressedShort {
+                    ) {
                         let result = DetectionResult(
-                            sourceLayout: suppressed.sourceLayout,
+                            sourceLayout: sweep.sourceLayout,
                             targetLayout: sourceLayout,
-                            convertedWord: merged.converted,
-                            originalWord: merged.original,
+                            convertedWord: sweep.converted,
+                            originalWord: sweep.original,
                             shouldSwitchLayout: shouldSwitch
                         )
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
-                        recordOutcome(.corrected(from: suppressed.sourceLayout, to: sourceLayout))
+                        recordOutcome(.corrected(from: sweep.sourceLayout, to: sourceLayout))
                         state = .buffering
                         return result
                     }
@@ -334,15 +424,6 @@ public class LayoutDetector {
                         SwitchFixLog.detector.info("suppressed desynchronized word chars=\(word.count) (weak evidence, deferring)")
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
-                        if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
-                            pendingSuppressedShort = SuppressedShort(
-                                originalWord: word,
-                                convertedWord: word,
-                                sourceLayout: sourceLayout,
-                                targetLayout: sourceLayout,
-                                boundaryAfterWord: boundary
-                            )
-                        }
                         recordOutcome(.unknown)
                         state = .buffering
                         return nil
@@ -392,11 +473,7 @@ public class LayoutDetector {
             ukrainianToVariant: ukrainianToVariant
         )
             .filter { targetLayout, _ in
-                guard allowedLayouts.contains(targetLayout) else { return false }
-                if !allowCyrillicToCyrillic && sourceLayout.isCyrillic && targetLayout.isCyrillic {
-                    return false
-                }
-                return true
+                isEligibleTarget(targetLayout, sourceLayout: sourceLayout)
             }
         for (targetLayout, converted) in alternatives {
             // Self-switch suppression: if target layout uses the exact same physical input source already active
@@ -484,32 +561,22 @@ public class LayoutDetector {
                         SwitchFixLog.detector.info("suppressed short word chars=\(word.count) (weak evidence, deferring)")
                         consecutiveWrongCount = 0
                         lastDetectionResult = nil
-                        if let boundary = pendingBoundaryCharacter, !boundary.isEmpty {
-                            pendingSuppressedShort = SuppressedShort(
-                                originalWord: word,
-                                convertedWord: finalWord,
-                                sourceLayout: sourceLayout,
-                                targetLayout: targetLayout,
-                                boundaryAfterWord: boundary
-                            )
-                        }
                         recordOutcome(.unknown)
                         state = .buffering
                         return nil
                     }
 
                     var correctionSourceLayout = sourceLayout
-                    if let merged = mergeSuppressedShort(
-                        suppressedShort,
+                    if let sweep = sweepRun(
+                        toward: targetLayout,
                         currentOriginal: word,
                         currentConverted: finalWord,
-                        targetLayout: targetLayout,
                         isLowConfidence: isLowConfidence,
                         shouldSwitch: shouldSwitch
                     ) {
-                        originalForCorrection = merged.original
-                        finalWord = merged.converted
-                        correctionSourceLayout = suppressedShort?.sourceLayout ?? sourceLayout
+                        originalForCorrection = sweep.original
+                        finalWord = sweep.converted
+                        correctionSourceLayout = sweep.sourceLayout
                     }
 
                     consecutiveWrongCount += 1
@@ -608,42 +675,15 @@ public class LayoutDetector {
         return false
     }
 
-    private func validAlternative(
-        for word: String,
-        sourceLayout: Layout,
-        activeLayouts: Set<Layout>
-    ) -> (targetLayout: Layout, convertedWord: String)? {
-        guard word.count <= lowConfidenceMaxLength else { return nil }
-
-        let alternatives = LayoutMapper.convertToAlternatives(
-            word,
-            from: sourceLayout,
-            ukrainianFromVariant: ukrainianFromVariant,
-            ukrainianToVariant: ukrainianToVariant
+    private func isEligibleTarget(_ targetLayout: Layout, sourceLayout: Layout) -> Bool {
+        LayoutMapper.isEligibleTarget(
+            targetLayout,
+            source: sourceLayout,
+            allowed: allowedLayouts,
+            current: currentLayout,
+            activeSourceSupported: activeSourceSupportedLayouts,
+            preferredCyrillic: preferredCyrillicLayout
         )
-
-        for (targetLayout, converted) in alternatives where allowedLayouts.contains(targetLayout) {
-            guard targetLayout != sourceLayout,
-                  !activeLayouts.contains(targetLayout),
-                  !isSelfSwitch(targetLayout) else {
-                continue
-            }
-
-            let parts = splitTokenForValidation(converted)
-            let validationInput = parts.core.isEmpty ? converted : parts.core
-            guard validator.validate(
-                validationInput,
-                language: languageForLayout(targetLayout),
-                allowSuggestion: false
-            ).isValid else {
-                continue
-            }
-
-            let recomposed = parts.prefix + validationInput + parts.suffix
-            return (targetLayout, applyCase(from: word, to: recomposed))
-        }
-
-        return nil
     }
 
     private func isSelfSwitch(_ targetLayout: Layout) -> Bool {
@@ -690,33 +730,173 @@ public class LayoutDetector {
         return hasStrongCurrentContext(for: sourceLayout)
     }
 
-    private func consumePendingSuppressedShort() -> SuppressedShort? {
-        let value = pendingSuppressedShort
-        pendingSuppressedShort = nil
-        return value
+    private var activeLayoutSet: Set<Layout> {
+        activeSourceSupportedLayouts.contains(currentLayout) ? activeSourceSupportedLayouts : [currentLayout]
     }
 
-    private func mergeSuppressedShort(
-        _ suppressed: SuppressedShort?,
+    private func isValidInActiveLayouts(_ word: String) -> Bool {
+        let parts = splitTokenForValidation(word)
+        let validationInput = parts.core.isEmpty ? word : parts.core
+        return activeLayoutSet.contains { layout in
+            validator.validate(validationInput, language: languageForLayout(layout), allowSuggestion: false).isValid
+        }
+    }
+
+    private func record(typed: String, display: String, convertedTo: Layout?, boundary: String?, id: UInt64?) {
+        // Without a boundary after it the word is not committed (hotkey flush), and the
+        // correction it may trigger rewrites text the journal cannot follow.
+        guard let boundary, !boundary.isEmpty else {
+            journal.removeAll()
+            return
+        }
+        journal.append(JournalToken(
+            id: id,
+            typed: typed,
+            boundary: boundary,
+            display: display,
+            convertedTo: convertedTo
+        ))
+        if journal.count > LayoutDetector.maxJournalLength {
+            journal.removeFirst(journal.count - LayoutDetector.maxJournalLength)
+        }
+    }
+
+    /// The word as it would read on `targetLayout`, when that reading is a valid word there.
+    private func validConversion(of word: String, from sourceLayout: Layout, to targetLayout: Layout) -> String? {
+        guard !word.isEmpty,
+              !containsMixedScripts(word),
+              isEligibleTarget(targetLayout, sourceLayout: sourceLayout),
+              !isSelfSwitch(targetLayout) else {
+            return nil
+        }
+        if sourceLayout == .english, word.count >= 2, isAllUppercase(word) {
+            return nil
+        }
+
+        var candidates = [LayoutMapper.convert(
+            word,
+            from: sourceLayout,
+            to: targetLayout,
+            ukrainianFromVariant: ukrainianFromVariant,
+            ukrainianToVariant: ukrainianToVariant
+        )]
+        if sourceLayout == .ukrainian && targetLayout == .english {
+            candidates.append(LayoutMapper.convert(
+                word,
+                from: sourceLayout,
+                to: targetLayout,
+                ukrainianFromVariant: ukrainianFromVariant == .legacy ? .standard : .legacy,
+                ukrainianToVariant: ukrainianToVariant
+            ))
+        } else if sourceLayout == .english && targetLayout == .ukrainian {
+            candidates.append(LayoutMapper.convert(
+                word,
+                from: sourceLayout,
+                to: targetLayout,
+                ukrainianFromVariant: ukrainianFromVariant,
+                ukrainianToVariant: ukrainianToVariant == .legacy ? .standard : .legacy
+            ))
+        }
+
+        let originalParts = splitTokenForValidation(word)
+        for candidate in candidates where candidate != word {
+            let parts = splitTokenForValidation(candidate)
+            // Same guards as a direct correction: no letter that turns into leading
+            // punctuation, no punctuation that turns into letters, no short flags.
+            if parts.prefix.count > originalParts.prefix.count { continue }
+            if originalParts.core.isEmpty || parts.core.isEmpty { continue }
+            if originalParts.prefix.contains("-") && originalParts.core.count <= shortWordSuppressionLength { continue }
+            guard validator.validate(
+                parts.core,
+                language: languageForLayout(targetLayout),
+                allowSuggestion: false
+            ).isValid else {
+                continue
+            }
+            return applyCase(from: word, to: candidate)
+        }
+        return nil
+    }
+
+    /// Extends a correction of the current word back over the words typed right before it in
+    /// the same run. The layout cannot change mid-run, so once the current word shows the run
+    /// is on the wrong layout, every earlier word that also reads as a valid `targetLayout`
+    /// word belongs to the same mistake — including ones that looked fine on their own.
+    private func sweepRun(
+        toward targetLayout: Layout,
         currentOriginal: String,
         currentConverted: String,
-        targetLayout: Layout,
         isLowConfidence: Bool,
         shouldSwitch: Bool
-    ) -> (original: String, converted: String)? {
-        guard let suppressed else { return nil }
-        guard suppressed.targetLayout == targetLayout else { return nil }
-
-        // Merge only when the current word provides stronger evidence than the suppressed short word.
+    ) -> RunSweep? {
+        // Rewrite earlier words only when the current word is stronger evidence than a lone short one.
         let hasStrongCurrentSignal = currentOriginal.count > shortWordSuppressionLength || shouldSwitch || !isLowConfidence
-        guard hasStrongCurrentSignal else { return nil }
+        guard hasStrongCurrentSignal, !journal.isEmpty else { return nil }
 
-        let bridge = suppressed.boundaryAfterWord
-        guard !bridge.isEmpty else { return nil }
+        // Nearest word first. `converted == nil` means the screen already shows the target layout.
+        var swept: [(index: Int, converted: String?, isAmbiguous: Bool)] = []
+        var sweepSource: Layout?
+        var stoppedAtCurrentLayoutWord = false
+        var spanLength = currentOriginal.count
 
-        return (
-            original: suppressed.originalWord + bridge + currentOriginal,
-            converted: suppressed.convertedWord + bridge + currentConverted
+        for index in journal.indices.reversed() {
+            let token = journal[index]
+            // Enter may have submitted the earlier text; never rewrite across it.
+            if token.boundary.contains(where: \.isNewline) { break }
+            let tokenLength = token.typed.count + token.boundary.count
+            if spanLength + tokenLength > LayoutDetector.maxSweepLength { break }
+
+            // Personal exceptions barrier: backward sweep stops before any protected token
+            if currentTrigger == .automaticBoundary && (personalExceptions.matches(rawToken: token.typed) || personalExceptions.matches(rawToken: token.display)) {
+                break
+            }
+
+            if let convertedTo = token.convertedTo {
+                guard convertedTo == targetLayout else { break }
+                swept.append((index, nil, false))
+            } else {
+                let tokenSource = resolvedSourceLayout(for: token.typed)
+                guard tokenSource != targetLayout, sweepSource == nil || sweepSource == tokenSource else { break }
+                let (core, trailing) = splitTrailingBoundary(from: token.typed)
+                let isValidAsTyped = isValidInActiveLayouts(core)
+                guard let converted = validConversion(of: core, from: tokenSource, to: targetLayout) else {
+                    stoppedAtCurrentLayoutWord = isValidAsTyped
+                    break
+                }
+                sweepSource = tokenSource
+                swept.append((index, converted + trailing, isValidAsTyped))
+            }
+            spanLength += tokenLength
+        }
+
+        // A word valid in both layouts sides with its neighbours: right after a word that only
+        // makes sense as typed, it is far more likely part of that text than of the mistake.
+        if stoppedAtCurrentLayoutWord {
+            while let farthest = swept.last, farthest.converted != nil, farthest.isAmbiguous {
+                swept.removeLast()
+            }
+        }
+        // Nothing to rewrite before the farthest word that actually changes.
+        while let farthest = swept.last, farthest.converted == nil {
+            swept.removeLast()
+        }
+        guard !swept.isEmpty, let sourceLayout = sweepSource else { return nil }
+
+        var original = ""
+        var converted = ""
+        for entry in swept.reversed() {
+            let token = journal[entry.index]
+            original += token.display + token.boundary
+            converted += (entry.converted ?? token.display) + token.boundary
+            if let display = entry.converted {
+                pendingSweepMarks.append((entry.index, display, targetLayout))
+            }
+        }
+        SwitchFixLog.detector.info("run sweep: correction extended over \(swept.count) earlier words")
+        return RunSweep(
+            original: original + currentOriginal,
+            converted: converted + currentConverted,
+            sourceLayout: sourceLayout
         )
     }
 
@@ -944,6 +1124,11 @@ public class LayoutDetector {
     }
 
     private func splitTokenForValidation(_ token: String) -> (prefix: String, core: String, suffix: String) {
+        Self.splitTokenForValidation(token)
+    }
+
+    /// Shared with `PersonalExceptionsPolicy`, so exception matching uses the detector's own token rules.
+    static func splitTokenForValidation(_ token: String) -> (prefix: String, core: String, suffix: String) {
         let chars = Array(token)
         if chars.isEmpty {
             return ("", "", "")
@@ -975,6 +1160,11 @@ public class LayoutDetector {
 
     /// Split trailing punctuation/symbols from a word.
     private func splitTrailingBoundary(from text: String) -> (core: String, trailing: String) {
+        Self.splitTrailingBoundary(from: text)
+    }
+
+    /// Shared with `PersonalExceptionsPolicy`, so exception matching uses the detector's own token rules.
+    static func splitTrailingBoundary(from text: String) -> (core: String, trailing: String) {
         var core = text
         var trailing = ""
         while let last = core.last, isBoundaryChar(last) {
@@ -984,7 +1174,7 @@ public class LayoutDetector {
         return (core, trailing)
     }
 
-    private func isBoundaryChar(_ char: Character) -> Bool {
+    private static func isBoundaryChar(_ char: Character) -> Bool {
         guard let scalar = char.unicodeScalars.first else { return false }
         return LayoutDetector.boundaryCharacterSet.contains(scalar)
     }

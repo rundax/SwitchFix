@@ -17,6 +17,10 @@ func assert(_ condition: Bool, _ message: String, file: String = #file, line: In
     }
 }
 
+func check(_ condition: Bool, _ message: String, file: String = #file, line: Int = #line) {
+    assert(condition, message, file: file, line: line)
+}
+
 func assertEqual<T: Equatable>(_ a: T, _ b: T, _ message: String = "", file: String = #file, line: Int = #line) {
     if a == b {
         passed += 1
@@ -28,7 +32,9 @@ func assertEqual<T: Equatable>(_ a: T, _ b: T, _ message: String = "", file: Str
 
 func runSuite(_ name: String, _ block: () -> Void) {
     print("--- \(name) ---")
+    fflush(stdout)
     block()
+    fflush(stdout)
 }
 
 func dictionaryPath(for language: Language) -> String {
@@ -36,14 +42,14 @@ func dictionaryPath(for language: Language) -> String {
     return "\(root)/Sources/Dictionary/Resources/\(language.rawValue).txt"
 }
 
-func forEachDictionaryWord(language: Language, _ block: (String) -> Void) {
+func forEachDictionaryWord(language: Language, _ block: @escaping (String) -> Void) {
     let path = dictionaryPath(for: language)
     guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
         print("  WARN: could not read dictionary at \(path)")
         return
     }
 
-    for line in content.split(whereSeparator: \.isNewline) {
+    content.enumerateLines { line, _ in
         let word = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !word.isEmpty {
             block(word)
@@ -1356,56 +1362,357 @@ runSuite("InputSourceDiscoveryEngine: Apple native Ukrainian layout ignores Opti
     assertEqual(desc?.isCustom, false, "Apple native layout is not custom")
 }
 
+runSuite("InputSourceDiscoveryEngine: Apple native layout is classified by its primary language only") {
+    // What macOS reports for "Ukrainian – Legacy": every language its script can write.
+    let appleUkProvider = MockInputSourcePropertyReader(
+        id: "com.apple.keylayout.Ukrainian",
+        localizedName: "Ukrainian – Legacy",
+        languages: ["uk", "be", "bg", "bs_Cyrl", "mk", "myv", "ru", "sr", "sr_Cyrl"],
+        unshiftedKeys: [0: "ф", 1: "и", 11: "і", 12: "й", 30: "ї", 39: "є"]
+    )
+    let appleDesc = InputSourceDiscoveryEngine.classify(provider: appleUkProvider)
+    assertEqual(appleDesc?.supportedLayouts, Set([.ukrainian]), "'ru' further down Apple's list must not make the Ukrainian layout a Russian one")
+    assertEqual(appleDesc?.ukrainianVariant, .legacy, "legacy variant is still detected")
+
+    let customProvider = MockInputSourcePropertyReader(
+        id: "org.example.keylayout.cyrillic-duo",
+        localizedName: "Cyrillic Duo",
+        languages: ["uk", "ru"]
+    )
+    let customDesc = InputSourceDiscoveryEngine.classify(provider: customProvider)
+    assertEqual(customDesc?.supportedLayouts, Set([.ukrainian, .russian]), "third-party layouts keep every language they declare")
+}
+
+runSuite("WordValidator: 'VNC' and 'vnc' are recognized as valid English words via allow override") {
+    assert(WordValidator.shared.validate("vnc", language: .english).isValid, "'vnc' should be valid English")
+    assert(WordValidator.shared.validate("VNC", language: .english).isValid, "'VNC' should be valid English")
+}
+
 runSuite("WordValidator: 'блін' is recognized as a valid Ukrainian word via allow override") {
     let result = WordValidator.shared.validate("блін", language: .ukrainian)
     assert(result.isValid, "'блін' should be a valid word in Ukrainian")
 }
 
-runSuite("LayoutDetector: Cyrillic-to-Cyrillic cross-conversion is disabled by default") {
-    let detector = LayoutDetector()
-    let mockDelegate = MockDetectorDelegate()
-    detector.delegate = mockDelegate
-    detector.currentLayout = .ukrainian
-    detector.ukrainianFromVariant = .legacy
-    detector.allowedLayouts = [.english, .ukrainian, .russian]
-    assertEqual(detector.allowCyrillicToCyrillic, false, "allowCyrillicToCyrillic must default to false")
-
-    for char in "блін" {
+func flushWord(_ detector: LayoutDetector, _ word: String) -> DetectionResult? {
+    detector.discardBuffer()
+    for char in word {
         detector.addCharacter(String(char))
     }
-    let result = detector.flushBuffer(boundaryCharacter: " ")
-    assertEqual(mockDelegate.results.count, 0, "no Russian correction should be emitted for 'блін'")
-    assert(result == nil, "'блін' must not be converted to Russian 'блин'")
+    return detector.flushBuffer(boundaryCharacter: " ")
 }
 
-runSuite("LayoutDetector: Cyrillic-to-Cyrillic conversion respects allowCyrillicToCyrillic setting") {
+runSuite("LayoutDetector: Cyrillic source is never converted to another Cyrillic layout") {
     let detector = LayoutDetector()
-    let mockDelegate = MockDetectorDelegate()
-    detector.delegate = mockDelegate
     detector.currentLayout = .ukrainian
     detector.ukrainianFromVariant = .legacy
     detector.allowedLayouts = [.english, .ukrainian, .russian]
-    detector.allowCyrillicToCyrillic = false
+    assert(flushWord(detector, "блін") == nil, "'блін' must not be converted to Russian 'блин'")
+    assert(flushWord(detector, "єто") == nil, "'єто' must not be converted to Russian 'это'")
+    detector.currentLayout = .russian
+    assert(flushWord(detector, "вы") == nil || flushWord(detector, "вы")?.targetLayout == .english,
+           "Russian text must never become Ukrainian")
+}
 
-    // In legacy Ukrainian mapping: "єто" converts to Russian "это"
-    for char in "єто" {
-        detector.addCharacter(String(char))
-    }
-    let suppressedResult = detector.flushBuffer(boundaryCharacter: " ")
-    assertEqual(mockDelegate.results.count, 0, "Cyrillic cross-conversion must be suppressed when disabled")
-    assert(suppressedResult == nil, "result should be nil when allowCyrillicToCyrillic is false")
+runSuite("LayoutMapper: Ukrainian <-> Russian conversion is the identity") {
+    assertEqual(LayoutMapper.convert("єто", from: .ukrainian, to: .russian), "єто", "UK→RU must not convert")
+    assertEqual(LayoutMapper.convert("вы", from: .russian, to: .ukrainian), "вы", "RU→UK must not convert")
+    let targets = LayoutMapper.convertToAlternatives("вы", from: .russian).map { $0.0 }
+    assertEqual(targets, [.english], "a Cyrillic source may only convert to English")
+}
 
-    // Now enable Cyrillic-to-Cyrillic
-    detector.allowCyrillicToCyrillic = true
-    for char in "єто" {
-        detector.addCharacter(String(char))
+runSuite("LayoutDetector: Latin typed under Ukrainian layout is never replaced by Russian") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+    detector.currentInputSourceID = "com.apple.keylayout.Ukrainian"
+    detector.activeSourceSupportedLayouts = [.ukrainian]
+    detector.allowedLayouts = [.english, .ukrainian, .russian]
+    detector.preferredSourceIDProvider = { layout in layout == .ukrainian ? "com.apple.keylayout.Ukrainian" : nil }
+    detector.preferredCyrillicLayout = .ukrainian
+    assert(flushWord(detector, "ds") == nil, "'ds' under Ukrainian must not become Russian 'вы'")
+    detector.preferredCyrillicLayout = nil
+    assert(flushWord(detector, "ds") == nil, "'ds' under Ukrainian must not become Russian even without history")
+}
+
+runSuite("LayoutDetector: Latin text converts only to the last-used Cyrillic layout") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+    detector.currentInputSourceID = "com.apple.keylayout.ABC"
+    detector.activeSourceSupportedLayouts = [.english]
+    detector.allowedLayouts = [.english, .ukrainian, .russian]
+    detector.preferredSourceIDProvider = { _ in nil }
+
+    detector.preferredCyrillicLayout = .ukrainian
+    let ua = flushWord(detector, "ghbdsn")
+    assertEqual(ua?.targetLayout, .ukrainian, "Latin 'ghbdsn' should convert to Ukrainian when UA was last used")
+    assertEqual(ua?.convertedWord, "привіт", "converted word should be Ukrainian 'привіт'")
+
+    detector.preferredCyrillicLayout = .russian
+    let ru = flushWord(detector, "ghbdtn")
+    assertEqual(ru?.targetLayout, .russian, "Latin 'ghbdtn' should convert to Russian when RU was last used")
+    assertEqual(ru?.convertedWord, "привет", "converted word should be Russian 'привет'")
+
+    detector.preferredCyrillicLayout = .ukrainian
+    assert(flushWord(detector, "ds")?.targetLayout != .russian, "'ds' must not become Russian 'вы' when UA was last used")
+}
+
+// =============================================================================
+// Run-level context: words typed back-to-back share one layout
+// =============================================================================
+
+runSuite("LayoutDetector: Ambiguous word outlives a short neighbour until the run resolves") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+
+    assert(flushWord(detector, "філ") == nil, "valid Ukrainian 'філ' must not be rewritten in isolation")
+    let me = flushWord(detector, "ьу")
+    assertEqual(me?.originalWord, "ьу", "a lone two-letter word is too weak to drag the ambiguous word along")
+    assertEqual(me?.convertedWord, "me")
+
+    let more = flushWord(detector, "ьщку")
+    assertEqual(more?.originalWord, "філ me ьщку", "the confirming word must reach back over everything on screen since the run began")
+    assertEqual(more?.convertedWord, "ask me more")
+    assertEqual(more?.targetLayout, .english)
+    assert(more?.shouldSwitchLayout == true, "a resolved run switches the layout")
+}
+
+runSuite("LayoutDetector: Ambiguous words of any length are reachable") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+
+    assert(flushWord(detector, "туче") == nil, "valid Ukrainian 'туче' must not be rewritten in isolation")
+    let more = flushWord(detector, "ьщку")
+    assertEqual(more?.originalWord, "туче ьщку")
+    assertEqual(more?.convertedWord, "next more")
+}
+
+runSuite("LayoutDetector: Words already corrected are not retyped") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+
+    assertEqual(flushWord(detector, "фил")?.convertedWord, "ask", "'фил' is not Ukrainian, so it converts on its own")
+    let me = flushWord(detector, "ьу")
+    assertEqual(me?.originalWord, "ьу", "the second word must not delete and retype the first")
+    assert(me?.shouldSwitchLayout == true, "two agreeing short words switch the layout")
+
+    let mixed = LayoutDetector()
+    mixed.currentLayout = .ukrainian
+    mixed.ukrainianFromVariant = .legacy
+    assertEqual(flushWord(mixed, "фил")?.convertedWord, "ask")
+    assert(flushWord(mixed, "еру") == nil, "'еру' stands as typed")
+    let more = flushWord(mixed, "ьщку")
+    assertEqual(more?.originalWord, "еру ьщку", "the sweep starts at the first word that changes, not at one already corrected")
+    assertEqual(more?.convertedWord, "the more")
+}
+
+runSuite("LayoutDetector: Ambiguous word sides with the Ukrainian text before it") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .ukrainian
+    detector.ukrainianFromVariant = .legacy
+
+    assert(flushWord(detector, "лист") == nil, "'лист' is plain Ukrainian")
+    assert(flushWord(detector, "від") == nil, "'від' also reads as English 'dbl', but stands as typed")
+    let google = flushWord(detector, "пщщпду")
+    assertEqual(google?.originalWord, "пщщпду", "'від' follows a word that only makes sense in Ukrainian and must stay")
+    assertEqual(google?.convertedWord, "google")
+}
+
+runSuite("LayoutDetector: Ambiguous word sides with the English text before it") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+
+    assert(flushWord(detector, "check") == nil, "'check' is plain English")
+    assert(flushWord(detector, "the") == nil, "'the' also reads as Ukrainian 'еру', but stands as typed")
+    let hello = flushWord(detector, "ghbdsn")
+    assertEqual(hello?.originalWord, "ghbdsn", "'the' follows a word that only makes sense in English and must stay")
+    assertEqual(hello?.convertedWord, "привіт")
+}
+
+runSuite("LayoutDetector: Run sweep stops at Enter and at words it cannot place") {
+    do {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        detector.addCharacter("еру")
+        assert(detector.flushBuffer(boundaryCharacter: "\n") == nil, "'еру' stands as typed")
+        let middle = flushWord(detector, "ьшввду")
+        assertEqual(middle?.originalWord, "ьшввду", "text before Enter may already be submitted and must not be rewritten")
+        assertEqual(middle?.convertedWord, "middle")
     }
-    let allowedResult = detector.flushBuffer(boundaryCharacter: " ")
-    assert(allowedResult != nil, "conversion should be allowed when allowCyrillicToCyrillic is true")
-    if let allowedResult {
-        assertEqual(allowedResult.targetLayout, .russian, "target layout should be Russian")
-        assertEqual(allowedResult.convertedWord, "это", "converted word should be Russian 'это'")
+    do {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        assert(flushWord(detector, "еру") == nil, "'еру' stands as typed")
+        assert(flushWord(detector, "щщщщ") == nil, "'щщщщ' is a word in neither layout")
+        let middle = flushWord(detector, "ьшввду")
+        assertEqual(middle?.originalWord, "ьшввду", "the sweep must not jump over a word it cannot convert")
     }
+}
+
+// The same rules through the real InputEngine, where the delete count decides what the app loses.
+
+final class CorrectionPlanLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var plans: [CorrectionPlan] = []
+    func add(_ plan: CorrectionPlan) { lock.lock(); plans.append(plan); lock.unlock() }
+    func all() -> [CorrectionPlan] { lock.lock(); defer { lock.unlock() }; return plans }
+}
+
+enum TypedKey {
+    case text(String)
+    case space
+    case backspace
+}
+
+final class DetectionObserver: LayoutDetectorDelegate {
+    let onDetection: () -> Void
+    init(_ onDetection: @escaping () -> Void) { self.onDetection = onDetection }
+    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult, boundaryCharacter: String?) {
+        onDetection()
+    }
+}
+
+func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant, failEmissionAt: Int = 0, rejectFirstDetection: Bool = false) -> [CorrectionPlan] {
+    let context = InputContextSnapshot(
+        epoch: 1,
+        frontmostPID: 100,
+        appAllowed: true,
+        layout: .ukrainian,
+        inputSourceID: "com.apple.keylayout.Ukrainian",
+        secureFocus: .notSecure
+    )
+    let store = CaptureStateStore(context: context, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let log = CorrectionPlanLog()
+    let detector = LayoutDetector()
+    var didReject = false
+    detector.preferredSourceIDProvider = { _ in nil }
+    let observer = DetectionObserver {
+        if rejectFirstDetection && !didReject {
+            didReject = true
+            // A newer physical event makes the pending request ineligible without
+            // changing the run retained by the input state machine.
+            _ = store.capture(timestamp: 0, kind: .character(""), keyCode: 0,
+                              flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0)
+        }
+    }
+    detector.delegate = observer
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: context,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        detector: detector,
+        correctionEmission: { plan in
+            log.add(plan)
+            return log.all().count != failEmissionAt
+        }
+    )
+    engine.updateDetectionConfiguration(
+        allowedLayouts: [.english, .ukrainian],
+        preferredCyrillicLayout: .ukrainian,
+        activeSourceSupportedLayouts: [.ukrainian],
+        ukrainianFromVariant: variant,
+        ukrainianToVariant: variant
+    )
+    func send(_ kind: CapturedInput.Kind) {
+        engine.enqueue(store.capture(
+            timestamp: 0,
+            kind: kind,
+            keyCode: 0,
+            flagsRawValue: 0,
+            isAutorepeat: false,
+            sourcePID: 1,
+            sourceUserData: 0
+        ))
+    }
+    // Detection and emission hop queues, and a correction is dropped if the next key beats it.
+    func settle() {
+        let drained = DispatchSemaphore(value: 0)
+        engine.drainPipeline { drained.signal() }
+        drained.wait()
+    }
+    for key in keys {
+        switch key {
+        case .text(let text):
+            for character in text { send(.character(String(character))) }
+        case .space:
+            send(.boundary(" "))
+            settle()
+        case .backspace:
+            send(.delete)
+        }
+    }
+    withExtendedLifetime(observer) {}
+    return log.all()
+}
+
+runSuite("InputEngine: First word typed after backspacing is corrected once the run resolves") {
+    let plans = typeOnUkrainianLayout(
+        [.backspace, .backspace, .text("фил"), .space, .text("ьу"), .space, .text("йгуиешщти"), .space],
+        variant: .legacy
+    )
+    assertEqual(plans.count, 2, "'ask' may be a fragment and must wait; 'me' and 'questions' each trigger a correction")
+    assertEqual(plans.first?.originalText, "ьу")
+    assertEqual(plans.last?.originalText, "фил me йгуиешщти")
+    assertEqual(plans.last?.correctedText, "ask me questions")
+    assertEqual(plans.last?.deleteCount, 17, "three words, two spaces between them and the trailing space")
+    assertEqual(plans.last?.targetLayout, .english)
+}
+
+runSuite("InputEngine: Run sweep deletes exactly what is on screen") {
+    let plans = typeOnUkrainianLayout(
+        [.text("філ"), .space, .text("ьу"), .space, .text("ьщку"), .space],
+        variant: .standard
+    )
+    assertEqual(plans.last?.correctedText, "ask me more")
+    assertEqual(plans.last?.replacementText, "ask me more ")
+    assertEqual(plans.last?.deleteCount, 12)
+}
+
+runSuite("InputEngine: Failed or rejected corrections leave observed run text intact") {
+    let keys: [TypedKey] = [.text("філ"), .space, .text("ьу"), .space, .text("ьщку"), .space]
+    for reject in [false, true] {
+        let plans = typeOnUkrainianLayout(keys, variant: .standard,
+                                        failEmissionAt: reject ? 0 : 1, rejectFirstDetection: reject)
+        assertEqual(plans.count, reject ? 1 : 2, "exercise the intended cancellation/emission path")
+        assertEqual(plans.last?.originalText, "філ ьу ьщку", "undo must retain the actual, uncorrected screen text")
+        assertEqual(plans.last?.correctedText, "ask me more")
+        assertEqual(plans.last?.replacementText, "ask me more ")
+        assertEqual(plans.last?.deleteCount, 12)
+    }
+}
+
+runSuite("InputEngine: Failed sweep preserves earlier confirmed conversions only") {
+    let plans = typeOnUkrainianLayout(
+        [.text("філ"), .space, .text("ьу"), .space, .text("ьщку"), .space, .text("йгуиешщти"), .space],
+        variant: .standard, failEmissionAt: 2
+    )
+    assertEqual(plans.count, 3)
+    assertEqual(plans.last?.originalText, "філ me ьщку йгуиешщти", "failed sweep must not mark earlier words converted; confirmed 'me' stays converted")
+    assertEqual(plans.last?.correctedText, "ask me more questions")
+    assertEqual(plans.last?.replacementText, "ask me more questions ")
+    assertEqual(plans.last?.deleteCount, 22)
+}
+
+runSuite("InputEngine: Backspacing into a deferred word never deletes the text before it") {
+    // Screen after the last space: "еруь " — five characters.
+    let plans = typeOnUkrainianLayout(
+        [.text("еру"), .space, .backspace, .text("ь"), .space],
+        variant: .standard
+    )
+    assertEqual(plans.count, 1)
+    assertEqual(plans.first?.originalText, "еруь", "the reopened word must not also be counted as an earlier word")
+    assertEqual(plans.first?.correctedText, "them")
+    assertEqual(plans.first?.deleteCount, 5)
+}
+
+runSuite("InputEngine: A second space ends the run") {
+    // Screen after the last space: "еру  ьшввду " — the journal holds no token for the extra space.
+    let plans = typeOnUkrainianLayout(
+        [.text("еру"), .space, .space, .text("ьшввду"), .space],
+        variant: .standard
+    )
+    assertEqual(plans.count, 1)
+    assertEqual(plans.first?.originalText, "ьшввду", "a span that skips a character would delete one too few")
+    assertEqual(plans.first?.deleteCount, 7)
 }
 
 // =============================================================================
@@ -1472,6 +1779,443 @@ runSuite("Synthetic: EN → UK coverage") {
     print("  total: \(total), convertible: \(convertible) (\(String(format: "%.2f", convertibleRate * 100))%)")
     print("  ambiguous: \(ambiguous) (\(String(format: "%.2f", ambiguousRate * 100))%), invalid target: \(invalidTarget)")
     assert(total > 0, "english dictionary should not be empty")
+}
+
+// =============================================================================
+// Personal Exceptions (Plan 02 Slice 1)
+// =============================================================================
+
+runSuite("PersonalExceptions: Normalization & Canonicalization") {
+    // Case variants
+    assertEqual(PersonalExceptionsPolicy.canonicalize("Apple"), "apple", "lowercase Apple")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("APPLE"), "apple", "lowercase APPLE")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("КиЇв"), "київ", "lowercase Ukrainian letters")
+
+    // NFC / NFD canonical composition
+    let decomposed = "e\u{0301}"
+    let precomposed = "é"
+    assertEqual(PersonalExceptionsPolicy.canonicalize(decomposed), precomposed, "NFD must compose to NFC")
+    assertEqual(PersonalExceptionsPolicy.canonicalize(precomposed), precomposed, "NFC must stay NFC")
+
+    // All three apostrophes: ASCII, U+2019, U+02BC
+    assertEqual(PersonalExceptionsPolicy.canonicalize("don't"), "don't", "ASCII apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("don’t"), "don't", "U+2019 curly apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("сімʼя"), "сім'я", "U+02BC modifier letter apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("м’ясо"), "м'ясо", "Ukrainian curly apostrophe")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("мʼясо"), "м'ясо", "Ukrainian modifier letter apostrophe")
+
+    // Diacritics preserved (no accent stripping)
+    assertEqual(PersonalExceptionsPolicy.canonicalize("café"), "café", "diacritics must not be stripped")
+    assert(PersonalExceptionsPolicy.canonicalize("café") != "cafe", "café is distinct from cafe")
+
+    // Hyphens and backticks remain distinct
+    assertEqual(PersonalExceptionsPolicy.canonicalize("foo-bar"), "foo-bar", "hyphen preserved")
+    assertEqual(PersonalExceptionsPolicy.canonicalize("foo`bar"), "foo`bar", "backtick preserved")
+    assert(PersonalExceptionsPolicy.canonicalize("foo-bar") != PersonalExceptionsPolicy.canonicalize("foo`bar"), "hyphen and backtick are distinct")
+    assert(PersonalExceptionsPolicy.canonicalize("foo'bar") != PersonalExceptionsPolicy.canonicalize("foo-bar"), "apostrophe and hyphen are distinct")
+}
+
+runSuite("PersonalExceptions: Validation rules & boundaries") {
+    // Valid words
+    check(PersonalExceptionsPolicy.validate(candidate: "apple") == .success("apple"), "valid word apple")
+    check(PersonalExceptionsPolicy.validate(candidate: "don't") == .success("don't"), "valid word don't")
+    check(PersonalExceptionsPolicy.validate(candidate: "v2") == .success("v2"), "valid word v2")
+    check(PersonalExceptionsPolicy.validate(candidate: "сім'я") == .success("сім'я"), "valid word сім'я")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo-bar") == .success("foo-bar"), "valid word foo-bar")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo`bar") == .success("foo`bar"), "valid word foo`bar")
+    check(PersonalExceptionsPolicy.validate(candidate: "  swift  ") == .success("swift"), "whitespace trimmed before validation")
+
+    // Empty
+    check(PersonalExceptionsPolicy.validate(candidate: "") == .failure(.empty), "empty rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "   ") == .failure(.empty), "whitespace-only rejected")
+
+    // Length ceilings: 64 Characters, 256 bytes
+    let word64 = String(repeating: "a", count: 64)
+    check(PersonalExceptionsPolicy.validate(candidate: word64) == .success(word64), "64 chars accepted")
+    let word65 = String(repeating: "a", count: 65)
+    check(PersonalExceptionsPolicy.validate(candidate: word65) == .failure(.tooLong(65)), "65 chars rejected")
+
+    // No letters
+    check(PersonalExceptionsPolicy.validate(candidate: "12345") == .failure(.noLetters), "pure digits rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "-") == .failure(.noLetters), "pure punctuation rejected")
+
+    // Invalid characters
+    check(PersonalExceptionsPolicy.validate(candidate: "foo bar") == .failure(.invalidCharacter(" ")), "space rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo\nbar") == .failure(.invalidCharacter("\n")), "newline rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo🎉") == .failure(.invalidCharacter("🎉")), "emoji rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "https://apple.com") == .failure(.invalidCharacter(":")), "url rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "/usr/bin") == .failure(.invalidCharacter("/")), "path rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "user@domain") == .failure(.invalidCharacter("@")), "@ rejected")
+
+    // Punctuation positioning
+    check(PersonalExceptionsPolicy.validate(candidate: "-foo") == .failure(.invalidPunctuationPosition), "leading hyphen rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "'foo") == .failure(.invalidPunctuationPosition), "leading apostrophe rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo-") == .failure(.invalidPunctuationPosition), "trailing hyphen rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "\u{0301}foo") == .failure(.invalidCharacter("\u{0301}")), "leading combining mark rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo'") == .failure(.invalidPunctuationPosition), "trailing apostrophe rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo--bar") == .failure(.invalidPunctuationPosition), "adjacent hyphens rejected")
+    check(PersonalExceptionsPolicy.validate(candidate: "foo''bar") == .failure(.invalidPunctuationPosition), "adjacent apostrophes rejected")
+}
+
+runSuite("PersonalExceptions: Key derivation & matching") {
+    // Key derivation from tokens
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo"), "foo", "derive plain foo")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo,"), "foo", "derive foo,")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo."), "foo", "derive foo.")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "\"foo"), "foo", "derive \"foo")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "foo!?"), "foo", "derive foo!?")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "don't"), "don't", "derive don't with internal apostrophe")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "don’t"), "don't", "derive don’t with curly apostrophe")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "сімʼя"), "сім'я", "derive сімʼя with U+02BC")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "kj,"), "kj", "derive kj, -> kj (documented collision)")
+
+    // Matching policy
+    let policy = PersonalExceptionsPolicy(words: ["foo", "don't", "сім'я", "cafe"])
+    check(policy.matches(rawToken: "foo"), "exact match foo")
+    check(policy.matches(rawToken: "Foo"), "case variant Foo matches")
+    check(policy.matches(rawToken: "FOO"), "all-caps FOO matches")
+    check(policy.matches(rawToken: "foo,"), "token with comma foo, matches")
+    check(policy.matches(rawToken: "foo."), "token with period foo. matches")
+    check(policy.matches(rawToken: "\"foo"), "token with leading quote \"foo matches")
+    check(policy.matches(rawToken: "don't"), "don't matches")
+    check(policy.matches(rawToken: "don’t"), "don’t with curly apostrophe matches")
+    check(policy.matches(rawToken: "сімʼя"), "сімʼя with modifier apostrophe matches")
+
+    // Non-matches (no substring, no prefix, distinct tokens)
+    check(!policy.matches(rawToken: "foobar"), "prefix foobar must not match foo")
+    check(!policy.matches(rawToken: "foo-bar"), "hyphenated foo-bar must not match foo")
+    check(!policy.matches(rawToken: "bar"), "unrelated word must not match")
+    check(!policy.matches(rawToken: "café"), "café must not match cafe (accents distinct)")
+}
+
+runSuite("PersonalExceptions: Store persistence & isolation") {
+    autoreleasepool {
+        let suiteName = "com.switchfix.tests.personal-exceptions.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            isolatedDefaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = PersonalExceptionsStore(defaults: isolatedDefaults)
+
+        // Empty startup
+        let initialPolicy = store.loadPolicy()
+        check(initialPolicy.isEmpty, "initial store must be empty")
+        check(initialPolicy.count == 0, "initial count is 0")
+
+        // Add words
+        let add1 = store.add(candidate: "Apple")
+        check(add1 == .success(PersonalExceptionsPolicy(words: ["apple"]), addedWord: "apple"), "add Apple succeeds as canonical apple")
+        let add2 = store.add(candidate: "don’t")
+        check(add2 == .success(PersonalExceptionsPolicy(words: ["apple", "don't"]), addedWord: "don't"), "add don’t succeeds as don't")
+
+        // Duplicate Add
+        let addDup = store.add(candidate: "apple")
+        check(addDup == .duplicate("apple"), "duplicate add returns duplicate status")
+
+        // Reload from new instance (restart simulation)
+        let reloadedStore = PersonalExceptionsStore(defaults: isolatedDefaults)
+        let reloadedPolicy = reloadedStore.loadPolicy()
+        check(reloadedPolicy.count == 2, "reloaded policy has 2 words")
+        check(reloadedPolicy.contains("apple"), "reloaded contains apple")
+        check(reloadedPolicy.contains("don't"), "reloaded contains don't")
+
+        // Remove word
+        let removedPolicy = store.remove(word: "Apple")
+        check(removedPolicy.count == 1, "policy after removal has 1 word")
+        check(!removedPolicy.contains("apple"), "apple was removed")
+        check(removedPolicy.contains("don't"), "don't remains")
+
+        _ = store.add(candidate: "Apple")
+        _ = store.add(candidate: "keep")
+        let batchRemoved = store.remove(words: ["APPLE", "don’t", "missing"])
+        check(batchRemoved.words == ["keep"], "batch removal canonicalizes words and preserves unselected entries")
+        check(reloadedStore.loadPolicy() == batchRemoved, "batch removal persists the resulting policy")
+        check(store.remove(words: []) == batchRemoved, "empty batch removal leaves policy unchanged")
+
+        // Malformed defaults handling
+        // 1. Wrong schemaVersion
+        isolatedDefaults.set(["schemaVersion": 99, "words": ["corrupted"]], forKey: PersonalExceptionsStore.preferenceKey)
+        check(store.loadPolicy().isEmpty, "unknown schemaVersion must default to empty policy")
+
+        // 2. Oversized envelope (> 1,000 items)
+        var oversizedWords: [String] = []
+        for i in 0..<1001 {
+            oversizedWords.append("word\(i)")
+        }
+        isolatedDefaults.set(["schemaVersion": 1, "words": oversizedWords], forKey: PersonalExceptionsStore.preferenceKey)
+        check(store.loadPolicy().isEmpty, "oversized envelope (> 1,000) must default to empty policy")
+
+        // 3. Invalid member inside bounded envelope is skipped, valid members loaded
+        isolatedDefaults.set(["schemaVersion": 1, "words": ["valid", "invalid emoji 🎉", "another-valid", "1234"]], forKey: PersonalExceptionsStore.preferenceKey)
+        let filteredPolicy = store.loadPolicy()
+        check(filteredPolicy.count == 2, "filtered policy should load 2 valid words")
+        check(filteredPolicy.contains("valid"), "contains valid")
+        check(filteredPolicy.contains("another-valid"), "contains another-valid")
+        isolatedDefaults.removePersistentDomain(forName: suiteName)
+    }
+}
+
+runSuite("PersonalExceptions: Detector current word and layout-only suppression") {
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn", "futynf"])
+
+    // "ghbdsn" is normally corrected from EN -> UK ("привіт"). Because it is protected, it must NOT correct.
+    for char in "ghbdsn" {
+        detector.addCharacter(String(char))
+    }
+    let res = detector.flushBuffer(boundaryCharacter: " ")
+    check(res == nil, "protected word 'ghbdsn' must return nil detection")
+    check(mockDelegate.results.isEmpty, "protected word must emit no delegate results")
+
+    // "futynf" is Ukrainian "агента" typed on the English layout: a text replacement with a switch.
+    // Because it is protected, neither the replacement nor the switch may happen.
+    for char in "futynf" {
+        detector.addCharacter(String(char))
+    }
+    let resLayout = detector.flushBuffer(boundaryCharacter: " ")
+    check(resLayout == nil, "protected layout-only word 'futynf' must return nil")
+    check(mockDelegate.results.isEmpty, "protected layout-only word must emit no switch")
+}
+
+runSuite("PersonalExceptions: Detector backward sweep barriers") {
+    // 1. Run sweep stops before protected earlier word
+    let detector = LayoutDetector()
+    let mockDelegate = MockDetectorDelegate()
+    detector.delegate = mockDelegate
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn"])
+
+    // Type protected word "ghbdsn " (would be "привіт")
+    for char in "ghbdsn" { detector.addCharacter(String(char)) }
+    _ = detector.flushBuffer(boundaryCharacter: " ")
+    check(mockDelegate.results.isEmpty, "first word is protected")
+
+    // Type "hj,jnf " (wrong layout for Ukrainian "робота")
+    for char in "hj,jnf" { detector.addCharacter(String(char)) }
+    let res = detector.flushBuffer(boundaryCharacter: " ")
+    check(res != nil, "second word should correct")
+    if let r = res {
+        // Must only correct "hj,jnf" -> "робота", NOT sweep across "ghbdsn"!
+        assertEqual(r.originalWord, "hj,jnf", "sweep must not cross protected word 'ghbdsn'")
+        assertEqual(r.convertedWord, "робота", "converted text must be only 'робота'")
+    }
+
+    // 2. Already converted token in journal is protected if its display or typed matches exception
+    let detector2 = LayoutDetector()
+    detector2.currentLayout = .english
+    for char in "hj,jnf" { detector2.addCharacter(String(char)) }
+    _ = detector2.flushBuffer(boundaryCharacter: " ")
+    detector2.personalExceptions = PersonalExceptionsPolicy(words: ["робота"])
+
+    for char in "ghbdsn" { detector2.addCharacter(String(char)) }
+    let res2 = detector2.flushBuffer(boundaryCharacter: " ")
+    check(res2 != nil, "second word should correct")
+    if let r = res2 {
+        assertEqual(r.originalWord, "ghbdsn", "sweep must stop before converted protected word 'робота'")
+    }
+}
+
+runSuite("PersonalExceptions: Explicit triggers bypass protection") {
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn"])
+
+    // Hotkey trigger bypasses personal exceptions
+    detector.currentTrigger = .hotkey
+    for char in "ghbdsn" { detector.addCharacter(String(char)) }
+    let resHotkey = detector.flushBuffer(boundaryCharacter: nil)
+    check(resHotkey != nil, "hotkey trigger must bypass personal exceptions")
+    assertEqual(resHotkey?.convertedWord, "привіт", "hotkey must convert protected word")
+
+    // LayoutSwitch trigger bypasses personal exceptions
+    detector.currentTrigger = .layoutSwitch
+    for char in "ghbdsn" { detector.addCharacter(String(char)) }
+    let resSwitch = detector.flushBuffer(boundaryCharacter: nil)
+    check(resSwitch != nil, "layoutSwitch trigger must bypass personal exceptions")
+}
+
+// =============================================================================
+// Personal Exceptions: remediation coverage (verification of 02.1–02.3)
+// =============================================================================
+
+runSuite("PersonalExceptions: Letter rule, byte ceiling and shared tokenizer keys") {
+    check(PersonalExceptionsPolicy.validate(candidate: "\u{0301}") == .failure(.noLetters), "a lone combining mark is not a letter")
+
+    // Each Character is ạ (U+1EA1, 3 bytes) plus U+0301 (2 bytes) after NFC: 5 bytes per Character.
+    let heavy = String(repeating: "a\u{0323}\u{0301}", count: 64)
+    assertEqual(heavy.precomposedStringWithCanonicalMapping.count, 64, "fixture is 64 Characters")
+    check(PersonalExceptionsPolicy.validate(candidate: heavy) == .failure(.byteLimitExceeded(320)), "64 Characters over 256 UTF-8 bytes are rejected")
+    let atLimit = String(repeating: "a\u{0323}\u{0301}", count: 51)
+    if case .success(let canonical) = PersonalExceptionsPolicy.validate(candidate: atLimit) {
+        assertEqual(canonical.utf8.count, 255, "255 bytes are accepted")
+    } else {
+        check(false, "51 heavy Characters (255 bytes) must be accepted")
+    }
+
+    // Keys come from the detector's own tokenizers.
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "(foo)"), "foo", "brackets are stripped from the key")
+    assertEqual(PersonalExceptionsPolicy.deriveMatchingKey(from: "сімʼя,"), "сім'я", "U+02BC stays inside the key, comma is stripped")
+    check(PersonalExceptionsPolicy.deriveMatchingKey(from: "!?") == nil, "punctuation-only tokens have no key")
+}
+
+runSuite("PersonalExceptions: Store capacity, stored types and deterministic serialization") {
+    let suiteName = "com.switchfix.tests.personal-exceptions.remediation.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    let store = PersonalExceptionsStore(defaults: defaults)
+    let key = PersonalExceptionsStore.preferenceKey
+
+    // 1,000-entry capacity on Add.
+    defaults.set(["schemaVersion": 1, "words": (0..<1000).map { "w\($0)" }], forKey: key)
+    assertEqual(store.loadPolicy().count, 1000, "1,000 stored entries load")
+    check(store.add(candidate: "extra") == .invalid(.capacityExceeded), "Add beyond 1,000 entries reports capacity")
+    check(store.add(candidate: "w7") == .duplicate("w7"), "duplicate Add at capacity stays a harmless no-op")
+    assertEqual(store.loadPolicy().count, 1000, "capacity rejection does not change the stored list")
+
+    // Malformed types are unreadable and are not overwritten by loading.
+    defaults.set(["schemaVersion": 1, "words": "foo"], forKey: key)
+    check(store.loadPolicyReportingIssue().issue == .unreadable, "words of the wrong type are unreadable")
+    defaults.set(["foo", "bar"], forKey: key)
+    check(store.loadPolicyReportingIssue().issue == .unreadable, "an envelope of the wrong type is unreadable")
+    _ = store.loadPolicy()
+    check((defaults.array(forKey: key) as? [String]) == ["foo", "bar"], "loading never overwrites an unreadable value")
+    defaults.set(["schemaVersion": 99, "words": ["corrupted"]], forKey: key)
+    check(store.loadPolicyReportingIssue() == (PersonalExceptionsPolicy.empty, .unreadable), "unknown version is unreadable and loads nothing")
+
+    // Non-string and invalid members are skipped and reported.
+    defaults.set(["schemaVersion": 1, "words": ["valid", 42, "two words", "valid"]], forKey: key)
+    let mixed = store.loadPolicyReportingIssue()
+    check(mixed.policy == PersonalExceptionsPolicy(words: ["valid"]), "valid members load and duplicates collapse")
+    check(mixed.issue == .skippedEntries(2), "skipped members are counted for the Settings message")
+    check(store.loadPolicyReportingIssue().policy.count == 1, "reading twice gives the same result")
+
+    // Deterministic serialization: insertion order does not matter.
+    defaults.removeObject(forKey: key)
+    check(store.loadPolicyReportingIssue().issue == nil, "empty storage reports no issue")
+    _ = store.add(candidate: "zebra")
+    _ = store.add(candidate: "Apple")
+    _ = store.add(candidate: "mango")
+    let stored = defaults.dictionary(forKey: key)
+    check((stored?["words"] as? [String]) == ["apple", "mango", "zebra"], "words are stored sorted and canonical")
+    check((stored?["schemaVersion"] as? Int) == 1, "schema version is stored")
+    check(Set(stored?.keys.map { $0 } ?? []) == ["schemaVersion", "words"], "nothing else is stored")
+
+    defaults.removePersistentDomain(forName: suiteName)
+    check(UserDefaults(suiteName: suiteName)?.object(forKey: key) == nil, "isolated defaults are removed after the test")
+}
+
+runSuite("PersonalExceptions: Protected word keeps its punctuation and documented collision") {
+    let control = LayoutDetector()
+    control.currentLayout = .english
+    let corrected = flushWord(control, "kj,")
+    assertEqual(corrected?.convertedWord, "лоб", "control: 'kj,' is corrected to 'лоб' without exceptions")
+
+    let detector = LayoutDetector()
+    detector.currentLayout = .english
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["kj"])
+    check(flushWord(detector, "kj,") == nil, "protecting 'kj' also leaves 'kj,' as typed (documented trade-off)")
+
+    let quoted = LayoutDetector()
+    quoted.currentLayout = .english
+    quoted.personalExceptions = PersonalExceptionsPolicy(words: ["ghbdsn"])
+    check(flushWord(quoted, "ghbdsn.") == nil, "protected word before a period is left as typed")
+    check(flushWord(quoted, "Ghbdsn,") == nil, "case variant before a comma is left as typed")
+}
+
+runSuite("PersonalExceptions: Layout-only prediction suppression") {
+    func desynchronizedDetector() -> LayoutDetector {
+        let detector = LayoutDetector()
+        detector.currentLayout = .english
+        detector.activeSourceSupportedLayouts = [.english]
+        detector.allowedLayouts = [.english, .ukrainian]
+        return detector
+    }
+    let control = flushWord(desynchronizedDetector(), "агента")
+    check(control != nil && control?.originalWord == control?.convertedWord && control?.shouldSwitchLayout == true, "control: Cyrillic captured under English is a layout-only switch")
+
+    let detector = desynchronizedDetector()
+    detector.personalExceptions = PersonalExceptionsPolicy(words: ["агента"])
+    check(flushWord(detector, "агента") == nil, "a protected word produces no layout-only switch")
+}
+
+runSuite("PersonalExceptions: Protected word does not vote toward a later switch") {
+    func detector(_ policy: PersonalExceptionsPolicy) -> LayoutDetector {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        detector.ukrainianFromVariant = .legacy
+        detector.personalExceptions = policy
+        return detector
+    }
+    let control = detector(.empty)
+    _ = flushWord(control, "фил")
+    check(flushWord(control, "ьу")?.shouldSwitchLayout == true, "control: two agreeing short words switch the layout")
+
+    let protected = detector(PersonalExceptionsPolicy(words: ["ше"]))
+    assertEqual(flushWord(protected, "фил")?.convertedWord, "ask", "first short word converts without switching")
+    check(flushWord(protected, "ше") == nil, "protected short word is left as typed")
+    let afterProtected = flushWord(protected, "ьу")
+    assertEqual(afterProtected?.originalWord, "ьу", "the sweep does not reach the protected word")
+    check(afterProtected?.shouldSwitchLayout == false, "the protected word resets pending switch confirmations")
+}
+
+runSuite("PersonalExceptions: Barrier at run start, middle, end and beside converted text") {
+    func sequence(_ policy: PersonalExceptionsPolicy, boundary: String = " ") -> [DetectionResult?] {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        detector.personalExceptions = policy
+        return ["філ", "ьу", "ьщку"].map { word in
+            detector.discardBuffer()
+            for char in word { detector.addCharacter(String(char)) }
+            return detector.flushBuffer(boundaryCharacter: boundary)
+        }
+    }
+
+    let control = sequence(.empty)
+    assertEqual(control[2]?.originalWord, "філ me ьщку", "control: the confirming word sweeps back over the run")
+
+    let start = sequence(PersonalExceptionsPolicy(words: ["філ"]))
+    assertEqual(start[1]?.convertedWord, "me", "run start protected: the short word still converts")
+    assertEqual(start[2]?.originalWord, "ьщку", "run start protected: the sweep stops before 'філ'")
+    assertEqual(start[2]?.convertedWord, "more")
+
+    let middle = sequence(PersonalExceptionsPolicy(words: ["ьу"]))
+    check(middle[1] == nil, "run middle protected: the protected word is left as typed")
+    assertEqual(middle[2]?.originalWord, "ьщку", "run middle protected: the sweep stops before 'ьу'")
+
+    let end = sequence(PersonalExceptionsPolicy(words: ["ьщку"]))
+    check(end[0] == nil, "run end protected: 'філ' stays as typed")
+    assertEqual(end[1]?.convertedWord, "me")
+    check(end[2] == nil, "run end protected: the protected word triggers no sweep")
+
+    // 'ьу' was converted to 'me' before the confirming word; protecting its on-screen
+    // spelling must stop the sweep from deleting and retyping it.
+    let display = sequence(PersonalExceptionsPolicy(words: ["me"]))
+    assertEqual(display[1]?.convertedWord, "me", "typed 'ьу' is not protected, so it converts")
+    assertEqual(display[2]?.originalWord, "ьщку", "the sweep stops before the converted text 'me'")
+    assertEqual(display[2]?.convertedWord, "more")
+
+    let newlineControl = sequence(.empty, boundary: "\n")
+    let newlineMiddle = sequence(PersonalExceptionsPolicy(words: ["ьу"]), boundary: "\n")
+    check(newlineMiddle[1] == nil, "newline boundary: protected word is left as typed")
+    check(!(newlineMiddle[2]?.originalWord.contains("ьу") ?? false), "newline boundary: the protected word is never in a replacement span")
+    check(newlineControl[2] != nil, "newline control: the confirming word still corrects")
+}
+
+runSuite("PersonalExceptions: Empty-policy parity") {
+    let words = ["філ", "ьу", "ьщку", "ghbdsn", "hj,jnf", "туче", "ьщку", "kj,", "агента"]
+    func results(_ policy: PersonalExceptionsPolicy) -> [String] {
+        let detector = LayoutDetector()
+        detector.currentLayout = .ukrainian
+        detector.personalExceptions = policy
+        return words.map { word in
+            guard let r = flushWord(detector, word) else { return "nil" }
+            return "\(r.originalWord)->\(r.convertedWord)|\(r.targetLayout.rawValue)|\(r.shouldSwitchLayout)"
+        }
+    }
+    assertEqual(results(.empty), results(PersonalExceptionsPolicy(words: ["unrelated"])), "an unrelated exception changes no detection")
 }
 
 // =============================================================================

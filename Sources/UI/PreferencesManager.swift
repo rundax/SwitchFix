@@ -23,7 +23,8 @@ public class PreferencesManager {
         static let revertHotkeyKeyCode = "SwitchFix_revertHotkeyKeyCode"
         static let revertHotkeyModifiers = "SwitchFix_revertHotkeyModifiers"
         static let enabledLayouts = "SwitchFix_enabledLayouts"
-        static let allowCyrillicToCyrillic = "SwitchFix_allowCyrillicToCyrillic"
+        static let lastCyrillicLayout = "SwitchFix_lastCyrillicLayout"
+        static let legacyAllowCyrillicToCyrillic = "SwitchFix_allowCyrillicToCyrillic"
     }
 
     public var enabledLayouts: Set<Layout> {
@@ -42,13 +43,53 @@ public class PreferencesManager {
         }
     }
 
-    public var allowCyrillicToCyrillic: Bool {
-        get { defaults.object(forKey: Keys.allowCyrillicToCyrillic) as? Bool ?? false }
+    /// The Cyrillic layout the user was last on. Latin text is only converted to this layout.
+    public var lastCyrillicLayout: Layout? {
+        get { defaults.string(forKey: Keys.lastCyrillicLayout).flatMap { Layout(rawValue: $0) }.flatMap { $0.isCyrillic ? $0 : nil } }
         set {
-            guard newValue != self.allowCyrillicToCyrillic else { return }
-            defaults.set(newValue, forKey: Keys.allowCyrillicToCyrillic)
+            guard let newValue, newValue.isCyrillic, newValue != lastCyrillicLayout else { return }
+            defaults.set(newValue.rawValue, forKey: Keys.lastCyrillicLayout)
+        }
+    }
+
+    /// Drops the removed Cyrillic-to-Cyrillic setting.
+    public func removeLegacySettings() {
+        defaults.removeObject(forKey: Keys.legacyAllowCyrillicToCyrillic)
+    }
+
+    public let exceptionsStore = PersonalExceptionsStore()
+
+    public var personalExceptionsPolicy: PersonalExceptionsPolicy {
+        exceptionsStore.loadPolicy()
+    }
+
+    /// A recoverable problem with the saved list, for a generic Settings message.
+    public var personalExceptionsLoadIssue: PersonalExceptionsLoadIssue? {
+        exceptionsStore.loadPolicyReportingIssue().issue
+    }
+
+    public func addPersonalException(_ candidate: String) -> AddExceptionResult {
+        let result = exceptionsStore.add(candidate: candidate)
+        if case .success = result {
             NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
         }
+        return result
+    }
+
+    @discardableResult
+    public func removePersonalException(_ word: String) -> PersonalExceptionsPolicy {
+        return removePersonalExceptions([word])
+    }
+
+    @discardableResult
+    public func removePersonalExceptions(_ words: Set<String>) -> PersonalExceptionsPolicy {
+        guard !words.isEmpty else { return exceptionsStore.loadPolicy() }
+        let previous = exceptionsStore.loadPolicy()
+        let policy = exceptionsStore.remove(words: words)
+        if policy != previous {
+            NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
+        }
+        return policy
     }
 
     public var isEnabled: Bool {

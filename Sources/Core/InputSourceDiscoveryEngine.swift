@@ -8,10 +8,13 @@ public struct InputSourceDiscoveryEngine {
         }
 
         var layouts = Set<Layout>()
+        let isAppleNative = provider.id.hasPrefix("com.apple.keylayout.")
 
         // Tier 1: ISO Languages from kTISPropertyInputSourceLanguages
         if let languages = provider.languages {
-            for lang in languages {
+            // Apple's native layouts list every language their script can write (Ukrainian also
+            // lists ru, be, bg, …); only the first entry is the language the layout is for.
+            for lang in isAppleNative ? Array(languages.prefix(1)) : languages {
                 let code = lang.prefix(2).lowercased()
                 if code == "uk" { layouts.insert(.ukrainian) }
                 if code == "ru" { layouts.insert(.russian) }
@@ -60,7 +63,6 @@ public struct InputSourceDiscoveryEngine {
             // Probe Option / AltGr state for third-party custom hybrid layouts (e.g., typography layouts).
             // Apple native layouts and single-language layouts provide secondary characters via Option
             // for convenience, which should not classify them as full hybrid layouts.
-            let isAppleNative = provider.id.hasPrefix("com.apple.keylayout.")
             let allowsOptionProbing = !isAppleNative && (provider.languages == nil || provider.languages?.isEmpty == true)
 
             if allowsOptionProbing {

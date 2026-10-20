@@ -23,13 +23,15 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 
 ## Features
 
-- **Automatic correction** — detects wrong-layout words on space/enter and corrects them instantly.
+- **Automatic correction** — detects wrong-layout words on space/enter; when a later word confirms the mistake, it can also correct preceding words in the same typing run.
+- **Personal exceptions** — protect names, abbreviations, and other words from automatic correction in Settings. Explicit hotkey and layout-switch corrections still work.
 - **Hotkey mode** — correct only when you press Ctrl+Shift+Space (configurable).
 - **Selection correction** — select text and press the hotkey to convert it.
 - **Permissions indicator** — shows the status of required macOS permissions in the app menu.
 - **Undo** — `Cmd+Z` within 5 seconds reverts the last correction.
 - **Revert hotkey** — `CapsLock` reverts the last correction (configurable).
-- **Three layouts** — English (US/ABC/British/Dvorak/Colemak), Ukrainian, and Russian.
+- **Three languages** — English (US/ABC/British/Dvorak/Colemak), Ukrainian, and Russian, with native macOS language metadata used to discover installed layouts.
+- **Safer layout pairing** — English converts to your most recently used Cyrillic layout; Ukrainian and Russian text are never converted into each other.
 - **Smart filtering** — skips password fields, URLs, emails, camelCase, mixed scripts.
 - **App blacklist** — disabled in terminals, IDEs, and code editors by default (toggle per app).
 - **Launch at Login** — optional auto-start.

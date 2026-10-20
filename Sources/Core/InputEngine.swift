@@ -293,7 +293,7 @@ public final class InputEngine {
         inputQueue.async { completion() }
     }
 
-    /// Drain all pipeline queues in order: inputQueue -> detectionQueue -> inputQueue -> correctionQueue.
+    /// Drain all pipeline queues in order: inputQueue -> detectionQueue -> inputQueue -> correctionQueue -> detectionQueue.
     /// This guarantees that any in-flight inputs, detection, and correction preparation/execution have settled.
     public func drainPipeline(completion: @escaping () -> Void) {
         inputQueue.async { [weak self] in
@@ -303,7 +303,7 @@ public final class InputEngine {
                 self.inputQueue.async { [weak self] in
                     guard let self else { completion(); return }
                     self.correctionQueue.async {
-                        completion()
+                        self.detectionQueue.async { completion() }
                     }
                 }
             }
@@ -410,6 +410,7 @@ public final class InputEngine {
             guard let self else { return }
             let startedAt = DispatchTime.now().uptimeNanoseconds
             let result: DetectionResult?
+            var commitJournal: (() -> Void)?
             if let customDetection = self.customDetection {
                 let configuration = self.detectionConfiguration.withLock { $0 }
                 if request.trigger == .automaticBoundary && configuration.personalExceptions.matches(rawToken: request.word) {
@@ -427,11 +428,15 @@ public final class InputEngine {
                 }
             } else {
                 let configuration = self.detectionConfiguration.withLock { $0 }
-                result = evaluateDetection(
-                    detector: self.detector,
-                    request: request,
-                    configuration: configuration
-                )
+                let staged = self.detector.stageJournalCorrection {
+                    evaluateDetection(
+                        detector: self.detector,
+                        request: request,
+                        configuration: configuration
+                    )
+                }
+                result = staged.0
+                commitJournal = staged.1
             }
             let duration = DispatchTime.now().uptimeNanoseconds &- startedAt
             if let result {
@@ -444,13 +449,14 @@ public final class InputEngine {
                 )
             }
             guard let result else { return }
+            let confirmation = commitJournal
             self.inputQueue.async {
-                self.prepareCorrection(result: result, request: request)
+                self.prepareCorrection(result: result, request: request, commitJournal: confirmation)
             }
         }
     }
 
-    private func prepareCorrection(result: DetectionResult, request: DetectionRequest) {
+    private func prepareCorrection(result: DetectionResult, request: DetectionRequest, commitJournal: (() -> Void)? = nil) {
         let latest = captureState.snapshot()
         let cancelReason: String?
         let plannedEdit = planCorrectionEdit(result: result, boundary: request.boundary)
@@ -507,10 +513,14 @@ public final class InputEngine {
                 SwitchFixLog.corrector.debug("emission skipped: state changed before apply chars=\(plan.originalText.count)")
                 return
             }
+            let emitted: Bool
             if let customEmission = self.customEmission {
-                _ = customEmission(plan)
+                emitted = customEmission(plan)
             } else {
-                _ = self.corrector.apply(plan, latestCaptureState: self.captureState.snapshot)
+                emitted = self.corrector.apply(plan, latestCaptureState: self.captureState.snapshot)
+            }
+            if emitted, let commitJournal {
+                self.detectionQueue.async { commitJournal() }
             }
         }
     }

@@ -43,6 +43,7 @@ public enum SelfChecks {
 
         print("--- SelfChecks: Validation catches schema, duplicate, leaking and label errors ---")
         testValidationCatchesErrors()
+        testActualInputChecksums()
 
         print("--- SelfChecks: UTF-16 caret versus grapheme handling ---")
         testCaretAndGraphemes()
@@ -282,6 +283,18 @@ public enum SelfChecks {
         let baseline = BaselineRecord(schemaVersion: 2, baselineVersion: "self-check", created: "", metadata: metadata, runnerChecks: [:], development: good, holdout: good, combined: good)
         check(BaselineGate.regressions(current: good, baseline: baseline).isEmpty, "An unchanged run passes the gate")
 
+        let empty = Scorer.score(trials: [], results: [])
+        check(BaselineGate.regressions(current: empty, baseline: baseline).map(\.trialID) == ["neg1", "pos1"], "Removed trial IDs fail the inventory gate")
+        let splitBaseline = BaselineRecord(schemaVersion: 2, baselineVersion: "split", created: "", metadata: metadata, runnerChecks: [:], development: good, holdout: empty, combined: good)
+        check(BaselineGate.regressions(current: empty, baseline: splitBaseline, split: "holdout").isEmpty, "Holdout gate must not require development IDs")
+        check(BaselineGate.regressions(current: empty, baseline: splitBaseline, split: "development").count == 2, "Development gate requires its own IDs")
+        check(BaselineGate.regressions(current: good, baseline: splitBaseline, split: "development").isEmpty, "Development gate ignores holdout inventory")
+        let unsupported = Scorer.score(trials: trials, results: trials.map {
+            TrialResult(trialID: $0.id, status: "unsupported", finalText: "", finalSourceID: "")
+        })
+        let unsupportedBaseline = BaselineRecord(schemaVersion: 2, baselineVersion: "unsupported", created: "", metadata: metadata, runnerChecks: [:], development: unsupported, holdout: empty, combined: unsupported)
+        check(BaselineGate.regressions(current: empty, baseline: unsupportedBaseline, split: "development").count == 2, "Removed unsupported IDs also fail inventory")
+
         let regressed = Scorer.score(trials: trials, results: [
             TrialResult(trialID: "pos1", finalText: "g ", finalSourceID: abc),
             TrialResult(trialID: "neg1", finalText: "ф ", finalSourceID: abc, actions: [replace])
@@ -362,7 +375,37 @@ public enum SelfChecks {
         writeCorpus([otherType], [], to: tempDir)
         check(validate().errors.contains { $0.contains("Missing layout table for \(abc)@40") }, "A keyboard type without its own table must fail, not borrow another")
 
-        check(CorpusValidator.verifyManifest(corpusDirectory: URL(fileURLWithPath: "Benchmarks/layout-corpus/v1")).isEmpty, "The frozen v1 manifest hashes must match its files")
+        check(CorpusValidator.verifyManifest(corpusDirectory: URL(fileURLWithPath: "Benchmarks/layout-corpus/v1"), tablesDirectory: tablesDir).isEmpty, "The frozen v1 manifest hashes must match its files")
+    }
+
+    private static func testActualInputChecksums() {
+        let fm = FileManager.default
+        let temp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: temp) }
+        do {
+            try fm.createDirectory(at: temp, withIntermediateDirectories: true)
+            let corpus = temp.appendingPathComponent("relocated-corpus")
+            let tables = temp.appendingPathComponent("relocated-tables")
+            try fm.copyItem(at: URL(fileURLWithPath: "Benchmarks/layout-corpus/v2"), to: corpus)
+            try fm.copyItem(at: tablesDir, to: tables)
+            check(CorpusValidator.verifyManifest(corpusDirectory: corpus, tablesDirectory: tables).isEmpty, "Relocated identical inputs verify without inferred roots")
+            let table = tables.appendingPathComponent("com.apple.keylayout.ABC@91.json")
+            var bytes = try Data(contentsOf: table)
+            bytes.append(Data("\n".utf8))
+            try bytes.write(to: table)
+            let validation = try CorpusValidator.validate(corpusDirectory: corpus, tablesDirectory: tables)
+            check(validation.errors.contains { $0.contains("hash mismatch") && $0.contains("ABC@91") }, "Validator hashes the actual supplied tables")
+            do {
+                try CorpusValidator.requireVerifiedInputs(corpusDirectory: corpus, tablesDirectory: tables)
+                check(false, "Run/record input preflight must reject modified tables")
+            } catch { check(true, "Run/record input preflight rejects modified tables") }
+            try fm.copyItem(at: table, to: tables.appendingPathComponent("extra.json"))
+            check(CorpusValidator.verifyManifest(corpusDirectory: corpus, tablesDirectory: tables).contains { $0.contains("does not list table") }, "Unmanifested replay tables fail preflight")
+            try fm.removeItem(at: table)
+            check(CorpusValidator.verifyManifest(corpusDirectory: corpus, tablesDirectory: tables).contains { $0.contains("missing file") }, "Missing manifest tables fail preflight")
+            try Data("changed".utf8).write(to: corpus.appendingPathComponent("development.jsonl"))
+            check(CorpusValidator.verifyManifest(corpusDirectory: corpus, tablesDirectory: tables).contains { $0.contains("hash mismatch") && $0.contains("development.jsonl") }, "Modified corpus bytes fail preflight")
+        } catch { check(false, "Checksum regression fixture: \(error)") }
     }
 
     private static func testCaretAndGraphemes() {

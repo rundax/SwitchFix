@@ -1563,7 +1563,15 @@ enum TypedKey {
     case backspace
 }
 
-func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant) -> [CorrectionPlan] {
+final class DetectionObserver: LayoutDetectorDelegate {
+    let onDetection: () -> Void
+    init(_ onDetection: @escaping () -> Void) { self.onDetection = onDetection }
+    func layoutDetector(_ detector: LayoutDetector, didDetectWrongLayout result: DetectionResult, boundaryCharacter: String?) {
+        onDetection()
+    }
+}
+
+func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant, failEmissionAt: Int = 0, rejectFirstDetection: Bool = false) -> [CorrectionPlan] {
     let context = InputContextSnapshot(
         epoch: 1,
         frontmostPID: 100,
@@ -1575,7 +1583,18 @@ func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant
     let store = CaptureStateStore(context: context, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
     let log = CorrectionPlanLog()
     let detector = LayoutDetector()
+    var didReject = false
     detector.preferredSourceIDProvider = { _ in nil }
+    let observer = DetectionObserver {
+        if rejectFirstDetection && !didReject {
+            didReject = true
+            // A newer physical event makes the pending request ineligible without
+            // changing the run retained by the input state machine.
+            _ = store.capture(timestamp: 0, kind: .character(""), keyCode: 0,
+                              flagsRawValue: 0, isAutorepeat: false, sourcePID: 1, sourceUserData: 0)
+        }
+    }
+    detector.delegate = observer
     let engine = InputEngine(
         captureState: store,
         initialContext: context,
@@ -1583,7 +1602,7 @@ func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant
         detector: detector,
         correctionEmission: { plan in
             log.add(plan)
-            return true
+            return log.all().count != failEmissionAt
         }
     )
     engine.updateDetectionConfiguration(
@@ -1621,6 +1640,7 @@ func typeOnUkrainianLayout(_ keys: [TypedKey], variant: UkrainianKeyboardVariant
             send(.delete)
         }
     }
+    withExtendedLifetime(observer) {}
     return log.all()
 }
 
@@ -1645,6 +1665,31 @@ runSuite("InputEngine: Run sweep deletes exactly what is on screen") {
     assertEqual(plans.last?.correctedText, "ask me more")
     assertEqual(plans.last?.replacementText, "ask me more ")
     assertEqual(plans.last?.deleteCount, 12)
+}
+
+runSuite("InputEngine: Failed or rejected corrections leave observed run text intact") {
+    let keys: [TypedKey] = [.text("філ"), .space, .text("ьу"), .space, .text("ьщку"), .space]
+    for reject in [false, true] {
+        let plans = typeOnUkrainianLayout(keys, variant: .standard,
+                                        failEmissionAt: reject ? 0 : 1, rejectFirstDetection: reject)
+        assertEqual(plans.count, reject ? 1 : 2, "exercise the intended cancellation/emission path")
+        assertEqual(plans.last?.originalText, "філ ьу ьщку", "undo must retain the actual, uncorrected screen text")
+        assertEqual(plans.last?.correctedText, "ask me more")
+        assertEqual(plans.last?.replacementText, "ask me more ")
+        assertEqual(plans.last?.deleteCount, 12)
+    }
+}
+
+runSuite("InputEngine: Failed sweep preserves earlier confirmed conversions only") {
+    let plans = typeOnUkrainianLayout(
+        [.text("філ"), .space, .text("ьу"), .space, .text("ьщку"), .space, .text("йгуиешщти"), .space],
+        variant: .standard, failEmissionAt: 2
+    )
+    assertEqual(plans.count, 3)
+    assertEqual(plans.last?.originalText, "філ me ьщку йгуиешщти", "failed sweep must not mark earlier words converted; confirmed 'me' stays converted")
+    assertEqual(plans.last?.correctedText, "ask me more questions")
+    assertEqual(plans.last?.replacementText, "ask me more questions ")
+    assertEqual(plans.last?.deleteCount, 22)
 }
 
 runSuite("InputEngine: Backspacing into a deferred word never deletes the text before it") {

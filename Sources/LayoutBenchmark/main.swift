@@ -210,6 +210,7 @@ func handleRun(_ options: Options) {
     }
 
     do {
+        try CorpusValidator.requireVerifiedInputs(corpusDirectory: corpusDir, tablesDirectory: tablesDir)
         let tables = try loadTables(from: tablesDir)
         let trials = try loadTrials(corpusDir: corpusDir, split: split)
         guard !trials.isEmpty else {
@@ -262,14 +263,14 @@ func handleRun(_ options: Options) {
                 print("Gate FAILED: baseline was recorded on layer '\(baseline.metadata.layer)' but current run is on layer '\(metadata.layer)'")
                 exit(2)
             }
-            let findings = BaselineGate.regressions(current: report, baseline: baseline)
+            let findings = BaselineGate.regressions(current: report, baseline: baseline, split: split)
             if !report.complete || !findings.isEmpty {
                 print("Gate FAILED against \(baselinePath):")
                 if !report.complete {
                     print("  - run is incomplete: \(report.errorTrials) errors, \(report.missingTrials) missing")
                 }
                 for finding in findings {
-                    print("  - \(finding.trialID): \(finding.baseline.rawValue) -> \(finding.current.rawValue)")
+                    print("  - \(finding.trialID): \(finding.baseline.rawValue) -> \(finding.current?.rawValue ?? "missing_trial")")
                 }
                 exit(2)
             }
@@ -318,6 +319,7 @@ func handleRecordBaseline(_ options: Options) {
     }
 
     do {
+        try CorpusValidator.requireVerifiedInputs(corpusDirectory: corpusDir, tablesDirectory: tablesDir)
         let tables = try loadTables(from: tablesDir)
         let devTrials = try loadTrials(corpusDir: corpusDir, split: "development")
         let holdoutTrials = try loadTrials(corpusDir: corpusDir, split: "holdout")

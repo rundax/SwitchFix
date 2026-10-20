@@ -218,6 +218,37 @@ public class LayoutDetector {
         return result
     }
 
+    /// Evaluate normally, but retain only observed text until the caller confirms emission.
+    /// The returned commit must run on the same serial queue as detection. Token identities
+    /// let late confirmations update surviving tokens without resurrecting an invalidated run.
+    func stageJournalCorrection(_ evaluate: () -> DetectionResult?) -> (DetectionResult?, () -> Void) {
+        let before = journal
+        let result = evaluate()
+        let proposed = journal
+        journal = proposed.map { token in
+            var observed = token
+            let previous = before.first { $0.id == token.id && $0.typed == token.typed && $0.boundary == token.boundary }
+            observed.display = previous?.display ?? token.typed
+            observed.convertedTo = previous?.convertedTo
+            return observed
+        }
+        let observed = journal
+        return (result, { [weak self] in
+            guard let self else { return }
+            for index in self.journal.indices {
+                let token = self.journal[index]
+                guard let baseline = observed.first(where: {
+                    $0.id == token.id && $0.typed == token.typed && $0.boundary == token.boundary
+                }), token.display == baseline.display, token.convertedTo == baseline.convertedTo,
+                let confirmed = proposed.first(where: {
+                    $0.id == token.id && $0.typed == token.typed && $0.boundary == token.boundary
+                }) else { continue }
+                self.journal[index].display = confirmed.display
+                self.journal[index].convertedTo = confirmed.convertedTo
+            }
+        })
+    }
+
     /// Called when backspace/delete is pressed — remove last character from buffer.
     public func deleteLastCharacter() {
         guard !wordBuffer.isEmpty else {

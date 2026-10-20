@@ -47,7 +47,7 @@ public enum CorpusValidator {
             return ValidationResult(passed: false, trialsCount: 0, splitsCount: 0, errors: ["Missing holdout.jsonl at \(holdoutURL.path)"])
         }
 
-        errors += verifyManifest(corpusDirectory: corpusDirectory)
+        errors += verifyManifest(corpusDirectory: corpusDirectory, tablesDirectory: tablesDirectory)
 
         let devTrials = try loadJSONL(from: devURL)
         let holdoutTrials = try loadJSONL(from: holdoutURL)
@@ -202,9 +202,9 @@ public enum CorpusValidator {
         )
     }
 
-    /// Every file listed in `manifest.json` must exist with its recorded SHA-256. Paths are
-    /// relative to the `Benchmarks` directory that holds `layout-corpus/<version>`.
-    static func verifyManifest(corpusDirectory: URL) -> [String] {
+    /// Resolve manifest version prefixes against the actual supplied input directories,
+    /// not an inferred repository root. Every consumed table must be listed and hashed.
+    static func verifyManifest(corpusDirectory: URL, tablesDirectory: URL) -> [String] {
         let manifestURL = corpusDirectory.appendingPathComponent("manifest.json")
         guard let data = try? Data(contentsOf: manifestURL) else {
             return ["Missing manifest.json at \(manifestURL.path)"]
@@ -212,10 +212,34 @@ public enum CorpusValidator {
         guard let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
             return ["Unreadable manifest.json at \(manifestURL.path)"]
         }
-        let root = corpusDirectory.deletingLastPathComponent().deletingLastPathComponent()
+        let corpusPrefix = "layout-corpus/\(manifest.corpusVersion)/"
+        let tablesPrefix = "layout-tables/\(manifest.tablesVersion)/"
         var errors: [String] = []
+        for name in ["development.jsonl", "holdout.jsonl"] where manifest.files[corpusPrefix + name] == nil {
+            errors.append("Manifest does not list corpus file \(name)")
+        }
+        let tableFiles = (try? FileManager.default.contentsOfDirectory(at: tablesDirectory, includingPropertiesForKeys: nil)) ?? []
+        for file in tableFiles where file.pathExtension == "json" && manifest.files[tablesPrefix + file.lastPathComponent] == nil {
+            errors.append("Manifest does not list table file \(file.lastPathComponent)")
+        }
         for (path, checksum) in manifest.files.sorted(by: { $0.key < $1.key }) {
-            guard let actual = try? ManifestGenerator.sha256(for: root.appendingPathComponent(path)) else {
+            let directory: URL
+            let name: String
+            if path.hasPrefix(corpusPrefix) {
+                directory = corpusDirectory
+                name = String(path.dropFirst(corpusPrefix.count))
+            } else if path.hasPrefix(tablesPrefix) {
+                directory = tablesDirectory
+                name = String(path.dropFirst(tablesPrefix.count))
+            } else {
+                errors.append("Unexpected manifest path \(path)")
+                continue
+            }
+            guard !name.isEmpty, !name.contains("/"), name != ".." else {
+                errors.append("Invalid manifest path \(path)")
+                continue
+            }
+            guard let actual = try? ManifestGenerator.sha256(for: directory.appendingPathComponent(name)) else {
                 errors.append("Manifest lists missing file \(path)")
                 continue
             }
@@ -224,6 +248,15 @@ public enum CorpusValidator {
             }
         }
         return errors
+    }
+
+    /// Checks the exact inputs consumed by run and record-baseline, without promoting
+    /// frozen-corpus quality warnings to errors.
+    static func requireVerifiedInputs(corpusDirectory: URL, tablesDirectory: URL) throws {
+        let errors = verifyManifest(corpusDirectory: corpusDirectory, tablesDirectory: tablesDirectory)
+        guard errors.isEmpty else {
+            throw NSError(domain: "LayoutBenchmark", code: 1, userInfo: [NSLocalizedDescriptionKey: errors.joined(separator: "\n")])
+        }
     }
 
     private static func loadJSONL(from url: URL) throws -> [Trial] {

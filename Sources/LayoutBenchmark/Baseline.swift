@@ -154,14 +154,21 @@ public enum BaselineGate {
     public struct Finding: Equatable, Sendable {
         public let trialID: String
         public let baseline: TrialOutcome
-        public let current: TrialOutcome
+        public let current: TrialOutcome?
     }
 
-    public static func regressions(current: BenchmarkScoreReport, baseline: BaselineRecord) -> [Finding] {
-        var baselineOutcomes = baseline.development.trialOutcomes
-        baselineOutcomes.merge(baseline.holdout.trialOutcomes) { first, _ in first }
-        return current.trialOutcomes.keys.sorted().compactMap { id in
-            guard let now = current.trialOutcomes[id] else { return nil }
+    public static func regressions(current: BenchmarkScoreReport, baseline: BaselineRecord, split: String = "all") -> [Finding] {
+        let baselineOutcomes: [String: TrialOutcome]
+        switch split {
+        case "development": baselineOutcomes = baseline.development.trialOutcomes
+        case "holdout": baselineOutcomes = baseline.holdout.trialOutcomes
+        case "all": baselineOutcomes = baseline.development.trialOutcomes.merging(baseline.holdout.trialOutcomes) { first, _ in first }
+        default: preconditionFailure("Unknown baseline split: \(split)")
+        }
+        return Set(current.trialOutcomes.keys).union(baselineOutcomes.keys).sorted().compactMap { id in
+            guard let now = current.trialOutcomes[id] else {
+                return Finding(trialID: id, baseline: baselineOutcomes[id]!, current: nil)
+            }
             guard let before = baselineOutcomes[id] else {
                 return now.isPassing ? nil : Finding(trialID: id, baseline: .unsupported, current: now)
             }

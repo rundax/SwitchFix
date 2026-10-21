@@ -131,6 +131,40 @@ defaults write com.switchfix.app SwitchFix_hotkeyModifiers -int $((262144+131072
 3. On a word boundary (space, enter, tab), the buffer is checked against alternative layout dictionaries (e.g. checking if an English typo forms a valid Ukrainian word).
 4. If a valid word is found in another layout, **TextCorrector** safely deletes the mistyped characters, switches your input layout, and retypes the correct word.
 
+## Debugging & Logs
+
+SwitchFix logs key decisions, keyboard monitoring events, dictionary lookups, layout switching, and corrections to macOS Unified Logging under the subsystem `com.switchfix`.
+
+To stream logs in real time from Terminal:
+
+```bash
+log stream --level debug --style compact --predicate 'subsystem == "com.switchfix"'
+```
+
+### Useful Variations
+
+- **Default verbosity (notices & errors only):**
+  ```bash
+  log stream --style compact --predicate 'subsystem == "com.switchfix"'
+  ```
+
+- **Alternative filter (process & message prefix):**
+  ```bash
+  log stream --style compact --predicate '(process == "SwitchFixApp" OR process == "SwitchFix") AND eventMessage CONTAINS "[SwitchFix]"'
+  ```
+
+- **View recent past logs (e.g., past 5 minutes):**
+  ```bash
+  log show --last 5m --style compact --predicate 'subsystem == "com.switchfix"'
+  ```
+
+- **Console.app:** Open Console.app and filter search by `subsystem:com.switchfix` or `[SwitchFix]`.
+
+> **Note for zsh users:** If your terminal returns `zsh:log:1: too many arguments` (because `log` is shadowed by zsh's shell builtin), invoke `/usr/bin/log` directly:
+> ```bash
+> /usr/bin/log stream --level debug --style compact --predicate 'subsystem == "com.switchfix"'
+> ```
+
 ## License
 
 MIT

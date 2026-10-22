@@ -38,6 +38,14 @@ func getKeyString(for key: UInt16) -> String {
     }
 }
 
+/// The text Settings and setup guidance show for a shortcut.
+func getShortcutString(keyCode: UInt16, modifiers: UInt64, modifierTap: ModifierTap?) -> String {
+    if let modifierTap {
+        return modifierTap.displayName
+    }
+    return getModifierString(for: modifiers) + getKeyString(for: keyCode)
+}
+
 class SettingsViewModel: ObservableObject {
     @Published var launchAtLogin: Bool = PreferencesManager.shared.launchAtLogin
     @Published var launchAtLoginMessage: String? = PreferencesManager.shared.launchAtLoginMessage
@@ -60,6 +68,25 @@ class SettingsViewModel: ObservableObject {
     
     @Published var revertHotkeyModifiers: UInt64 = PreferencesManager.shared.revertHotkeyModifiers {
         didSet { PreferencesManager.shared.revertHotkeyModifiers = revertHotkeyModifiers }
+    }
+
+    @Published var hotkeyModifierTap: ModifierTap? = PreferencesManager.shared.hotkeyModifierTap {
+        didSet { PreferencesManager.shared.hotkeyModifierTap = hotkeyModifierTap }
+    }
+
+    @Published var revertHotkeyModifierTap: ModifierTap? = PreferencesManager.shared.revertHotkeyModifierTap {
+        didSet { PreferencesManager.shared.revertHotkeyModifierTap = revertHotkeyModifierTap }
+    }
+
+    var shortcutsOverlap: Bool {
+        HotkeyConfiguration(
+            hotkeyKeyCode: hotkeyKeyCode,
+            hotkeyModifiers: hotkeyModifiers,
+            revertHotkeyKeyCode: revertHotkeyKeyCode,
+            revertHotkeyModifiers: revertHotkeyModifiers,
+            hotkeyModifierTap: hotkeyModifierTap,
+            revertHotkeyModifierTap: revertHotkeyModifierTap
+        ).shortcutsOverlap
     }
 
     @Published var sourcesByLayout: [KeyboardLayout: [DiscoveredInputSourceDescriptor]] = [:]
@@ -141,33 +168,51 @@ class SettingsViewModel: ObservableObject {
     }
 }
 
+enum RecordedShortcut {
+    case combination(keyCode: UInt16, modifiers: UInt64)
+    case modifierTap(ModifierTap)
+}
+
 class RecorderState: ObservableObject {
     @Published var isRecording = false
     private var monitor: Any?
+    private var modifierTaps = ModifierTapDetector()
 
     deinit {
         stop()
     }
 
-    func start(completion: @escaping (UInt16, UInt64) -> Void) {
+    func start(completion: @escaping (RecordedShortcut) -> Void) {
         stop()
         isRecording = true
+        modifierTaps = ModifierTapDetector()
 
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self = self else { return event }
 
             // Handle CapsLock specifically
             if event.type == .flagsChanged && event.keyCode == 57 {
-                completion(57, 0)
+                completion(.combination(keyCode: 57, modifiers: 0))
                 self.stop()
                 return nil
             }
-            // Pass through other modifier transitions so app-wide modifier state stays intact.
             if event.type == .flagsChanged {
+                // A modifier pressed and released on its own records a tap, recognized by the
+                // same rules the keyboard monitor applies.
+                if let keyCode = self.modifierTaps.modifierChanged(
+                    keyCode: event.keyCode,
+                    flagsRawValue: UInt64(event.modifierFlags.rawValue),
+                    timestamp: DispatchTime.now().uptimeNanoseconds
+                ), let tap = ModifierTap(keyCode: keyCode) {
+                    completion(.modifierTap(tap))
+                    self.stop()
+                }
+                // Pass modifier transitions through so app-wide modifier state stays intact.
                 return event
             }
 
             if event.type == .keyDown {
+                self.modifierTaps.cancel()
                 if event.keyCode == 53 { // ESC
                     self.stop()
                     return nil
@@ -179,7 +224,7 @@ class RecorderState: ObservableObject {
                 if event.modifierFlags.contains(.option) { flags |= CGEventFlags.maskAlternate.rawValue }
                 if event.modifierFlags.contains(.shift) { flags |= CGEventFlags.maskShift.rawValue }
                 
-                completion(event.keyCode, flags)
+                completion(.combination(keyCode: event.keyCode, modifiers: flags))
                 self.stop()
                 return nil
             }
@@ -200,25 +245,49 @@ class RecorderState: ObservableObject {
 struct HotkeyRecorder: View {
     @Binding var keyCode: UInt16
     @Binding var modifiers: UInt64
+    @Binding var modifierTap: ModifierTap?
     @StateObject private var recorder = RecorderState()
     
     var displayText: String {
         if recorder.isRecording {
-            return "Type Key..."
+            return "Type Keys or Tap a Modifier..."
         }
-        let modStr = getModifierString(for: modifiers)
-        let keyStr = getKeyString(for: keyCode)
-        return modStr + keyStr
+        return getShortcutString(keyCode: keyCode, modifiers: modifiers, modifierTap: modifierTap)
     }
     
     var body: some View {
+        HStack(spacing: 8) {
+            recordButton
+            if let tap = modifierTap, !recorder.isRecording {
+                Picker("Side", selection: Binding(
+                    get: { tap.side },
+                    set: { modifierTap = ModifierTap(key: tap.key, side: $0) }
+                )) {
+                    Text("Left").tag(ModifierTap.Side.left)
+                    Text("Right").tag(ModifierTap.Side.right)
+                    Text("Either Side").tag(ModifierTap.Side.either)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Which \(tap.key.rawValue) key triggers the shortcut")
+            }
+        }
+    }
+
+    private var recordButton: some View {
         Button(action: {
             if recorder.isRecording {
                 recorder.stop()
             } else {
-                recorder.start { newKey, newMods in
-                    self.keyCode = newKey
-                    self.modifiers = newMods
+                recorder.start { recorded in
+                    switch recorded {
+                    case .combination(let newKey, let newMods):
+                        self.keyCode = newKey
+                        self.modifiers = newMods
+                        self.modifierTap = nil
+                    case .modifierTap(let tap):
+                        self.modifierTap = tap
+                    }
                 }
             }
         }) {
@@ -744,7 +813,8 @@ struct SettingsView: View {
                                 .gridColumnAlignment(.trailing)
                             HotkeyRecorder(
                                 keyCode: $model.hotkeyKeyCode,
-                                modifiers: $model.hotkeyModifiers
+                                modifiers: $model.hotkeyModifiers,
+                                modifierTap: $model.hotkeyModifierTap
                             )
                         }
                         
@@ -752,14 +822,22 @@ struct SettingsView: View {
                             Text("Revert Last:")
                             HotkeyRecorder(
                                 keyCode: $model.revertHotkeyKeyCode,
-                                modifiers: $model.revertHotkeyModifiers
+                                modifiers: $model.revertHotkeyModifiers,
+                                modifierTap: $model.revertHotkeyModifierTap
                             )
                         }
                     }
                     
-                    Text("Recommended: Set 'Revert Last' to Caps Lock to avoid conflicts.")
+                    Text("Recommended: Set 'Revert Last' to Caps Lock to avoid conflicts. To use a single modifier such as Control, click a shortcut and tap the key on its own.")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if model.shortcutsOverlap {
+                        Text("Both shortcuts use the same keys. Trigger Correction takes precedence.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
                 }
 
                 Divider()

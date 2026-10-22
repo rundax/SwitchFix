@@ -588,7 +588,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotkeyKeyCode: PreferencesManager.shared.hotkeyKeyCode,
             hotkeyModifiers: PreferencesManager.shared.hotkeyModifiers,
             revertHotkeyKeyCode: PreferencesManager.shared.revertHotkeyKeyCode,
-            revertHotkeyModifiers: PreferencesManager.shared.revertHotkeyModifiers
+            revertHotkeyModifiers: PreferencesManager.shared.revertHotkeyModifiers,
+            hotkeyModifierTap: PreferencesManager.shared.hotkeyModifierTap,
+            revertHotkeyModifierTap: PreferencesManager.shared.revertHotkeyModifierTap
         )
     }
 

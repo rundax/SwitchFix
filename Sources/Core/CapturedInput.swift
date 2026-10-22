@@ -104,17 +104,24 @@ public struct HotkeyConfiguration: Equatable {
     public let hotkeyModifiers: UInt64
     public let revertHotkeyKeyCode: UInt16
     public let revertHotkeyModifiers: UInt64
+    /// When set, a lone tap of this modifier replaces the key combination above.
+    public let hotkeyModifierTap: ModifierTap?
+    public let revertHotkeyModifierTap: ModifierTap?
 
     public init(
         hotkeyKeyCode: UInt16 = 49,
         hotkeyModifiers: UInt64,
         revertHotkeyKeyCode: UInt16 = 57,
-        revertHotkeyModifiers: UInt64 = 0
+        revertHotkeyModifiers: UInt64 = 0,
+        hotkeyModifierTap: ModifierTap? = nil,
+        revertHotkeyModifierTap: ModifierTap? = nil
     ) {
         self.hotkeyKeyCode = hotkeyKeyCode
         self.hotkeyModifiers = hotkeyModifiers
         self.revertHotkeyKeyCode = revertHotkeyKeyCode
         self.revertHotkeyModifiers = revertHotkeyModifiers
+        self.hotkeyModifierTap = hotkeyModifierTap
+        self.revertHotkeyModifierTap = revertHotkeyModifierTap
     }
 }
 

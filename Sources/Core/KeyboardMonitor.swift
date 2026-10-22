@@ -39,6 +39,8 @@ public final class KeyboardMonitor {
     private var diagnosticRingIndex = 0
     // Tap-callback-thread confined: tracks caps lock toggle state for edge detection.
     private var lastAlphaShiftState: Bool?
+    // Tap-callback-thread confined: a lone modifier press awaiting its release (#16).
+    private var modifierTaps = ModifierTapDetector()
     private var tapResetCount: UInt64 = 0
     private var consecutiveTapResets = 0
 
@@ -98,7 +100,9 @@ public final class KeyboardMonitor {
                 hotkeyKeyCode: newValue,
                 hotkeyModifiers: old.hotkeyModifiers,
                 revertHotkeyKeyCode: old.revertHotkeyKeyCode,
-                revertHotkeyModifiers: old.revertHotkeyModifiers
+                revertHotkeyModifiers: old.revertHotkeyModifiers,
+                hotkeyModifierTap: old.hotkeyModifierTap,
+                revertHotkeyModifierTap: old.revertHotkeyModifierTap
             ))
         }
     }
@@ -111,7 +115,9 @@ public final class KeyboardMonitor {
                 hotkeyKeyCode: old.hotkeyKeyCode,
                 hotkeyModifiers: newValue,
                 revertHotkeyKeyCode: old.revertHotkeyKeyCode,
-                revertHotkeyModifiers: old.revertHotkeyModifiers
+                revertHotkeyModifiers: old.revertHotkeyModifiers,
+                hotkeyModifierTap: old.hotkeyModifierTap,
+                revertHotkeyModifierTap: old.revertHotkeyModifierTap
             ))
         }
     }
@@ -124,7 +130,9 @@ public final class KeyboardMonitor {
                 hotkeyKeyCode: old.hotkeyKeyCode,
                 hotkeyModifiers: old.hotkeyModifiers,
                 revertHotkeyKeyCode: newValue,
-                revertHotkeyModifiers: old.revertHotkeyModifiers
+                revertHotkeyModifiers: old.revertHotkeyModifiers,
+                hotkeyModifierTap: old.hotkeyModifierTap,
+                revertHotkeyModifierTap: old.revertHotkeyModifierTap
             ))
         }
     }
@@ -137,7 +145,9 @@ public final class KeyboardMonitor {
                 hotkeyKeyCode: old.hotkeyKeyCode,
                 hotkeyModifiers: old.hotkeyModifiers,
                 revertHotkeyKeyCode: old.revertHotkeyKeyCode,
-                revertHotkeyModifiers: newValue
+                revertHotkeyModifiers: newValue,
+                hotkeyModifierTap: old.hotkeyModifierTap,
+                revertHotkeyModifierTap: old.revertHotkeyModifierTap
             ))
         }
     }
@@ -255,6 +265,7 @@ public final class KeyboardMonitor {
 
     private func handleTapReset(event: CGEvent) {
         tapResetCount &+= 1
+        modifierTaps.cancel()
         SwitchFixLog.monitor.notice("tap disabled by system, re-enabling (count=\(tapResetCount))")
         let input = captureState.capture(
             timestamp: event.timestamp,
@@ -286,7 +297,7 @@ public final class KeyboardMonitor {
 
         let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
-        guard let kind = classify(type: type, event: event, keyCode: keyCode, flags: flags) else {
+        guard let kind = classify(type: type, event: event, keyCode: keyCode, flags: flags, timestamp: startedAt) else {
             return
         }
 
@@ -318,15 +329,28 @@ public final class KeyboardMonitor {
         type: CGEventType,
         event: CGEvent,
         keyCode: UInt16,
-        flags: CGEventFlags
+        flags: CGEventFlags,
+        timestamp: UInt64
     ) -> CapturedInput.Kind? {
+        if type != .flagsChanged {
+            // A key or click in between makes it a chord or a click, not a tap.
+            modifierTaps.cancel()
+        }
         if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
             return .focusMayChange
         }
 
         let hotkeys = captureState.hotkeyConfiguration()
         if type == .flagsChanged {
+            if let tapped = modifierTaps.modifierChanged(
+                keyCode: keyCode,
+                flagsRawValue: flags.rawValue,
+                timestamp: timestamp
+            ) {
+                return KeyboardMonitor.hotkeyKind(forModifierTap: tapped, hotkeys: hotkeys)
+            }
             guard keyCode == KeyboardMonitor.capsLockKeyCode,
+                  hotkeys.revertHotkeyModifierTap == nil,
                   isMatchingHotkey(
                     keyCode: keyCode,
                     flags: flags,
@@ -346,7 +370,8 @@ public final class KeyboardMonitor {
 
         guard type == .keyDown else { return nil }
 
-        if isMatchingHotkey(
+        // A configured modifier tap replaces the saved key combination.
+        if hotkeys.hotkeyModifierTap == nil, isMatchingHotkey(
             keyCode: keyCode,
             flags: flags,
             configuredKeyCode: hotkeys.hotkeyKeyCode,
@@ -354,7 +379,7 @@ public final class KeyboardMonitor {
         ) {
             return .hotkey
         }
-        if isMatchingHotkey(
+        if hotkeys.revertHotkeyModifierTap == nil, isMatchingHotkey(
             keyCode: keyCode,
             flags: flags,
             configuredKeyCode: hotkeys.revertHotkeyKeyCode,
@@ -397,6 +422,24 @@ public final class KeyboardMonitor {
             return .navigation
         }
         return KeyboardMonitor.capturedKind(forText: text)
+    }
+
+    /// Test seam: classify one event as the tap callback does, at `timestamp` nanoseconds.
+    public func classifyForTesting(_ event: CGEvent, timestamp: UInt64) -> CapturedInput.Kind? {
+        let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+        return classify(type: event.type, event: event, keyCode: keyCode, flags: event.flags, timestamp: timestamp)
+    }
+
+    /// The shortcut a completed lone modifier tap triggers. The correction shortcut wins when both
+    /// shortcuts use the same tap, as it does for identical key combinations.
+    public static func hotkeyKind(forModifierTap keyCode: UInt16, hotkeys: HotkeyConfiguration) -> CapturedInput.Kind? {
+        if hotkeys.hotkeyModifierTap?.matches(keyCode: keyCode) == true {
+            return .hotkey
+        }
+        if hotkeys.revertHotkeyModifierTap?.matches(keyCode: keyCode) == true {
+            return .revertHotkey
+        }
+        return nil
     }
 
     /// Classifies the text a key produced as part of a word or as a word boundary.

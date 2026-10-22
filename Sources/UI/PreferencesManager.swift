@@ -22,6 +22,8 @@ public class PreferencesManager {
         static let hotkeyModifiers = "SwitchFix_hotkeyModifiers"
         static let revertHotkeyKeyCode = "SwitchFix_revertHotkeyKeyCode"
         static let revertHotkeyModifiers = "SwitchFix_revertHotkeyModifiers"
+        static let hotkeyModifierTap = "SwitchFix_hotkeyModifierTap"
+        static let revertHotkeyModifierTap = "SwitchFix_revertHotkeyModifierTap"
         static let enabledLayouts = "SwitchFix_enabledLayouts"
         static let lastCyrillicLayout = "SwitchFix_lastCyrillicLayout"
         static let legacyAllowCyrillicToCyrillic = "SwitchFix_allowCyrillicToCyrillic"
@@ -212,6 +214,39 @@ public class PreferencesManager {
             defaults.set(newValue, forKey: Keys.revertHotkeyModifiers)
             NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
         }
+    }
+
+    /// A lone modifier tap that replaces the correction key combination, such as `control.left`.
+    /// Saved combinations stay untouched, so clearing the tap restores them.
+    public var hotkeyModifierTap: ModifierTap? {
+        get { modifierTap(forKey: Keys.hotkeyModifierTap, keyCode: hotkeyKeyCode, modifiers: hotkeyModifiers) }
+        set { setModifierTap(newValue, forKey: Keys.hotkeyModifierTap, current: hotkeyModifierTap) }
+    }
+
+    /// A lone modifier tap that replaces the revert key combination.
+    public var revertHotkeyModifierTap: ModifierTap? {
+        get {
+            modifierTap(
+                forKey: Keys.revertHotkeyModifierTap,
+                keyCode: revertHotkeyKeyCode,
+                modifiers: revertHotkeyModifiers
+            )
+        }
+        set { setModifierTap(newValue, forKey: Keys.revertHotkeyModifierTap, current: revertHotkeyModifierTap) }
+    }
+
+    private func modifierTap(forKey key: String, keyCode: UInt16, modifiers: UInt64) -> ModifierTap? {
+        if let stored = defaults.string(forKey: key) {
+            return ModifierTap(storageValue: stored)
+        }
+        return ModifierTap(legacyKeyCode: keyCode, modifiers: modifiers)
+    }
+
+    private func setModifierTap(_ tap: ModifierTap?, forKey key: String, current: ModifierTap?) {
+        guard tap != current else { return }
+        // An empty value records "no tap", which also overrides a legacy modifier key code.
+        defaults.set(tap?.storageValue ?? "", forKey: key)
+        NotificationCenter.default.post(name: .preferencesDidChange, object: nil)
     }
 
     private init() {}

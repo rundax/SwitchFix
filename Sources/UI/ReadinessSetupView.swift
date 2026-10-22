@@ -29,7 +29,11 @@ public struct ReadinessSetupView: View {
             return "Select Russian, press the keys for hello, then press Space. SwitchFix should replace the Russian text with hello."
         case .hotkey:
             let preferences = PreferencesManager.shared
-            let shortcut = getModifierString(for: preferences.hotkeyModifiers) + getKeyString(for: preferences.hotkeyKeyCode)
+            let shortcut = getShortcutString(
+                keyCode: preferences.hotkeyKeyCode,
+                modifiers: preferences.hotkeyModifiers,
+                modifierTap: preferences.hotkeyModifierTap
+            )
             return "Select Russian, press the keys for hello, then press \(shortcut). SwitchFix should replace the Russian text with hello."
         case .layoutSwitch:
             return "Select Russian, press the keys for hello, then switch the input source to English. SwitchFix should replace the Russian text with hello."

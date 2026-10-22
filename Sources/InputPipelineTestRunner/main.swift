@@ -762,6 +762,130 @@ run("focus requests never regress to an older epoch (#15)") {
     check(observed.allSatisfy { $0 == 7 }, "a late request for an older epoch must not replace the live query, got \(observed)")
 }
 
+run("lone modifier taps (#16)") {
+    let ms: UInt64 = 1_000_000
+    let control = CGEventFlags.maskControl.rawValue
+    let shift = CGEventFlags.maskShift.rawValue
+    let leftControl: UInt64 = 0x0001, rightControl: UInt64 = 0x2000, leftShift: UInt64 = 0x0002
+
+    var detector = ModifierTapDetector()
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0) == nil, "a press alone does not fire")
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 120 * ms) == 59, "left Control pressed and released alone is a tap")
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 130 * ms) == nil, "a repeated release does not fire twice")
+
+    _ = detector.modifierChanged(keyCode: 62, flagsRawValue: control | rightControl, timestamp: 0)
+    _ = detector.modifierChanged(keyCode: 62, flagsRawValue: control | rightControl, timestamp: 10 * ms)
+    check(detector.modifierChanged(keyCode: 62, flagsRawValue: 0, timestamp: 100 * ms) == 62, "a repeated press event keeps the tap; right Control taps")
+
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: ModifierTapDetector.maximumHoldNanoseconds) == 59, "a release at the hold limit still taps")
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: ModifierTapDetector.maximumHoldNanoseconds + 1) == nil, "a long hold is not a tap")
+
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0)
+    _ = detector.modifierChanged(keyCode: 56, flagsRawValue: control | shift | leftControl | leftShift, timestamp: 10 * ms)
+    _ = detector.modifierChanged(keyCode: 56, flagsRawValue: control | leftControl, timestamp: 20 * ms)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 30 * ms) == nil, "Control+Shift is a chord, not a tap")
+
+    _ = detector.modifierChanged(keyCode: 56, flagsRawValue: shift | leftShift, timestamp: 0)
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | shift | leftControl | leftShift, timestamp: 10 * ms)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: shift | leftShift, timestamp: 20 * ms) == nil, "Control pressed while Shift is held does not tap")
+    _ = detector.modifierChanged(keyCode: 56, flagsRawValue: 0, timestamp: 30 * ms)
+
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0)
+    _ = detector.modifierChanged(keyCode: 62, flagsRawValue: control | leftControl | rightControl, timestamp: 10 * ms)
+    _ = detector.modifierChanged(keyCode: 62, flagsRawValue: control | leftControl, timestamp: 20 * ms)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 30 * ms) == nil, "both Control keys together are not a tap")
+
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0)
+    detector.cancel()
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 50 * ms) == nil, "a key, click or tap reset in between cancels the tap")
+
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control | leftControl, timestamp: 0)
+    _ = detector.modifierChanged(keyCode: 57, flagsRawValue: control | leftControl | CGEventFlags.maskAlphaShift.rawValue, timestamp: 10 * ms)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 20 * ms) == nil, "Caps Lock in between cancels the tap")
+
+    _ = detector.modifierChanged(keyCode: 59, flagsRawValue: control, timestamp: 0)
+    check(detector.modifierChanged(keyCode: 59, flagsRawValue: 0, timestamp: 50 * ms) == 59, "events without side bits still tap")
+
+    let either = ModifierTap(key: .control, side: .either)
+    let left = ModifierTap(key: .control, side: .left)
+    check(either.matches(keyCode: 59) && either.matches(keyCode: 62) && !either.matches(keyCode: 58), "either side matches both Control keys only")
+    check(left.matches(keyCode: 59) && !left.matches(keyCode: 62), "a side-specific tap matches only that key")
+    check(ModifierTap(keyCode: 61) == ModifierTap(key: .option, side: .right), "physical key codes map to key and side")
+    check(ModifierTap(keyCode: 57) == nil && ModifierTap(keyCode: 63) == nil, "Caps Lock and Fn are not tap keys")
+    for tap in ModifierTap.Key.allCases.flatMap({ key in ModifierTap.Side.allCases.map { ModifierTap(key: key, side: $0) } }) {
+        check(ModifierTap(storageValue: tap.storageValue) == tap, "\(tap.storageValue) must round-trip")
+    }
+    check(ModifierTap(storageValue: "") == nil && ModifierTap(storageValue: "control") == nil && ModifierTap(storageValue: "ctrl.left") == nil, "invalid stored values are ignored")
+    check(ModifierTap(legacyKeyCode: 59, modifiers: 0) == left, "a saved key code 59 without modifiers keeps working as a left Control tap")
+    check(ModifierTap(legacyKeyCode: 59, modifiers: shift) == nil && ModifierTap(legacyKeyCode: 49, modifiers: 0) == nil, "real key combinations are not taps")
+
+    let tapped = HotkeyConfiguration(
+        hotkeyModifiers: control | shift,
+        hotkeyModifierTap: either,
+        revertHotkeyModifierTap: ModifierTap(key: .option, side: .right)
+    )
+    check(KeyboardMonitor.hotkeyKind(forModifierTap: 62, hotkeys: tapped) == .hotkey, "a Control tap triggers correction")
+    check(KeyboardMonitor.hotkeyKind(forModifierTap: 61, hotkeys: tapped) == .revertHotkey, "a right Option tap triggers revert")
+    check(KeyboardMonitor.hotkeyKind(forModifierTap: 58, hotkeys: tapped) == nil, "an unconfigured tap does nothing")
+    let same = HotkeyConfiguration(hotkeyModifiers: 0, hotkeyModifierTap: left, revertHotkeyModifierTap: either)
+    check(KeyboardMonitor.hotkeyKind(forModifierTap: 59, hotkeys: same) == .hotkey, "correction wins when both shortcuts use the tap")
+    check(same.shortcutsOverlap, "overlapping taps are reported")
+    check(!HotkeyConfiguration(hotkeyModifiers: 0, hotkeyModifierTap: left, revertHotkeyModifierTap: ModifierTap(key: .control, side: .right)).shortcutsOverlap, "different sides do not overlap")
+    check(HotkeyConfiguration(hotkeyKeyCode: 49, hotkeyModifiers: control, revertHotkeyKeyCode: 49, revertHotkeyModifiers: control).shortcutsOverlap, "identical combinations overlap")
+    check(!HotkeyConfiguration(hotkeyModifiers: control | shift).shortcutsOverlap, "the default shortcuts do not overlap")
+}
+
+run("keyboard monitor classifies modifier taps without breaking combinations (#16)") {
+    func flagsEvent(_ keyCode: UInt16, _ flags: UInt64) -> CGEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true)!
+        event.type = .flagsChanged
+        event.flags = CGEventFlags(rawValue: flags)
+        return event
+    }
+    func keyEvent(_ keyCode: UInt16, _ flags: CGEventFlags) -> CGEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true)!
+        event.flags = flags
+        return event
+    }
+    let ms: UInt64 = 1_000_000
+    let control = CGEventFlags.maskControl.rawValue
+    let pressControl = control | 0x0001
+    let store = CaptureStateStore(context: context(), hotkeys: HotkeyConfiguration(
+        hotkeyKeyCode: 49,
+        hotkeyModifiers: CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue,
+        hotkeyModifierTap: ModifierTap(key: .control, side: .either)
+    ))
+    let monitor = KeyboardMonitor(captureState: store)
+
+    check(monitor.classifyForTesting(flagsEvent(59, pressControl), timestamp: 0) == nil, "pressing Control alone produces no input")
+    check(monitor.classifyForTesting(flagsEvent(59, 0), timestamp: 80 * ms) == .hotkey, "releasing it triggers the correction hotkey")
+
+    _ = monitor.classifyForTesting(flagsEvent(59, pressControl), timestamp: 0)
+    check(monitor.classifyForTesting(keyEvent(8, .maskControl), timestamp: 10 * ms) == .navigation, "Ctrl+C stays a normal shortcut")
+    check(monitor.classifyForTesting(flagsEvent(59, 0), timestamp: 20 * ms) == nil, "Control released after Ctrl+C does not correct")
+
+    _ = monitor.classifyForTesting(flagsEvent(59, pressControl), timestamp: 0)
+    let click = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero, mouseButton: .left)!
+    check(monitor.classifyForTesting(click, timestamp: 10 * ms) == .focusMayChange, "a Control-click is still a click")
+    check(monitor.classifyForTesting(flagsEvent(59, 0), timestamp: 20 * ms) == nil, "Control released after a click does not correct")
+
+    check(
+        monitor.classifyForTesting(keyEvent(49, [.maskControl, .maskShift]), timestamp: 0) != .hotkey,
+        "a configured tap replaces the saved key combination"
+    )
+
+    store.updateHotkeys(HotkeyConfiguration(
+        hotkeyModifiers: CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue,
+        revertHotkeyModifierTap: ModifierTap(key: .option, side: .right)
+    ))
+    check(monitor.classifyForTesting(keyEvent(49, [.maskControl, .maskShift]), timestamp: 0) == .hotkey, "without a tap the combination works as before")
+    check(monitor.classifyForTesting(flagsEvent(57, CGEventFlags.maskAlphaShift.rawValue), timestamp: 0) == nil, "Caps Lock no longer reverts once a revert tap replaces it")
+    _ = monitor.classifyForTesting(flagsEvent(61, CGEventFlags.maskAlternate.rawValue | 0x0040), timestamp: 0)
+    check(monitor.classifyForTesting(flagsEvent(61, 0), timestamp: 50 * ms) == .revertHotkey, "a right Option tap reverts")
+}
+
 run("layout-switch selection source script") {
     check(
         ScriptAnalyzer.containsScript(for: .english, in: "hello [test]"),

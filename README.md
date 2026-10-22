@@ -25,7 +25,7 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 
 - **Automatic correction** — detects wrong-layout words on space/enter; when a later word confirms the mistake, it can also correct preceding words in the same typing run.
 - **Personal exceptions** — protect names, abbreviations, and other words from automatic correction in Settings. Explicit hotkey and layout-switch corrections still work.
-- **Hotkey mode** — correct only when you press Ctrl+Shift+Space (configurable).
+- **Hotkey mode** — correct only when you press Ctrl+Shift+Space (configurable), or a single modifier tap such as Control.
 - **Selection correction** — select text and press the hotkey to convert it.
 - **Permissions indicator** — shows the status of required macOS permissions in the app menu.
 - **Undo** — `Cmd+Z` within 5 seconds reverts the last correction.
@@ -122,7 +122,15 @@ defaults write com.switchfix.app SwitchFix_revertHotkeyModifiers -int 0
 # Correction hotkey: Ctrl+Shift+Space
 defaults write com.switchfix.app SwitchFix_hotkeyKeyCode -int 49
 defaults write com.switchfix.app SwitchFix_hotkeyModifiers -int $((262144+131072))
+
+# Correction hotkey: a lone tap of the left Control key. Use control, option, shift or command
+# with left, right or either. The tap replaces the key combination above while it is set.
+defaults write com.switchfix.app SwitchFix_hotkeyModifierTap -string control.left
+# Back to the key combination:
+defaults write com.switchfix.app SwitchFix_hotkeyModifierTap -string ""
 ```
+
+`SwitchFix_revertHotkeyModifierTap` does the same for the revert shortcut. Restart SwitchFix after changing values from Terminal.
 
 ## How It Works
 

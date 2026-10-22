@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Languages whose spelling data the probe asks macOS for, by enabling their layouts.
+  PROBE_LANGUAGES: he ar hi cs lt sl el pl hu ro fi nb
+
 jobs:
   spelling-data:
     name: Spelling data (${{ matrix.runner }}, ${{ matrix.trigger }})
@@ -21,8 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-26]
-        trigger: [layout, layout-and-language]
+        runner: [macos-26]
+        trigger: [layout]
 
     steps:
       - name: Checkout code
@@ -36,22 +40,22 @@ jobs:
           sw_vers
           defaults read -g AppleLanguages || true
           ls /System/Library/AssetsV2/com_apple_MobileAsset_LinguisticData 2>/dev/null || echo "no LinguisticData assets"
-          .build/release/SpellCheckerSpike control uk bg pl ru
+          .build/release/SpellCheckerSpike control $PROBE_LANGUAGES ru
 
-      - name: Enable the Ukrainian and Bulgarian layouts
-        run: .build/release/SpellCheckerSpike enable-layouts uk bg
+      - name: Enable the probed layouts
+        run: .build/release/SpellCheckerSpike enable-layouts $PROBE_LANGUAGES
 
-      - name: Add Ukrainian and Bulgarian as preferred languages
+      - name: Add the probed languages as preferred languages
         if: matrix.trigger == 'layout-and-language'
-        run: defaults write -g AppleLanguages -array en-US uk-UA bg-BG
+        run: defaults write -g AppleLanguages -array en-US $PROBE_LANGUAGES
 
       - name: Poll for 25 minutes
         run: |
           for round in $(seq 1 50); do
             assets=$(find /System/Library/AssetsV2/com_apple_MobileAsset_LinguisticData* -maxdepth 3 -name 'Spelling-*.bundle' 2>/dev/null | sed 's#.*/Spelling-##; s#\.bundle##' | sort | tr '\n' ' ')
-            control=$(.build/release/SpellCheckerSpike control uk bg)
+            control=$(.build/release/SpellCheckerSpike control $PROBE_LANGUAGES)
             echo "$(date -u +%H:%M:%S) $control assets: ${assets:-none}"
-            case "$control" in *"uk=100.0%"*|*"bg=100.0%"*) ;; *) echo "both dictionaries real"; break ;; esac
+            case "$control" in *"=100.0%"*) ;; *) echo "all probed dictionaries real"; break ;; esac
             sleep 30
           done
 

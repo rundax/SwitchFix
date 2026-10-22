@@ -27,10 +27,11 @@ Never offer for words typed in secure fields, excluded apps, or tokens the detec
 
 ## Presentation: unobtrusive and focus-safe
 
-- **Suggestion chip.** A small non-activating `NSPanel` (`.nonactivatingPanel`, `.hudWindow` look, `becomesKeyOnlyIfNeeded`) under the menu bar icon: `Keep “vnc” as typed?  [Keep]  [×]`. It never takes keyboard focus, so typing continues uninterrupted. It fades after 6 seconds.
+- **Suggestion chip at the caret (default, owner decision 2026-10-22).** A small non-activating `NSPanel` (`.nonactivatingPanel`, `.hudWindow` look, `becomesKeyOnlyIfNeeded`) placed just below the word it is about: `Keep “vnc” as typed?  [Keep]  [×]`. It never takes keyboard focus, so typing continues uninterrupted. It fades after 6 seconds, and moves out of the way if typing reaches it.
+- **Caret position.** Read the focused element's `kAXSelectedTextRangeAttribute` and pass it to `kAXBoundsForRangeParameterizedAttribute` (0.05 s timeout, off the main thread, as the existing focus queries do). This reads a position only, never text; plan 02's ban on new Accessibility reads is lifted for this position query by the owner's decision. Never query in secure fields or excluded apps.
+- **Menu bar anchor.** Settings → Suggestions → *Show suggestions: Next to the cursor / Under the menu bar icon*. The menu bar anchor is also the automatic fallback when the app reports no usable bounds (common in Electron apps and some browsers: missing, zero-sized, or off-screen rectangles).
 - **Menu bar dot.** While a suggestion is pending, the "Ab" icon shows a small dot. The menu gains the same action at the top. The pending suggestion expires 10 minutes after the event (plan 02's candidate lifetime) or on the next successful correction, permission loss, or secure field. It is not cleared on unknown focus, because the click on the chip or menu itself produces unknown focus.
 - **One at a time.** A newer suggestion replaces an older one. **Not now** suppresses that word for the session. **Settings → Suggest additions to my dictionary** turns the feature off (default on).
-- **Caret-anchored chip (phase 3, optional).** Placing the chip at the caret needs `kAXBoundsForRangeParameterizedAttribute`, a new Accessibility query that plan 02 rules out, and Electron apps and browsers often report poor bounds. Keep the menu-bar anchor as the default.
 
 ## Data model
 
@@ -44,7 +45,7 @@ Never offer for words typed in secure fields, excluded apps, or tokens the detec
 | --- | --- | --- |
 | 1 | Plan 02 slice 4 as written: typed `UndoOutcome`, receipt, candidate lifecycle with an injected clock, menu action | Plan 02 slice 4 tests |
 | 2 | `SuggestionCenter` (Core, pure): consumes typed outcome events (`automaticReverted`, `manualFixedDeclinedWord`, `wordDeletedAndRetyped`) and emits at most one `Suggestion` with expiry; thresholds and session suppression | Deterministic event sequences, expiry, suppression, privacy (no logging) |
-| 3 | `SuggestionChipController` (UI): non-activating panel anchored to the status item, icon dot, menu item, Settings toggle | Manual: typing continues while the chip is visible; VoiceOver reaches the buttons |
+| 3 | `SuggestionChipController` (UI): non-activating panel anchored at the caret with menu-bar fallback, caret-bounds query in `AccessibilityFocusCoordinator`, icon dot, menu item, Settings anchor choice and toggle | Bounds validation (empty, zero-sized, off-screen → fallback); manual in TextEdit, Safari, Chrome, an Electron app: typing continues while the chip is visible; VoiceOver reaches the buttons |
 | 4 | Personal corrections store, detector integration (forced result before dictionary lookup, after safety gates), Settings tab "Always correct" | Store tests as for exceptions; pipeline tests that exceptions and security win; benchmark corpus v3 personalized profile |
 | 5 | Implicit delete-and-retype signals in `InputStateMachine` (track the last fully deleted token and the next flushed token across one layout change) | State-machine sequences, including partial deletes that must not count |
 
@@ -59,7 +60,7 @@ Settings renames **Personal Exceptions** to **Personal Dictionary**, with two li
 
 ## Owner decisions needed
 
-1. **Anchor**: chip under the menu bar icon (recommended, no new Accessibility reads) or at the caret.
-2. **Showing the word** in the transient chip and menu (needed to decide; departs from plan 02's chrome rule).
+1. ~~Anchor~~ **Decided 2026-10-22:** next to the cursor by default; Settings can switch to the menu bar icon.
+2. **Showing the word** in the transient chip and menu. Everything stays on this Mac; the remaining exposure is that the chip is visible to screen sharing, screen recording, and other apps with Accessibility access, exactly like the word already on screen. Recommended: show it.
 3. **Implicit signals** (delete-and-retype) with a threshold of 2 per session, or explicit signals only.
 4. **Always correct list** as a new persistent store (recommended) or only "keep as typed".

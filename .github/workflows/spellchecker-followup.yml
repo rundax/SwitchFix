@@ -14,19 +14,20 @@ permissions:
   contents: read
 
 env:
-  # Languages whose spelling data the probe asks macOS for, by enabling their layouts.
-  PROBE_LANGUAGES: he ar hi cs lt sl el pl hu ro fi nb
+  # Every language the spike report measures; enabling a layout installs its spelling data.
+  PROBE_LANGUAGES: uk ru bg el he ar hi de fr es it pt_PT pl cs tr sv nl hu ro fi da nb lt sl vi
 
 jobs:
   spelling-data:
-    name: Spelling data (${{ matrix.runner }}, ${{ matrix.trigger }})
+    # Earlier pushes of this job showed that enabling a layout alone makes macOS install its
+    # spelling data within a minute; this run measures every language with its data installed.
+    name: Spelling data installed (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-26]
-        trigger: [layout]
+        runner: [macos-14, macos-26]
 
     steps:
       - name: Checkout code
@@ -37,34 +38,50 @@ jobs:
 
       - name: Before
         run: |
-          sw_vers
-          defaults read -g AppleLanguages || true
-          ls /System/Library/AssetsV2/com_apple_MobileAsset_LinguisticData 2>/dev/null || echo "no LinguisticData assets"
-          .build/release/SpellCheckerSpike control $PROBE_LANGUAGES ru
+          mkdir -p spike-results
+          sw_vers | tee spike-results/environment.txt
+          .build/release/SpellCheckerSpike control $PROBE_LANGUAGES | tee spike-results/control-before.txt
 
-      - name: Enable the probed layouts
-        run: .build/release/SpellCheckerSpike enable-layouts $PROBE_LANGUAGES
+      - name: Enable every measured layout
+        run: .build/release/SpellCheckerSpike enable-layouts $PROBE_LANGUAGES | tee spike-results/enable.txt
 
-      - name: Add the probed languages as preferred languages
-        if: matrix.trigger == 'layout-and-language'
-        run: defaults write -g AppleLanguages -array en-US $PROBE_LANGUAGES
-
-      - name: Poll for 25 minutes
+      - name: Wait up to 10 minutes for the spelling data
         run: |
-          for round in $(seq 1 50); do
+          for round in $(seq 1 20); do
             assets=$(find /System/Library/AssetsV2/com_apple_MobileAsset_LinguisticData* -maxdepth 3 -name 'Spelling-*.bundle' 2>/dev/null | sed 's#.*/Spelling-##; s#\.bundle##' | sort | tr '\n' ' ')
             control=$(.build/release/SpellCheckerSpike control $PROBE_LANGUAGES)
-            echo "$(date -u +%H:%M:%S) $control assets: ${assets:-none}"
+            echo "$(date -u +%H:%M:%S) $control assets: ${assets:-none}" | tee -a spike-results/poll.txt
             case "$control" in *"=100.0%"*) ;; *) echo "all probed dictionaries real"; break ;; esac
             sleep 30
           done
 
-      - name: Asset daemon log
-        if: always()
+      - name: Measure with the spelling data installed
+        run: .build/release/SpellCheckerSpike report --output spike-results/report.md
+
+      - name: Benchmark corpus v2 with the system spell checker
         run: |
-          log show --last 40m --style compact \
-            --predicate 'process == "mobileassetd" OR process == "AppleSpell" OR subsystem CONTAINS "MobileAsset"' 2>/dev/null \
-            | grep -i -E 'lingu|spell' | tail -60 || true
+          for split in development holdout; do
+            set +e
+            swift run -c release LayoutBenchmark run \
+              --adapter switchfix \
+              --split "$split" \
+              --profile boundary-layout-only \
+              --corpus Benchmarks/layout-corpus/v2 \
+              --dictionary-backend system \
+              --baseline Benchmarks/baselines/v2/corpus-v2/baseline.json \
+              --output "spike-results/system-$split" > "spike-results/system-$split.log" 2>&1
+            status=$?
+            set -e
+            echo "system $split exit=$status" | tee -a spike-results/gates.txt
+          done
+
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spelling-data-installed-${{ matrix.runner }}
+          path: spike-results/
+          if-no-files-found: ignore
 
   swift-6-4-build:
     name: App build with Swift 6.4 (${{ matrix.ref }})

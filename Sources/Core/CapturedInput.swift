@@ -295,6 +295,19 @@ public final class CaptureStateStore {
         }
     }
 
+    /// The live context while it still needs a focus query of its own: the same application with
+    /// focus not known to be editable. `resolveFocus` discards results for older epochs, so a
+    /// context replaced while a query was in flight would otherwise stay unresolved (#15).
+    public func contextAwaitingFocus(frontmostPID: pid_t) -> InputContextSnapshot? {
+        state.withLock { value in
+            guard value.context.frontmostPID == frontmostPID,
+                  value.context.secureFocus != .notSecure else {
+                return nil
+            }
+            return value.context
+        }
+    }
+
     public func capture(
         timestamp: UInt64,
         kind: CapturedInput.Kind,

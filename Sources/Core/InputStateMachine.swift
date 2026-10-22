@@ -82,13 +82,17 @@ public struct InputStateMachine {
 
     public mutating func updateContext(_ context: InputContextSnapshot) -> [InputStateCommand] {
         let changed = self.context != context
+        // In the same application the caret has not moved, so a word already in progress stays on
+        // screen and only its tail would be buffered under the new context.
+        let wordInProgress = self.context.frontmostPID == context.frontmostPID &&
+            (isInvalidUntilBoundary || !currentBuffer.isEmpty || untrackedFragment != nil)
         self.context = context
         guard changed else { return [] }
         currentBuffer = ""
         run = []
         untrackedFragment = nil
         untrackedDeleteCount = 0
-        isInvalidUntilBoundary = false
+        isInvalidUntilBoundary = wordInProgress
         return [.invalidate(.contextChanged)]
     }
 
@@ -174,7 +178,7 @@ public struct InputStateMachine {
         case .delete:
             guard canBuffer(input.context) else {
                 untrackedDeleteCount = 0
-                return invalidateForContext(input.context)
+                return invalidateForContext(input.context, untilBoundary: true)
             }
             if isInvalidUntilBoundary {
                 // Still contiguous with the caret: forget the last recorded character, if any.
@@ -217,7 +221,10 @@ public struct InputStateMachine {
         case .character(let text):
             guard canBuffer(input.context) else {
                 untrackedDeleteCount = 0
-                return invalidateForContext(input.context)
+                // The keystroke reached the app untracked (e.g. typed before focus resolved), so
+                // the rest of this word is a fragment: correcting it would keep the first letter
+                // and rewrite only the tail (`ghbdtn` -> `gпривет`, #15).
+                return invalidateForContext(input.context, untilBoundary: true)
             }
             guard !isInvalidUntilBoundary else {
                 if let fragment = untrackedFragment {
@@ -241,7 +248,7 @@ public struct InputStateMachine {
             untrackedDeleteCount = 0
             untrackedFragment = nil
             guard canBuffer(input.context) else {
-                return invalidateForContext(input.context)
+                return invalidateForContext(input.context, untilBoundary: false)
             }
             if let flushedWord {
                 commit(RunToken(id: input.sequence, text: flushedWord, boundary: boundary, isAnchored: true))
@@ -272,8 +279,11 @@ public struct InputStateMachine {
         preferences.isEnabled && context.appAllowed && context.secureFocus == .notSecure
     }
 
-    private mutating func invalidateForContext(_ context: InputContextSnapshot) -> [InputStateCommand] {
-        invalidate(untilBoundary: false)
+    private mutating func invalidateForContext(
+        _ context: InputContextSnapshot,
+        untilBoundary: Bool
+    ) -> [InputStateCommand] {
+        invalidate(untilBoundary: untilBoundary)
         if !preferences.isEnabled { return [.invalidate(.disabled)] }
         if !context.appAllowed { return [.invalidate(.disallowedApplication)] }
         if context.secureFocus == .secure { return [.invalidate(.secureFocus)] }

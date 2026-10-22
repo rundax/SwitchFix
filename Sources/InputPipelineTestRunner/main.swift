@@ -655,6 +655,113 @@ run("secure focus fails closed") {
     }
 }
 
+run("manual layout switch re-resolves focus for the live epoch (#15)") {
+    let pid: pid_t = 100
+    let store = CaptureStateStore(context: context(epoch: 1, pid: pid), hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    // Globe keyDown is captured as navigation: focus becomes unknown at epoch E.
+    let globe = store.capture(
+        timestamp: 1, kind: .navigation, keyCode: 179, flagsRawValue: 0,
+        isAutorepeat: false, sourcePID: 1, sourceUserData: 0
+    )
+    check(globe.context.secureFocus == .unknown && globe.context.epoch == 2, "the switch key leaves focus unknown at a new epoch")
+    // The input source notification replaces the context (E+1) and inherits the unknown focus.
+    let switched = store.replaceContext(
+        frontmostPID: pid, appAllowed: true, layout: .russian,
+        inputSourceID: "com.test.russian", secureFocus: globe.context.secureFocus
+    )
+    check(store.resolveFocus(.notSecure, frontmostPID: pid, epoch: globe.context.epoch) == nil, "the result for E is discarded as stale")
+    check(store.contextAwaitingFocus(frontmostPID: pid)?.epoch == switched.epoch, "the live epoch still awaits focus, so it is queried again")
+    check(store.contextAwaitingFocus(frontmostPID: pid + 1) == nil, "another application's result does not re-query this one")
+
+    guard let resolved = store.resolveFocus(.notSecure, frontmostPID: pid, epoch: switched.epoch) else {
+        check(false, "a result for the live epoch must apply")
+        return
+    }
+    check(store.contextAwaitingFocus(frontmostPID: pid) == nil, "resolved focus needs no further query")
+    var machine = automaticMachine(switched)
+    _ = machine.updateContext(resolved)
+    var sequence: UInt64 = 10
+    type("ghbdtn", into: &machine, from: &sequence, context: resolved)
+    let flushed = press(.boundary(" "), into: &machine, from: &sequence, context: resolved)
+    check(flushed.contains { if case .flush(word: "ghbdtn", _, _, _) = $0 { return true }; return false }, "the fresh result restores buffering")
+
+    // Fail closed: an inherited secure focus is re-queried too, and never buffers meanwhile.
+    let secure = store.resolveFocus(.secure, frontmostPID: pid, epoch: switched.epoch)
+    check(secure?.secureFocus == .secure, "secure focus resolves for the live epoch")
+    let back = store.replaceContext(
+        frontmostPID: pid, appAllowed: true, layout: .english,
+        inputSourceID: "com.test.english", secureFocus: .secure
+    )
+    check(store.contextAwaitingFocus(frontmostPID: pid)?.epoch == back.epoch, "inherited secure focus is re-queried as well")
+    var secureMachine = automaticMachine(back)
+    type("ghbdtn", into: &secureMachine, from: &sequence, context: back)
+    check(secureMachine.currentBuffer.isEmpty, "inherited secure focus must not buffer before re-resolution")
+}
+
+run("keystrokes typed before focus resolves never reach correction as a fragment (#15)") {
+    let unknown = context(epoch: 2, focus: .unknown)
+    let resolved = context(epoch: 2, focus: .notSecure)
+    var machine = automaticMachine(unknown)
+    var sequence: UInt64 = 0
+    type("g", into: &machine, from: &sequence, context: unknown)
+    check(machine.isInvalidUntilBoundary, "an untracked keystroke taints the word in progress")
+    _ = machine.updateContext(resolved)
+    check(machine.isInvalidUntilBoundary, "focus resolving in the same application keeps the taint")
+    type("hbdtn", into: &machine, from: &sequence, context: resolved)
+    check(machine.currentBuffer.isEmpty, "the tail of the word must not be buffered")
+    let hotkey = press(.hotkey, into: &machine, from: &sequence, context: resolved)
+    check(hotkey == [.requestManualCorrection(word: nil, sequence: sequence, context: resolved)], "the hotkey must not correct the tail (ghbdtn -> gпривет)")
+    _ = press(.boundary(" "), into: &machine, from: &sequence, context: resolved)
+    type("ghbdtn", into: &machine, from: &sequence, context: resolved)
+    let flushed = press(.boundary(" "), into: &machine, from: &sequence, context: resolved)
+    check(flushed.contains { if case .flush(word: "ghbdtn", _, _, _) = $0 { return true }; return false }, "the next word is judged normally")
+
+    machine = automaticMachine(unknown)
+    _ = press(.delete, into: &machine, from: &sequence, context: unknown)
+    _ = machine.updateContext(resolved)
+    check(machine.isInvalidUntilBoundary, "an untracked delete taints the word in progress too")
+
+    machine = automaticMachine(unknown)
+    type("g", into: &machine, from: &sequence, context: unknown)
+    let otherApp = context(epoch: 3, pid: 101)
+    _ = machine.updateContext(otherApp)
+    check(!machine.isInvalidUntilBoundary, "switching applications starts a fresh word")
+    type("abc", into: &machine, from: &sequence, context: otherApp)
+    check(machine.currentBuffer == "abc", "the first word in the other application buffers")
+
+    machine = automaticMachine(resolved)
+    type("ghb", into: &machine, from: &sequence, context: resolved)
+    let relayout = context(epoch: 3, layout: .russian, sourceID: "com.test.russian")
+    _ = machine.updateContext(relayout)
+    type("dtn", into: &machine, from: &sequence, context: relayout)
+    check(machine.currentBuffer.isEmpty, "a context change mid-word in the same application must not buffer the tail")
+}
+
+run("focus requests never regress to an older epoch (#15)") {
+    let pid = ProcessInfo.processInfo.processIdentifier
+    let lock = NSLock()
+    var epochs: [UInt64] = []
+    let coordinator = AccessibilityFocusCoordinator(
+        onFocusInvalidated: { _ in nil },
+        onResolved: { resolution in
+            lock.lock()
+            epochs.append(resolution.epoch)
+            lock.unlock()
+        }
+    )
+    coordinator.observeApplication(pid: pid, epoch: 5)
+    coordinator.focusMayChange(pid: pid, epoch: 7)
+    // Delivered late for an epoch the source change already replaced.
+    coordinator.focusMayChange(pid: pid, epoch: 6)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+    coordinator.stop()
+    lock.lock()
+    let observed = epochs
+    lock.unlock()
+    check(!observed.isEmpty, "the live focus query must resolve")
+    check(observed.allSatisfy { $0 == 7 }, "a late request for an older epoch must not replace the live query, got \(observed)")
+}
+
 run("layout-switch selection source script") {
     check(
         ScriptAnalyzer.containsScript(for: .english, in: "hello [test]"),

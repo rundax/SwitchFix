@@ -393,6 +393,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 fromVariant: fromVariant,
                 toVariant: toVariant
             )
+            // The switch key (e.g. Globe) is captured as navigation and leaves focus unknown.
+            requestFocusIfUnresolved(context)
         }
         refreshRuntimeReadiness()
     }
@@ -426,6 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // first, so the generated context carries the correction it completes into the new epoch.
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
         inputEngine?.handleGeneratedLayoutContext(context)
+        requestFocusIfUnresolved(context)
         refreshRuntimeReadiness()
     }
 
@@ -475,6 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             secureFocus: current.secureFocus
         )
         inputEngine?.updateContext(context)
+        requestFocusIfUnresolved(context)
         refreshRuntimeReadiness()
     }
 
@@ -510,6 +514,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             secureFocus: .unknown
         )
         inputEngine?.updateContext(context)
+        requestFocusIfUnresolved(context)
     }
 
     private func publishFocusResolution(_ resolution: AccessibilityFocusResolution) {
@@ -525,11 +530,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             frontmostPID: resolution.pid,
             epoch: resolution.epoch
         ) else {
+            // The context changed while this query was in flight. Ask again for the live epoch
+            // rather than leaving buffering paused until the next click (#15).
+            if let live = state.contextAwaitingFocus(frontmostPID: resolution.pid),
+               live.epoch > resolution.epoch {
+                focusCoordinator?.focusMayChange(pid: live.frontmostPID, epoch: live.epoch)
+            }
             return
         }
         SwitchFixLog.app.debug("focus resolved pid=\(resolution.pid) state=\(String(describing: secureFocus))")
         inputEngine?.updateContext(context)
         refreshRuntimeReadiness()
+    }
+
+    /// Every context replacement starts a new epoch, and a focus result for an older epoch is
+    /// discarded. A context published without resolved focus therefore needs its own query (#15).
+    private func requestFocusIfUnresolved(_ context: InputContextSnapshot) {
+        guard context.secureFocus != .notSecure else { return }
+        focusCoordinator?.focusMayChange(pid: context.frontmostPID, epoch: context.epoch)
     }
 
     private func updateDetectionConfiguration(allowedLayouts: Set<Layout>) {

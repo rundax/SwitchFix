@@ -205,7 +205,9 @@ public final class AccessibilityFocusCoordinator {
 
     public func focusMayChange(pid: pid_t, epoch: UInt64) {
         runOnMain { [weak self] in
-            guard let self, self.observedPID == pid else { return }
+            // Epochs only grow. A request delivered late for an older epoch must not replace the
+            // query for the live one: its result would be discarded as stale (#15).
+            guard let self, self.observedPID == pid, epoch >= self.observedEpoch else { return }
             self.observedEpoch = epoch
             self.unknownFocusRetryCount = 0
             self.scheduleQuery(pid: pid, epoch: epoch, delay: 0.025)

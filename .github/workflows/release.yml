@@ -33,6 +33,9 @@ jobs:
           swift run -c release InputPipelineTestRunner
           swift run -c release TestRunner
 
+      - name: Check dictionary bundle packaging for flat and nested layouts
+        run: scripts/test-dictionary-bundle.sh
+
       - name: Determine architecture label
         run: |
           ARCH="$(uname -m)"
@@ -64,6 +67,8 @@ jobs:
           chmod +x scripts/build-app.sh
           scripts/build-app.sh
           codesign --verify --deep --strict dist/SwitchFix.app
+          # Load every dictionary through the packaged app's own resource lookup (#14).
+          dist/SwitchFix.app/Contents/MacOS/SwitchFixApp --verify-dictionaries
           SIGNATURE="$(codesign -dv --verbose=4 dist/SwitchFix.app 2>&1)"
           TEAM="$(printf '%s\n' "$SIGNATURE" | sed -n 's/^TeamIdentifier=//p')"
           FLAGS="$(printf '%s\n' "$SIGNATURE" | sed -n 's/^CodeDirectory .* flags=\([^ ]*\) .*/\1/p')"

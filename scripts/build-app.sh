@@ -7,6 +7,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/.build"
 APP_NAME="SwitchFix"
 APP_BUNDLE="$PROJECT_DIR/dist/$APP_NAME.app"
+DICTIONARY_LANGUAGES=(en_US ru_RU uk_UA)
+
+# shellcheck source=lib/dictionary-bundle.sh
+source "$SCRIPT_DIR/lib/dictionary-bundle.sh"
 
 compile_bin_if_needed() {
     local lang="$1"
@@ -27,9 +31,9 @@ compile_bin_if_needed() {
     fi
 }
 
-compile_bin_if_needed "en_US"
-compile_bin_if_needed "ru_RU"
-compile_bin_if_needed "uk_UA"
+for lang in "${DICTIONARY_LANGUAGES[@]}"; do
+    compile_bin_if_needed "$lang"
+done
 
 echo "Building $APP_NAME in release mode..."
 cd "$PROJECT_DIR"
@@ -114,15 +118,15 @@ if [ -d "$PRODUCTS_DIR/SwitchFix_Dictionary.bundle" ]; then
     echo "Copied dictionary bundle to Contents/Resources/."
 
     DICT_BUNDLE="$APP_BUNDLE/Contents/Resources/SwitchFix_Dictionary.bundle"
-    for lang in en_US ru_RU uk_UA; do
-        BIN_PATH="$PROJECT_DIR/.build/dictionary-bin/${lang}.bin"
-        if [ -f "$BIN_PATH" ]; then
-            cp "$BIN_PATH" "$DICT_BUNDLE/"
-        fi
-        # Production uses mmap binaries only; text resources are test-tool fallback inputs.
-        rm -f "$DICT_BUNDLE/${lang}.txt"
-    done
-    echo "Copied compiled dictionary binaries and removed text fallbacks."
+    install_dictionary_binaries "$DICT_BUNDLE" "$PROJECT_DIR/.build/dictionary-bin" "${DICTIONARY_LANGUAGES[@]}"
+    verify_dictionary_bundle "$DICT_BUNDLE" "${DICTIONARY_LANGUAGES[@]}" || {
+        echo "ERROR: the dictionary bundle is not usable; SwitchFix would correct nothing." >&2
+        exit 1
+    }
+    echo "Copied compiled dictionary binaries to $(dictionary_resource_dir "$DICT_BUNDLE") and removed text fallbacks."
+else
+    echo "ERROR: SwitchFix_Dictionary.bundle not found in $PRODUCTS_DIR" >&2
+    exit 1
 fi
 
 # Code sign

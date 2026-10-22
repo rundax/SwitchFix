@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - "spike/system-spellchecker"
+    paths-ignore:
+      - "docs/**"
+      - ".github/workflows/spellchecker-followup.yml"
 
 permissions:
   contents: read

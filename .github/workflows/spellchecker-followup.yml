@@ -1,0 +1,98 @@
+name: Spell Checker Follow-up
+
+# Plan 05a follow-ups on hosted runners, which start without downloaded spelling data:
+# - does macOS install a language's spelling data once its keyboard layout is enabled?
+# - does the v0.0.13 build find its dictionaries with Swift 6.4 (#14)?
+on:
+  push:
+    branches:
+      - "spike/system-spellchecker"
+    paths:
+      - ".github/workflows/spellchecker-followup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  spelling-data:
+    name: Spelling data (${{ matrix.runner }}, ${{ matrix.trigger }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-26]
+        trigger: [layout, layout-and-language]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build the spike
+        run: swift build -c release --product SpellCheckerSpike
+
+      - name: Before
+        run: |
+          sw_vers
+          defaults read -g AppleLanguages || true
+          ls /System/Library/AssetsV2/com_apple_MobileAsset_LinguisticData 2>/dev/null || echo "no LinguisticData assets"
+          .build/release/SpellCheckerSpike control uk bg pl ru
+
+      - name: Enable the Ukrainian and Bulgarian layouts
+        run: .build/release/SpellCheckerSpike enable-layouts uk bg
+
+      - name: Add Ukrainian and Bulgarian as preferred languages
+        if: matrix.trigger == 'layout-and-language'
+        run: defaults write -g AppleLanguages -array en-US uk-UA bg-BG
+
+      - name: Poll for 25 minutes
+        run: |
+          for round in $(seq 1 50); do
+            assets=$(find /System/Library/AssetsV2/com_apple_MobileAsset_LinguisticData* -maxdepth 3 -name 'Spelling-*.bundle' 2>/dev/null | sed 's#.*/Spelling-##; s#\.bundle##' | sort | tr '\n' ' ')
+            control=$(.build/release/SpellCheckerSpike control uk bg)
+            echo "$(date -u +%H:%M:%S) $control assets: ${assets:-none}"
+            case "$control" in *"uk=100.0%"*|*"bg=100.0%"*) ;; *) echo "both dictionaries real"; break ;; esac
+            sleep 30
+          done
+
+      - name: Asset daemon log
+        if: always()
+        run: |
+          log show --last 40m --style compact \
+            --predicate 'process == "mobileassetd" OR process == "AppleSpell" OR subsystem CONTAINS "MobileAsset"' 2>/dev/null \
+            | grep -i -E 'lingu|spell' | tail -60 || true
+
+  swift-6-4-build:
+    name: App build with Swift 6.4 (${{ matrix.ref }})
+    runs-on: xcode-27
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [master, fix/v0.0.13-bug-reports]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+
+      - name: Show toolchain environment
+        run: |
+          swift --version
+          sw_vers
+
+      - name: Build the app
+        env:
+          SWITCHFIX_CODESIGN_IDENTITY: "-"
+        run: bash scripts/build-app.sh
+
+      - name: Show the dictionary bundle layout
+        run: find dist/SwitchFix.app/Contents/Resources/SwitchFix_Dictionary.bundle -maxdepth 3 | sort
+
+      - name: Load every dictionary from the packaged app
+        # master predates --verify-dictionaries; its layout above shows where the .bin files went.
+        if: matrix.ref != 'master'
+        run: |
+          scripts/test-dictionary-bundle.sh
+          dist/SwitchFix.app/Contents/MacOS/SwitchFixApp --verify-dictionaries

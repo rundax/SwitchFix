@@ -229,6 +229,51 @@ let languageCases: [LanguageCase] = [
     .init(code: "vi", layoutID: "com.apple.keylayout.Vietnamese", script: "Latin"),
 ]
 
+/// The control: random 4–7 letter strings from the layout's letters that the checker accepts.
+/// A language whose spelling data is not installed accepts all of them.
+func randomStringsAccepted(_ language: String, letters: [Character], count: Int) -> Int {
+    var random = SeededGenerator(seed: 31)
+    var accepted = 0
+    for _ in 0..<count {
+        let length = Int.random(in: 4...7, using: &random)
+        let candidate = String((0..<length).map { _ in letters.randomElement(using: &random)! })
+        if isSystemValid(candidate, language, .lowercaseOrCapitalized) { accepted += 1 }
+    }
+    return accepted
+}
+
+// MARK: - Spelling data installation probe
+
+/// Turns on each language's keyboard layout, as a user adding it in System Settings would.
+func enableLayouts(_ codes: [String]) {
+    for code in codes {
+        guard let language = languageCases.first(where: { $0.code == code }) else {
+            print("\(code): unknown language")
+            continue
+        }
+        let filter = [kTISPropertyInputSourceID as String: language.layoutID] as CFDictionary
+        guard let sources = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource],
+              let source = sources.first else {
+            print("\(language.layoutID): not installed")
+            continue
+        }
+        print("\(language.layoutID): TISEnableInputSource status \(TISEnableInputSource(source))")
+    }
+}
+
+/// One line of the control per language, for polling from fresh processes while macOS may be
+/// installing spelling data.
+func printControl(_ codes: [String]) {
+    let fields = codes.map { code -> String in
+        guard let language = languageCases.first(where: { $0.code == code }),
+              let layout = KeyboardLayoutMap(sourceID: language.layoutID) else {
+            return "\(code)=n/a"
+        }
+        return "\(code)=\(percent(randomStringsAccepted(code, letters: layout.lowercaseLetters, count: 100), 100))"
+    }
+    print(fields.joined(separator: " "))
+}
+
 func environmentSection() -> String {
     let version = ProcessInfo.processInfo.operatingSystemVersionString
     let languages = SystemSpellChecker.availableLanguages
@@ -385,14 +430,8 @@ func languageSection(english: [String], us: KeyboardLayoutMap) -> (String, [Stri
             lines.append("| \(language.code) | \(language.layoutID) | \(language.script) | layout unavailable | | | | | | |")
             continue
         }
-        var random = SeededGenerator(seed: 31)
         let letters = layout.lowercaseLetters
-        var randomAccepted = 0
-        for _ in 0..<300 {
-            let length = Int.random(in: 4...7, using: &random)
-            let candidate = String((0..<length).map { _ in letters.randomElement(using: &random)! })
-            if isSystemValid(candidate, language.code, .lowercaseOrCapitalized) { randomAccepted += 1 }
-        }
+        let randomAccepted = randomStringsAccepted(language.code, letters: letters, count: 300)
         let words = sampleSystemWords(language: language.code, alphabet: letters, count: 400, seed: 21)
         samples[language.code] = Array(words.prefix(300))
         let lowered = words.map { $0.lowercased() }
@@ -421,6 +460,10 @@ let command = CommandLine.arguments.dropFirst().first ?? "report"
 switch command {
 case "threads":
     runThreadCheck()
+case "enable-layouts":
+    enableLayouts(Array(CommandLine.arguments.dropFirst(2)))
+case "control":
+    printControl(Array(CommandLine.arguments.dropFirst(2)))
 case "report":
     guard let us = KeyboardLayoutMap(sourceID: "com.apple.keylayout.US") else {
         print("US layout unavailable")
@@ -438,6 +481,6 @@ case "report":
         try report.write(toFile: CommandLine.arguments[index + 1], atomically: true, encoding: .utf8)
     }
 default:
-    print("usage: SpellCheckerSpike [report [--output <file>] | threads]")
+    print("usage: SpellCheckerSpike [report [--output <file>] | threads | enable-layouts <lang>... | control <lang>...]")
     exit(1)
 }

@@ -106,11 +106,12 @@ binary_minimum_os() {
         }'
 }
 
-[ "$(uname -s)" = Darwin ] || fail "This installer requires macOS 13 or later."
+[ "$(uname -s)" = Darwin ] || fail "This installer requires macOS 14 or later."
 [ "$(id -u)" -ne 0 ] || fail "Run this installer as your signed-in user, without sudo, so SwitchFix opens in your session."
 OS_VERSION=$(sw_vers -productVersion)
 OS_NUMBER=$(version_number "$OS_VERSION") || fail "Could not read the macOS version. Run sw_vers and check for system updates."
-[ "$OS_NUMBER" -ge 851968 ] || fail "macOS $OS_VERSION is unsupported. Update to macOS 13 or later."
+[ "$OS_NUMBER" -ge 917504 ] || [ "$OS_NUMBER" -lt 851968 ] || fail "macOS $OS_VERSION is no longer supported. Update to macOS 14 or later, or download SwitchFix 0.0.12, the last version for macOS 13: https://github.com/rundax/SwitchFix/releases/tag/v0.0.12"
+[ "$OS_NUMBER" -ge 917504 ] || fail "macOS $OS_VERSION is unsupported. Update to macOS 14 or later."
 # hw.optional.arm64 reports the physical machine even when Terminal runs in Rosetta.
 if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then
     ARCH=arm64

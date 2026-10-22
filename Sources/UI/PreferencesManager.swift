@@ -104,12 +104,10 @@ public class PreferencesManager {
     }
 
     public var launchAtLogin: Bool {
-        if #available(macOS 13.0, *) { return SMAppService.mainApp.status == .enabled }
-        return false
+        SMAppService.mainApp.status == .enabled
     }
 
     public var launchAtLoginMessage: String? {
-        guard #available(macOS 13.0, *) else { return "Launch at Login requires macOS 13 or later." }
         switch SMAppService.mainApp.status {
         case .requiresApproval:
             return "Allow SwitchFix under System Settings > General > Login Items."
@@ -123,15 +121,10 @@ public class PreferencesManager {
     public private(set) var launchAtLoginError: String?
 
     public var launchAtLoginStatus: SMAppService.Status {
-        if #available(macOS 13.0, *) { return SMAppService.mainApp.status }
-        return .notRegistered
+        SMAppService.mainApp.status
     }
 
     public func setLaunchAtLogin(_ enabled: Bool) {
-        guard #available(macOS 13.0, *) else {
-            launchAtLoginError = "Launch at Login requires macOS 13 or later."
-            return
-        }
         do {
             if enabled {
                 try SMAppService.mainApp.register()

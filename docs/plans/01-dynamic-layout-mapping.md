@@ -1,6 +1,6 @@
 # Dynamic, source-specific keyboard layout mapping
 
-Status: Phase A is implementation-ready; Phase B is gated on benchmark evidence (see [Phase B](#phase-b--keystroke-provenance-gated)). Revised 2026-10-19 after review against the baseline. Baseline: `4b928be`. Platform: macOS 13+, existing SwiftPM targets, no added dependencies. Lands after plan 02, which introduces the shared `invalidateCorrectionConfiguration()` primitive and `CorrectionTrigger`; if plan 02 has not landed, add the primitive here with focused tests.
+Status: Phase A is implementation-ready; Phase B is gated on benchmark evidence (see [Phase B](#phase-b--keystroke-provenance-gated)). Revised 2026-10-19 after review against the baseline. Baseline: `4b928be`. Platform: macOS 14+, existing SwiftPM targets, no added dependencies. Lands after plan 02, which introduces the shared `invalidateCorrectionConfiguration()` primitive and `CorrectionTrigger`; if plan 02 has not landed, add the primitive here with focused tests.
 
 ## Outcome and scope
 

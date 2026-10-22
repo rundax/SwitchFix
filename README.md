@@ -37,7 +37,7 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 
 ## Requirements
 
-- macOS 13.0 or later
+- macOS 14.0 or later. On macOS 13, use [SwitchFix 0.0.12](https://github.com/rundax/SwitchFix/releases/tag/v0.0.12), the last version that supports it.
 
 ## Installation
 

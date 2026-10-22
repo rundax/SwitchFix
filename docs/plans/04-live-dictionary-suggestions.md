@@ -1,8 +1,8 @@
 # Live dictionary suggestions while typing
 
-Status: design proposal for owner review; no feature code is included. Prepared 2026-10-22 on branch `fix/v0.0.13-bug-reports` (base `a77f218`).
+Status: design approved by the owner on 2026-10-22; no feature code is included yet. Prepared 2026-10-22 on branch `fix/v0.0.13-bug-reports` (base `a77f218`).
 
-This plan extends [02 — Personal exceptions](02-personal-exceptions.md). Plan 02 deliberately shipped without prompts, counters, or learning ("Merely reverting never adds an exception", slice 4 still TODO). Requesting live suggestions is an owner decision that widens that scope. The decisions listed at the end must be confirmed before implementation starts (EXECUTION.md marks behavior beyond a plan as BLOCKED).
+This plan extends [02 — Personal exceptions](02-personal-exceptions.md). Plan 02 deliberately shipped without prompts, counters, or learning ("Merely reverting never adds an exception", slice 4 still TODO). Requesting live suggestions is an owner decision that widens that scope. The owner confirmed the decisions listed at the end on 2026-10-22, so implementation can start with slice 1.
 
 ## Outcome
 
@@ -21,7 +21,7 @@ All signals already exist in the pipeline; none needs to read text through Acces
 
 1. **Explicit revert of an automatic correction ("keep").** `TextCorrector.undo` succeeds for a single-word plan with trigger `.automaticBoundary`. This is plan 02 slice 4's `UndoOutcome` with a `RevertedTokenReceipt`; build it first, exactly as plan 02 specifies (receipt only after the full inverse emission succeeds; none for sweeps, selections, layout-only or manual corrections). Offer immediately: the user just made an explicit choice.
 2. **Manual fix of a word automatic mode declined ("always correct").** In automatic mode, a `.hotkey` correction succeeds for a word that automatic detection evaluated and left alone (the word is still in `InputStateMachine.run` / the detector journal, typically reopened with Backspace). Offer immediately.
-3. **Delete and retype (implicit, both directions).** The user deletes a whole word (run token popped and emptied by deletes), switches layout, and types the word whose conversion matches the deleted token, or deletes an automatic correction and retypes the original. Ambiguous on its own, so offer only after the **second** occurrence of the same token in the session (in-memory counter, never persisted).
+3. **Delete and retype (implicit, both directions).** The user deletes a whole word (run token popped and emptied by deletes), switches layout, and types the word whose conversion matches the deleted token, or deletes an automatic correction and retypes the original. Ambiguous on its own, so offer only after the **second** occurrence of the same token in the session (in-memory counter, never persisted; decision 3).
 
 Never offer for words typed in secure fields, excluded apps, or tokens the detector already treats as codes, URLs, mixed scripts or all-caps acronyms. Never offer for the hotkey workflow in **Hotkey Only** mode: there the hotkey is the normal path, not a miss.
 
@@ -37,7 +37,7 @@ Never offer for words typed in secure fields, excluded apps, or tokens the detec
 
 - **Keep as typed**: the existing `PersonalExceptionsPolicy` / `PersonalExceptionsStore` (1,000 entries, NFC + lowercase + apostrophe normalization). No change.
 - **Always correct** (new): `PersonalCorrectionsStore` under `SwitchFix_personalCorrections_v1`. Each entry is the canonical typed token, its source script, and the corrected text, using the same normalization and limits as exceptions. A forced correction bypasses dictionary validity and confidence but never the safety gates: secure fields, excluded apps, the 64-character cap, the Cyrillic↔Cyrillic ban, and personal exceptions, which win over corrections.
-- **Candidates** live only in memory, on the main thread, at most one pending. Words never go to `SwitchFixLog`, analytics, or disk unless accepted. The chip shows the word because the user cannot decide without it. This is a deliberate exception to plan 02's "no raw word in UI chrome" rule (decision 2).
+- **Candidates** live only in memory, on the main thread, at most one pending. Words never go to `SwitchFixLog`, analytics, or disk unless accepted. The chip shows the word because the user cannot decide without it. This is a deliberate exception to plan 02's "no raw word in UI chrome" rule (decision 2). The chip and menu item close as soon as secure input turns on, so a word is never on screen while a password is typed.
 
 ## Implementation outline
 
@@ -58,9 +58,9 @@ Settings renames **Personal Exceptions** to **Personal Dictionary**, with two li
 - `ghbdsn ` left alone, then Backspace, hotkey → chip **Always correct**; after accepting, typing `ghbdsn ` corrects automatically.
 - No word appears in `log stream --predicate 'subsystem == "com.switchfix"'` at any level.
 
-## Owner decisions needed
+## Owner decisions
 
 1. ~~Anchor~~ **Decided 2026-10-22:** next to the cursor by default; Settings can switch to the menu bar icon.
-2. **Showing the word** in the transient chip and menu. Everything stays on this Mac; the remaining exposure is that the chip is visible to screen sharing, screen recording, and other apps with Accessibility access, exactly like the word already on screen. Recommended: show it.
-3. **Implicit signals** (delete-and-retype) with a threshold of 2 per session, or explicit signals only.
-4. **Always correct list** as a new persistent store (recommended) or only "keep as typed".
+2. ~~Showing the word~~ **Decided 2026-10-22:** the chip and menu show the word, and close while secure input is on. Everything stays on this Mac; the chip is visible to screen sharing and recording, like the word already on screen.
+3. ~~Implicit signals~~ **Decided 2026-10-22:** delete-and-retype counts, offered after the second occurrence of the same token in a session.
+4. ~~Always correct list~~ **Decided 2026-10-22:** a new persistent store, as requested together with "keep as typed".

@@ -1,6 +1,6 @@
 # More languages with on-demand language packs
 
-Status: design proposal for owner review; no feature code is included. Prepared 2026-10-22 on branch `fix/v0.0.13-bug-reports` (base `a77f218`).
+Status: design proposal; no feature code is included. Prepared 2026-10-22 on branch `fix/v0.0.13-bug-reports` (base `a77f218`). On 2026-10-22 the owner adopted the macOS spell checker as the first dictionary source, with packs where it fails (spike on branch `spike/system-spellchecker`, `docs/plans/05a-system-spellchecker-spike.md`). Platform: macOS 14+; macOS 13 support ends with v0.0.13 because it can no longer be tested.
 
 ## Why
 
@@ -12,12 +12,12 @@ SwitchFix supports English, Ukrainian, and Russian, and bundles all three dictio
 | ru_RU | 146,229 | 3.8 MB | 0.9 MB |
 | uk_UA | 2,958,567 | 79.6 MB | 16.5 MB |
 
-`dist/SwitchFix.app` is 83 MB, and 80 MB of that is dictionaries. Adding languages the same way multiplies that for every user. Users should get the languages they type and nothing else: someone typing English, German, Ukrainian, and Russian downloads those four; someone typing only English and Greek downloads Greek.
+`dist/SwitchFix.app` is 83 MB, and 80 MB of that is dictionaries. Adding languages the same way multiplies that for every user. Users should get the languages they type and nothing else, downloading only what macOS does not already provide: someone typing English, German, and Russian downloads nothing; someone typing English and Georgian downloads Georgian.
 
 ## Outcome
 
-- The app ships with English only (about 3 MB).
-- **Settings → Languages** lists every available language with its status: *Installed*, *Download (N MB)*, *Update available*, *Remove*. SwitchFix proposes the languages of the keyboard layouts already enabled in macOS ("You use the German keyboard. Download German, 2 MB?").
+- The app ships without large dictionaries (about 3 MB). Languages macOS can spell-check use the macOS spell checker; language packs cover the rest.
+- **Settings → Languages** lists every available language with its status: *Provided by macOS*, *Installed*, *Download (N MB)*, *Update available*, *Remove*. SwitchFix proposes packs for the keyboard layouts already enabled in macOS that macOS cannot check ("You use the Georgian keyboard. Download Georgian, 2 MB?").
 - Downloads happen only when the user clicks. There is no telemetry and no identifier in requests. The website's "zero network requests" claim changes to "no network requests except language packs you choose to download".
 
 ## What has to change first
@@ -40,31 +40,27 @@ The inventory found 31 places, in about 22 files, that hardcode the three langua
 
 ## Migration for existing users
 
-Moving Ukrainian and Russian out of the app would leave current users without correction after updating. Ship one transition release that still bundles uk/ru and offers the packs. In the following release, if an enabled keyboard layout's language is not installed, the first launch shows one consent prompt listing the packs and their sizes. Until the user accepts, the affected pairs stay off and readiness says why.
+Russian is built into the macOS spell checker on every Mac, so the bundled ru list can go once the system backend ships. Ukrainian data is installed by macOS for every user with the Ukrainian layout, but it can arrive late or never, and the macOS list covers only 15–16% of the bundled one. Keep the bundled uk list (or turn it into a pack) until a larger real-text benchmark confirms the system dictionary. If the uk list then moves to a pack, ship one transition release that still bundles it and offers the pack. In the following release, if an enabled layout's language has neither macOS data nor a pack, the first launch shows one consent prompt listing the packs and their sizes. Until the user accepts, the affected pairs stay off and readiness says why.
 
-## Zero-download baseline: macOS spell checker (spike first)
+## macOS spell checker first, packs where it fails (adopted 2026-10-22)
 
-macOS already ships offline spell-check dictionaries. `NSSpellChecker.availableLanguages` on this Mac (macOS 15.7) lists 43, including uk, ru, de, fr, es, it, pl, cs, tr, el, bg, he, ar, hi, and ko. Measured lookups take 0.2–0.3 ms. This could give "basic" support for many languages with nothing downloaded, with packs as the verified upgrade. Before relying on it, a spike must answer three questions:
+The spike measured `NSSpellChecker` on macOS 14, 15, 26 and 27. With its data installed it matches the bundled lists on corpus v2 (recall 40/40, damage 7/180 versus 8/180), with identical results on every version.
 
-- **Thread safety.** Can detection call it off the main thread, or does it need the asynchronous `requestChecking` API?
-- **Case sensitivity.** `straße` is rejected for German because nouns are capitalized.
-- **Reproducibility.** Results depend on the macOS version and on words the user taught the system, so benchmark runs would not be reproducible.
+| Source | Languages | Downloaded by SwitchFix |
+| --- | --- | --- |
+| macOS spell checker, built in | en, ru, de, fr, es, it, pt, tr, sv, nl, da, vi | nothing |
+| macOS spell checker, installed by macOS when the user enables the language's keyboard layout | uk, bg, el, pl, hu, ro, fi, nb, he, ar, cs; lt and sl on macOS 26+ | nothing |
+| Language pack | ka, hy, kk, sr, mk, be, fa, th; hi unless a pack is no better; any language whose check fails on a user's Mac | on demand |
 
-If adopted, basic languages are hotkey-only by default and never part of benchmark baselines.
+A missing macOS dictionary fails silently: the language stays listed and every string is accepted. The backend therefore follows the spike's rules: single words only, check the capitalized form, never look up ALL-CAPS words, serialize calls, use words the user taught macOS only to protect the typed word, and never try to install data. Above all, at launch and whenever enabled layouts change, it checks each language with 100 random strings of that layout's letters. If more than about 5% are accepted, it uses the pack or bundled list for that language until a later check passes.
+
+Benchmark baselines keep using bundled or pack data so they stay reproducible. The system backend is measured separately with `--dictionary-backend system` on hosted runners.
 
 ## Scope: which languages
 
 - **Good fit (separate script, direct keyboard layouts):** Belarusian, Kazakh, Bulgarian, Serbian, and Macedonian (Cyrillic, paired with a Latin layout); Greek; Hebrew; Arabic; Persian; Georgian; Armenian; Thai.
 - **Possible, later:** same-script Latin pairs (German, French, Spanish, Italian, Portuguese, Polish, Czech, Turkish, Dutch, Swedish), hotkey-first. Korean needs Hangul jamo composition, not a key-to-character map.
 - **Out of scope:** Chinese and Japanese. Their input methods compose text through candidate windows, so "typed in the wrong layout" does not apply the same way.
-
-## Data sources and licenses (blocking)
-
-The provenance and licenses of the bundled en/ru/uk word lists are not recorded in the repository. The repository also has no `LICENSE` file, although the README shows an MIT badge that links to one. Before any pack is published separately:
-
-- Record each list's source and license.
-- Choose sources per language. Hunspell dictionaries from LibreOffice (license varies by language: LGPL, MPL, GPL, BSD) expanded to word forms, and frequency lists (for example OpenSubtitles-based lists, CC BY-SA) for pruning.
-- Ship each pack with its license.
 
 ## Quality gate per language
 
@@ -76,15 +72,15 @@ A language is offered in the catalog only after its own benchmark corpus (repair
 | --- | --- | --- |
 | 0 | Plan 01 Phase A (dynamic mapping) | Plan 01 acceptance; baseline v2 unchanged or better |
 | 1 | Language registry refactor (no behavior change) | All runners green; baseline v2 unchanged |
-| 2 | Pack infrastructure: manifest, signature, download, install, remove, loader reload, Settings → Languages; uk/ru also published as packs | Network-free tests with a local manifest; tampered packs rejected; app size about 3 MB with packs |
-| 3 | Transition release, then English-only bundle with migration prompt | Upgrade test from v0.0.13 with uk/ru layouts enabled |
-| 4 | First new cross-script languages (suggested: be, kk, bg, el, he, ka, hy) | Per-language corpus and baseline |
-| 5 | Same-script Latin pairs, hotkey-first; optional DAFSA format | Per-pair benchmark |
+| 2 | macOS spell-checker backend with the per-language check and fallback to the bundled lists; drop the bundled ru list | Corpus v2 with `--dictionary-backend system` matches the bundled baseline on hosted runners; a language without data falls back |
+| 3 | Pack infrastructure: manifest, signature, download, install, remove, loader reload, Settings → Languages; uk also published as a pack | Network-free tests with a local manifest; tampered packs rejected |
+| 4 | Larger real-text uk/ru benchmark; if the macOS uk dictionary holds up, transition release, then a bundle without dictionaries and the migration prompt | Upgrade test from v0.0.13 with the uk layout enabled, with and without macOS uk data |
+| 5 | First new cross-script languages: bg, el, he from macOS; be, kk, ka, hy as packs | Per-language corpus and baseline |
+| 6 | Same-script Latin pairs, hotkey-first; optional DAFSA format | Per-pair benchmark |
 
-## Owner decisions needed
+## Owner decisions
 
 1. Hosting on GitHub Releases with a signed manifest (recommended) or another host.
-2. Transition plan for uk/ru: one release still bundling them (recommended) or an immediate switch.
-3. Whether to spike the macOS spell checker as a zero-download tier.
+2. Transition plan for uk: one release still bundling it (recommended) or an immediate switch.
+3. ~~macOS spell checker~~ **Decided 2026-10-22:** adopt it first, with packs where it fails; words the user taught macOS only protect the typed word; measured on macOS 14 to 27; macOS 13 support dropped.
 4. First wave of languages and who reviews each corpus (a native speaker per language).
-5. Dictionary sources and licenses, including adding the missing `LICENSE` file.

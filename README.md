@@ -28,8 +28,7 @@ A macOS menu bar utility that automatically corrects keyboard layout mistakes. T
 - **Hotkey mode** — correct only when you press Ctrl+Shift+Space (configurable), or a single modifier tap such as Control.
 - **Selection correction** — select text and press the hotkey to convert it.
 - **Permissions indicator** — shows the status of required macOS permissions in the app menu.
-- **Undo** — `Cmd+Z` within 5 seconds reverts the last correction.
-- **Revert hotkey** — `CapsLock` reverts the last correction (configurable).
+- **Revert hotkey** — press `CapsLock` (configurable) right after a correction to restore exactly what you typed. `Cmd+Z` is left to the app you are typing in and uses its own undo.
 - **Three languages** — English (US/ABC/British/Dvorak/Colemak), Ukrainian, and Russian, with native macOS language metadata used to discover installed layouts.
 - **Safer layout pairing** — English converts to your most recently used Cyrillic layout; Ukrainian and Russian text are never converted into each other.
 - **Smart filtering** — skips password fields, URLs, emails, camelCase, mixed scripts.

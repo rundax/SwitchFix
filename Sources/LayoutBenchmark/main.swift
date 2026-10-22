@@ -1,3 +1,4 @@
+import Dictionary
 import Foundation
 
 func main() {
@@ -45,6 +46,7 @@ func printUsage() {
       validate [--corpus <corpus-dir>] [--tables <tables-dir>] [--strict]
       run [--adapter switchfix] [--split development|holdout|all] [--layer decision|replay] [--profile boundary-layout-only]
           [--corpus <dir>] [--tables <dir>] [--output <dir>] [--baseline <baseline.json>]
+          [--dictionary-backend bundled|system|system-lowercase]  (system: macOS spell checker, spike)
       record-baseline --baselines <dir> [--corpus <dir>] [--tables <dir>] [--commit <sha>] [--runner-log <Name>=<path>]...
       summarize [--results <dir>]
       self-check
@@ -189,6 +191,9 @@ func execute(trials: [Trial], tables: [String: LayoutTable], layer: BenchmarkLay
     return trials.map { adapter.executeTrial(trial: $0, layer: layer) }
 }
 
+/// Lookups answered by an external dictionary backend during `run` (spike measurement).
+var externalLookups = 0
+
 func handleRun(_ options: Options) {
     let adapterName = options.value("--adapter") ?? "switchfix"
     let split = options.value("--split") ?? "development"
@@ -208,6 +213,22 @@ func handleRun(_ options: Options) {
         print("Unsupported layer: the app layer is measured by manual conformance runs")
         exit(1)
     }
+    let dictionaryMode: String
+    switch options.value("--dictionary-backend") ?? "bundled" {
+    case "bundled":
+        dictionaryMode = "text-fallback-test"
+    case "system", "system-lowercase":
+        let checker = SystemSpellChecker.shared
+        checker.casePolicy = options.value("--dictionary-backend") == "system" ? .lowercaseOrCapitalized : .lowercase
+        dictionaryMode = "macos-spellchecker-\(checker.casePolicy.rawValue)"
+        DictionaryLoader.shared.useExternalLookup { word, language in
+            externalLookups += 1
+            return checker.isValid(word, language: SystemSpellChecker.languageCode(for: language))
+        }
+    case let other:
+        print("Unsupported dictionary backend: \(other)")
+        exit(1)
+    }
 
     do {
         try CorpusValidator.requireVerifiedInputs(corpusDirectory: corpusDir, tablesDirectory: tablesDir)
@@ -219,8 +240,12 @@ func handleRun(_ options: Options) {
         }
 
         let results = execute(trials: trials, tables: tables, layer: layer)
+        if externalLookups > 0 {
+            let boundaries = trials.reduce(0) { $0 + $1.events.filter { $0.type == "boundary" }.count }
+            print("Dictionary lookups: \(externalLookups) for \(boundaries) word boundaries (\(String(format: "%.1f", Double(externalLookups) / Double(max(boundaries, 1)))) per boundary)\n")
+        }
         let report = Scorer.score(trials: trials, results: results)
-        let metadata = BenchmarkEnvironment.metadata(corpusDir: corpusDir, trials: trials, profile: profile, layer: layer, commitOverride: options.value("--commit"))
+        let metadata = BenchmarkEnvironment.metadata(corpusDir: corpusDir, trials: trials, profile: profile, layer: layer, commitOverride: options.value("--commit"), dictionaryMode: dictionaryMode)
         let md = Scorer.renderMarkdown(report: report, split: split, adapter: adapterName)
         print(md)
 

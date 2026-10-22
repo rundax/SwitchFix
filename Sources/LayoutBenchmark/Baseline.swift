@@ -99,7 +99,8 @@ public enum BenchmarkEnvironment {
         trials: [Trial],
         profile: String,
         layer: BenchmarkLayer,
-        commitOverride: String?
+        commitOverride: String?,
+        dictionaryMode: String = "text-fallback-test"
     ) -> RunMetadata {
         let manifestURL = corpusDir.appendingPathComponent("manifest.json")
         let manifest = (try? Data(contentsOf: manifestURL)).flatMap { try? JSONDecoder().decode(Manifest.self, from: $0) }
@@ -112,7 +113,7 @@ public enum BenchmarkEnvironment {
             osBuild: TableExporter.osBuildVersion(),
             architecture: architecture(),
             keyboardTypes: Set(trials.map { $0.initial.keyboardType ?? 91 }).sorted(),
-            dictionaryMode: "text-fallback-test",
+            dictionaryMode: dictionaryMode,
             profile: profile,
             layer: layer.rawValue,
             corpusVersion: manifest?.corpusVersion ?? corpusDir.lastPathComponent,

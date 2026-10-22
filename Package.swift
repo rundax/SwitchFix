@@ -54,5 +54,10 @@ let package = Package(
             dependencies: ["Core", "Dictionary", "Utils"],
             path: "Sources/LayoutBenchmark"
         ),
+        .executableTarget(
+            name: "SpellCheckerSpike",
+            dependencies: ["Core", "Dictionary", "Utils"],
+            path: "Sources/SpellCheckerSpike"
+        ),
     ]
 )

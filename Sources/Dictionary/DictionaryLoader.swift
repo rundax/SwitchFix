@@ -14,6 +14,7 @@ public class DictionaryLoader {
     private var allowLists: [Language: Set<String>] = [:]
     private var denyLists: [Language: Set<String>] = [:]
     private var textFallbackEnabledForTesting = false
+    private var externalLookup: ((String, Language) -> Bool)?
     private let lock = OSAllocatedUnfairLock()
 
     public static let shared = DictionaryLoader()
@@ -23,7 +24,13 @@ public class DictionaryLoader {
     /// Prepare an immutable exact index before automatic monitoring starts.
     @discardableResult
     public func prewarm(language: Language) -> Bool {
-        lock.withLock { ensureIndexLoaded(for: language) != nil }
+        lock.withLock { externalLookup != nil || ensureIndexLoaded(for: language) != nil }
+    }
+
+    /// Spike seam (plan 05): answer word membership with `lookup` instead of the bundled index.
+    /// Allow and deny overrides still apply. Pass nil to return to the bundled index.
+    public func useExternalLookup(_ lookup: ((String, Language) -> Bool)?) {
+        lock.withLock { externalLookup = lookup }
     }
 
     /// Text dictionaries are intentionally available only to explicit test tooling.
@@ -81,6 +88,11 @@ public class DictionaryLoader {
     public func containsExact(_ word: String, language: Language) -> Bool {
         let word = word.precomposedStringWithCanonicalMapping
         return lock.withLock {
+            if let externalLookup {
+                if loadedOverrides(for: language).deny.contains(word) { return false }
+                if loadedOverrides(for: language).allow.contains(word) { return true }
+                return externalLookup(word, language)
+            }
             guard let index = ensureIndexLoaded(for: language) else { return false }
 
             let denyList = denyLists[language] ?? []
@@ -95,6 +107,14 @@ public class DictionaryLoader {
 
             return index.contains(word)
         }
+    }
+
+    private func loadedOverrides(for language: Language) -> (allow: Set<String>, deny: Set<String>) {
+        if allowLists[language] == nil {
+            allowLists[language] = loadOverrideList(for: language, type: "allow")
+            denyLists[language] = loadOverrideList(for: language, type: "deny")
+        }
+        return (allowLists[language] ?? [], denyLists[language] ?? [])
     }
 
     private func ensureIndexLoaded(for language: Language) -> DictionaryIndex? {

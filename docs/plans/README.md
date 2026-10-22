@@ -9,6 +9,8 @@ These documents specify implementation work; they do not claim that the features
 | [01 — Dynamic layout mapping](01-dynamic-layout-mapping.md) | Convert using the actual source and target keyboard layouts installed in macOS, including supported non-QWERTY layouts, without guessing missing mappings. |
 | [02 — Personal exceptions](02-personal-exceptions.md) | Let users protect exact words from automatic corrections, manage the list, and explicitly remember a word after reverting an automatic correction. |
 | [03 — Comparative false-positive benchmark](03-comparative-false-positive-benchmark.md) | Measure unwanted edits and layout switches, successful corrections, and abstentions on a reproducible corpus, with clearly separated SwitchFix and Klavko evaluation layers. |
+| [04 — Live dictionary suggestions](04-live-dictionary-suggestions.md) | Proposal (owner decisions pending): offer "keep as typed" or "always correct" right after SwitchFix gets a word wrong, without interrupting typing. |
+| [05 — Language packs](05-language-packs.md) | Proposal (owner decisions pending): support more languages with dictionaries downloaded on demand instead of bundled. |
 
 ## Recommended execution order
 

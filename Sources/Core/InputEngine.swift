@@ -147,14 +147,20 @@ public final class InputEngine {
         updatePersonalExceptions(policy, epoch: epoch)
     }
 
+    /// Publishes a context created by SwitchFix's own layout selection. Call after any detection
+    /// configuration refresh for that selection, so the undo record moves to the new epoch too.
     public func handleGeneratedLayoutContext(_ context: InputContextSnapshot) {
-        let generation = captureState.snapshot().editGeneration
+        let latest = captureState.snapshot()
         inputQueue.async { [weak self] in
             _ = self?.stateMachine.updateContext(context)
             self?.resetDetectorState()
         }
         correctionQueue.async { [weak self] in
-            self?.corrector.rebaseUndoContext(context, editGeneration: generation)
+            self?.corrector.rebaseUndoContext(
+                context,
+                editGeneration: latest.editGeneration,
+                correctionEpoch: latest.correctionEpoch
+            )
         }
     }
 

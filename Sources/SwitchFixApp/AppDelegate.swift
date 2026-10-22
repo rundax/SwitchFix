@@ -422,8 +422,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             inputSourceID: sourceID,
             secureFocus: current.secureFocus
         )
-        inputEngine?.updateContext(context)
+        // SwitchFix selected this layout within the active source: refresh the configuration
+        // first, so the generated context carries the correction it completes into the new epoch.
         updateDetectionConfiguration(allowedLayouts: readyLayouts)
+        inputEngine?.handleGeneratedLayoutContext(context)
         refreshRuntimeReadiness()
     }
 

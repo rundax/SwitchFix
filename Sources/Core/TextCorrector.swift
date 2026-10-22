@@ -95,6 +95,16 @@ public final class TextCorrector {
         undoState.withLock { $0 != nil }
     }
 
+    /// The correction the revert hotkey would undo, if any.
+    public var recordedUndoPlan: CorrectionPlan? {
+        undoState.withLock { $0?.plan }
+    }
+
+    /// Test seam: record a correction as if `apply` had emitted it.
+    public func recordUndoForTesting(_ plan: CorrectionPlan) {
+        undoState.withLock { $0 = UndoState(plan: plan) }
+    }
+
     public static func isUndoEligible(
         recordedPlan: CorrectionPlan,
         sequence: UInt64,
@@ -202,7 +212,10 @@ public final class TextCorrector {
         undoState.withLock { $0 = nil }
     }
 
-    public func rebaseUndoContext(_ context: InputContextSnapshot, editGeneration: UInt64) {
+    /// SwitchFix's own layout switch completes the correction it follows. Carry the undo record
+    /// into the context and correction epochs that switch installs, or the revert hotkey could
+    /// never undo a correction that changed the layout.
+    public func rebaseUndoContext(_ context: InputContextSnapshot, editGeneration: UInt64, correctionEpoch: UInt64) {
         undoState.withLock { value in
             guard let current = value,
                   current.plan.targetPID == context.frontmostPID,
@@ -216,7 +229,7 @@ public final class TextCorrector {
                 contextEpoch: context.epoch,
                 targetPID: context.frontmostPID,
                 editGeneration: plan.editGeneration,
-                correctionEpoch: plan.correctionEpoch,
+                correctionEpoch: correctionEpoch,
                 deleteCount: plan.deleteCount,
                 replacementText: plan.replacementText,
                 originalText: plan.originalText,

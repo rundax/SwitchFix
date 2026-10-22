@@ -873,6 +873,84 @@ run("undo generation") {
     ), "undo must not target a different app or context epoch")
 }
 
+run("SwitchFix's own layout switch keeps the correction revertable") {
+    let pid: pid_t = 100
+    let start = context(epoch: 4, pid: pid)
+    let store = CaptureStateStore(context: start, hotkeys: HotkeyConfiguration(hotkeyModifiers: 0))
+    let corrector = TextCorrector()
+    let engine = InputEngine(
+        captureState: store,
+        initialContext: start,
+        preferences: InputPreferencesSnapshot(isEnabled: true, correctionMode: .automatic),
+        corrector: corrector
+    )
+    let begin = store.snapshot()
+    corrector.recordUndoForTesting(CorrectionPlan(
+        trigger: .automaticBoundary,
+        boundarySequence: begin.latestPhysicalSequence,
+        contextEpoch: start.epoch,
+        targetPID: pid,
+        editGeneration: begin.editGeneration,
+        correctionEpoch: begin.correctionEpoch,
+        deleteCount: 7,
+        replacementText: "привет ",
+        originalText: "ghbdtn",
+        correctedText: "привет",
+        boundaryText: " ",
+        originalLayout: .english,
+        targetLayout: .russian
+    ))
+
+    // Mirrors AppDelegate: willSelect, then the input source notification, which refreshes the
+    // detection configuration (a new correction epoch) before publishing the generated context.
+    let willSelect = store.replaceContext(
+        frontmostPID: pid, appAllowed: true, layout: .russian,
+        inputSourceID: "com.test.russian", secureFocus: .unknown
+    )
+    engine.handleGeneratedLayoutContext(willSelect)
+    let notified = store.replaceContext(
+        frontmostPID: pid, appAllowed: true, layout: .russian,
+        inputSourceID: "com.test.russian", secureFocus: .unknown
+    )
+    engine.updateDetectionConfiguration(
+        allowedLayouts: [.english, .russian],
+        ukrainianFromVariant: .standard,
+        ukrainianToVariant: .standard
+    )
+    engine.handleGeneratedLayoutContext(notified)
+    guard let resolved = store.resolveFocus(.notSecure, frontmostPID: pid, epoch: notified.epoch) else {
+        check(false, "focus for the generated context must resolve")
+        return
+    }
+    engine.updateContext(resolved)
+    let drained = DispatchSemaphore(value: 0)
+    engine.drainPipeline { drained.signal() }
+    _ = drained.wait(timeout: .now() + 2)
+
+    let revert = store.capture(
+        timestamp: 1, kind: .revertHotkey, keyCode: 57, flagsRawValue: 0,
+        isAutorepeat: false, sourcePID: 1, sourceUserData: 0
+    )
+    guard let recorded = corrector.recordedUndoPlan else {
+        check(false, "the generated switch must keep the undo record")
+        return
+    }
+    check(TextCorrector.isUndoEligible(
+        recordedPlan: recorded,
+        sequence: revert.sequence,
+        context: resolved,
+        latest: store.snapshot()
+    ), "the revert hotkey must still undo a correction after SwitchFix's own layout switch")
+
+    engine.updatePreferences(InputPreferencesSnapshot(isEnabled: false, correctionMode: .automatic))
+    check(!TextCorrector.isUndoEligible(
+        recordedPlan: recorded,
+        sequence: revert.sequence,
+        context: resolved,
+        latest: store.snapshot()
+    ), "disabling SwitchFix must still make the correction unrevertable")
+}
+
 run("missing dictionary seam") {
     check(!AutomaticDictionaryReadiness.prepare(.english), "missing binary dictionary must report unavailable without parsing text fallback")
     let current = context()

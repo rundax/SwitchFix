@@ -44,9 +44,11 @@ Keep the bundled en/uk/ru lists until a larger benchmark, with more real Ukraini
 
 ## Owner decisions
 
-1. Adopt the hybrid (system checker first, packs where it fails)?
-2. Words the user taught macOS: ignore them (reproducible), or count them only to *protect* the typed word, never as a conversion target (recommended: personal, and it cannot cause new corrections)?
-3. Run the measurement on macOS 13 and 14 GitHub runners before any product work?
+Answered 2026-10-22:
+
+1. **Adopt the hybrid:** yes. The system checker comes first, and packs cover the languages where it fails.
+2. **Words the user taught macOS:** count them only to *protect* the typed word, never as a conversion target. They are personal, and this way they cannot cause new corrections. The spike's measurements still exclude them so results are reproducible.
+3. **Measure on other macOS versions before product work:** yes, on 13, 14 and newer versions. `.github/workflows/spellchecker-spike.yml` runs the report and the corpus v2 benchmark on macOS 14, 15, 26 and 27 (`xcode-27`). GitHub has retired its macOS 13 runners, so macOS 13 needs a local VM or a tester on that version.
 
 ## Reproduce
 

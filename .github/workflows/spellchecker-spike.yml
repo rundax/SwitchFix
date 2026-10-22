@@ -1,0 +1,66 @@
+name: Spell Checker Spike
+
+# Plan 05a: repeat the macOS spell checker measurement on every macOS version GitHub hosts.
+# macOS 13 runners are retired, so 13 needs a local VM or a tester on that version.
+on:
+  push:
+    branches:
+      - "spike/system-spellchecker"
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Spell checker (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 retires 2026-11-02; xcode-27 is the macOS 27 image.
+        runner: [macos-14, macos-15, macos-26, xcode-27]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show toolchain environment
+        run: |
+          mkdir -p spike-results
+          {
+            swift --version
+            sw_vers
+            uname -a
+          } 2>&1 | tee spike-results/environment.txt
+
+      - name: Measure the system spell checker
+        run: swift run -c release SpellCheckerSpike report --output spike-results/report.md
+
+      - name: Benchmark corpus v2 with each dictionary backend
+        # A gate failure is a result to compare, not a broken job: record each exit status.
+        run: |
+          for backend in bundled system; do
+            for split in development holdout; do
+              set +e
+              swift run -c release LayoutBenchmark run \
+                --adapter switchfix \
+                --split "$split" \
+                --profile boundary-layout-only \
+                --corpus Benchmarks/layout-corpus/v2 \
+                --dictionary-backend "$backend" \
+                --baseline Benchmarks/baselines/v2/corpus-v2/baseline.json \
+                --output "spike-results/$backend-$split" > "spike-results/$backend-$split.log" 2>&1
+              status=$?
+              set -e
+              echo "$backend $split exit=$status" | tee -a spike-results/gates.txt
+            done
+          done
+
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spellchecker-${{ matrix.runner }}
+          path: spike-results/
+          if-no-files-found: ignore
